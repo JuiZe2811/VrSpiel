@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=16';
-import { addDynamic, removeDynamic, localBoxOf } from './physics.js?v=16';
-import { SFX3D } from './sfx.js?v=16';
-import { burst, addDebris } from './effects.js?v=16';
-import { cachedGeo } from './util.js?v=16';
+import { room, surfacesOf, isOpening } from './room.js?v=17';
+import { addDynamic, removeDynamic, localBoxOf } from './physics.js?v=17';
+import { SFX3D } from './sfx.js?v=17';
+import { burst, addDebris } from './effects.js?v=17';
+import { cachedGeo } from './util.js?v=17';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -535,6 +535,7 @@ export function updateZombies(dt, head, opts = {}) {
   planBudget = 2;
   for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
+    if (!z) continue; // Liste kann sich während des Updates ändern
     z.hurtT = Math.max(0, z.hurtT - dt);
     if (z.stagger > 0) z.stagger -= dt;
     if (z.state === 'dead') {

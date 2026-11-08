@@ -1,14 +1,14 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=16';
+import { VERSION } from './version.js?v=17';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT } from './util.js?v=16';
-import { SFX, ensureAudio, setListener, SFX_PLAYER } from './sfx.js?v=16';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=16';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=16';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addOpening, makeOpening, roomOccluders, isOpening } from './room.js?v=16';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals } from './effects.js?v=16';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage } from './zombies.js?v=16';
+import { makePanel, panelBg, roundRect, MAT } from './util.js?v=17';
+import { SFX, ensureAudio, setListener, SFX_PLAYER } from './sfx.js?v=17';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=17';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=17';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addOpening, makeOpening, roomOccluders, isOpening } from './room.js?v=17';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals } from './effects.js?v=17';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage } from './zombies.js?v=17';
 
 // =============================================================================
 // Grundgerüst
@@ -818,7 +818,7 @@ const DIFFS = {
 };
 let diffKey = load('vrspiel-schwierigkeit', 'normal');
 if (!DIFFS[diffKey]) diffKey = 'normal';
-let lowHpWarned = false, bruteWarned = false;
+let lowHpWarned = false, bruteWarned = false, pendingDeath = false;
 function topList(mode) { return load('vrspiel-top-' + mode, []); }
 function addTop(mode, entry) {
   const list = topList(mode);
@@ -1608,6 +1608,7 @@ function startCountdown() {
   buildNav(headPos);
   playerHp = 100;
   lowHpWarned = false;
+  pendingDeath = false;
   for (const w of arsenal) if (w.holder >= 0 || w === deskW) refillWeapon(w);
   resetWeapons(); // nicht gehaltene Waffen stehen zu Beginn jeder Runde wieder im Waffenständer
   const fd = freeDistance(headPos, inFront(1, 0, headPos.y + 0.6).sub(headPos), 3.2);
@@ -1662,7 +1663,7 @@ function playerHit(dmg) {
   SFX_PLAYER.hurt();
   for (const h of hands) pulse(h, 1, 150);
   boardDirty = true;
-  if (playerHp <= 0) { playerHp = 0; endRound(true); }
+  if (playerHp <= 0) { playerHp = 0; pendingDeath = true; } // Rundenende erst im nächsten Bild (nicht mitten im Zombie-Update)
 }
 function updateGame(dt) {
   hurtFlash = Math.max(0, hurtFlash - dt * 1.5);
@@ -1677,6 +1678,7 @@ function updateGame(dt) {
     return;
   }
   if (state !== 'playing') return;
+  if (pendingDeath) { pendingDeath = false; endRound(true); return; }
   roundClock += dt;
   // Leben regeneriert langsam, wenn man eine Weile nicht getroffen wurde
   regenT -= dt;

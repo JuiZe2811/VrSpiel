@@ -5,7 +5,7 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
-## Neu in Version 16
+## Neu in Version 16–17
 
 - **💣 Handgranaten** – zwei am Gürtel (werden jede Welle aufgefüllt). Greifen, ausholen, Griff-Taste beim Werfen loslassen.
   Nach gut 2 Sekunden explodieren sie: Druckwelle, abgerissene Gliedmaßen, umherfliegende Gegenstände.
