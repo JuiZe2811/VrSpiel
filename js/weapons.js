@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=16';
 
 // Waffen: Daten, Modelle, Munition
 export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'sniper'];
@@ -403,6 +403,25 @@ export function buildWeapon(id) {
   return { root, body, model, parts, sockets, def, foreQ, restSightRear: rest('sightRear'), localBox };
 }
 
+// Handgranate (Ursprung = Mitte des Körpers)
+const grenadeMat = new THREE.MeshStandardMaterial({ color: 0x3d4a2a, roughness: 0.6, metalness: 0.2 });
+export function makeGrenade() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(cachedGeo('gren', () => new THREE.SphereGeometry(0.032, 14, 10)), grenadeMat);
+  body.scale.set(1, 1.25, 1);
+  g.add(body);
+  for (let i = -1; i <= 1; i++) g.add(cylY(0.0325, 0.0325, 0.004, MAT.black, 0, i * 0.018)); // Rillen
+  g.add(cylY(0.012, 0.012, 0.022, MAT.steel, 0, 0.046));
+  const lever = box(0.006, 0.05, 0.012, MAT.steel, 0, 0.03, 0.03);
+  lever.rotation.z = -0.15;
+  g.add(lever);
+  const ring = new THREE.Mesh(cachedGeo('grenring', () => new THREE.TorusGeometry(0.012, 0.0018, 6, 16)), MAT.bright);
+  ring.position.set(-0.018, 0.056, 0);
+  ring.rotation.y = Math.PI / 2;
+  g.add(ring);
+  g.userData.ring = ring;
+  return g;
+}
 export const makeMag = (id) => BUILDERS[id + 'Mag']();
 export const MASS = { pistol: 0.9, smg: 2.6, shotgun: 3.3, sniper: 5.5 };
 

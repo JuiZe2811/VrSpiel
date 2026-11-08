@@ -5,6 +5,21 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 16
+
+- **💣 Handgranaten** – zwei am Gürtel (werden jede Welle aufgefüllt). Greifen, ausholen, Griff-Taste beim Werfen loslassen.
+  Nach gut 2 Sekunden explodieren sie: Druckwelle, abgerissene Gliedmaßen, umherfliegende Gegenstände.
+  Vorsicht – zu nah dran trifft es auch dich. Langsam am Gürtel loslassen = zurückstecken.
+- **🔪 Messer-Nahkampf** – mit dem Messer in der Hand einfach zustechen oder zuschlagen (Kopf zählt dreifach).
+- **🩹 Erste-Hilfe-Kästen** – erledigte Zombies lassen manchmal einen fallen; berühren heilt +35.
+- **Schwierigkeitsgrad** Leicht / Normal / Schwer und **🔊 Ansager** (sagt Wellen, Gefahren und Heilung an) im Menü.
+- **Zombies taumeln** bei harten Treffern, Schrot stößt sie zurück (Brocken nicht).
+- **Blutlachen** und Rußflecken auf dem Boden, **Bestenliste** (Top 5 je Modus).
+- **Versionsnummer** im Menü – so siehst du, ob die Quest die neueste Version geladen hat.
+
+**Tipp nach einem Update:** GitHub Pages und der Quest-Browser speichern Seiten bis zu ca. 10 Minuten zwischen.
+Steht im Menü nicht die neueste Version, kurz warten und die Seite neu laden.
+
 ## Spielen
 
 1. Die Seite muss über **HTTPS** erreichbar sein (z. B. GitHub Pages: *Settings → Pages → Branch wählen → Save*).
@@ -104,9 +119,11 @@ Punkte: Treffer +10, erledigt +100, Kopfschuss +150, überlebte Welle +50 × Wel
 
 `python3 -m http.server` im Ordner starten und `http://localhost:8000` öffnen (mit einem Beispielraum).
 1–4 Waffe · Linksklick schießen / Knöpfe · rechte Maustaste ziehen = umschauen · Leertaste = Visier ·
-R nachladen · V Feuermodus · F Messer werfen · Enter Start · Mausrad Zoom.
+R nachladen · V Feuermodus · F Messer werfen · G Granate · Enter Start · Mausrad Zoom.
 
 ## Technik
+
+- Neue Version veröffentlichen: `python3 tools/version.py <Nummer>` (hängt die Versionsnummer an alle Dateien an)
 
 - `index.html` + Module in `js/`: `main.js` (Spielablauf, Hände, Waffen-Mechanik), `weapons.js` (Modelle),
   `room.js` (Raum), `zombies.js` (Zombies, Bretter, Wegfindung mit A*), `physics.js` (cannon-es), `effects.js`, `sfx.js`, `util.js`

@@ -62,6 +62,16 @@ export const SFX = {
   },
   jingle(freqs, dur = 0.25) { if (!audioCtx) return; const t = audioCtx.currentTime; freqs.forEach((f, i) => tone(t + i * 0.09, f, f, dur, 0.22)); },
   beep() { if (!audioCtx) return; tone(audioCtx.currentTime, 1000, 1000, 0.08, 0.12, 'square'); },
+  explosion() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    noise(t, 1.6, 1.4, 'lowpass', 1800, 60);
+    noise(t, 0.25, 1.0, 'highpass', 2500, 900);
+    tone(t, 80, 22, 1.2, 1.0);
+    for (let i = 0; i < 6; i++) noise(t + 0.1 + Math.random() * 0.6, 0.05, 0.25, 'bandpass', 3000, 2000, 3); // Splitter
+  },
+  pin() { if (!audioCtx) return; const t = audioCtx.currentTime; tone(t, 2400, 2600, 0.05, 0.15, 'triangle'); noise(t + 0.06, 0.04, 0.3, 'bandpass', 3500, 3000, 6); },
+  tick() { if (!audioCtx) return; tone(audioCtx.currentTime, 1500, 1500, 0.03, 0.08, 'square'); },
   whoosh() { if (!audioCtx) return; noise(audioCtx.currentTime, 0.25, 0.25, 'bandpass', 700, 2200, 2); },
   thunk() { if (!audioCtx) return; const t = audioCtx.currentTime; noise(t, 0.08, 0.7, 'lowpass', 900, 200); tone(t, 180, 90, 0.1, 0.4); },
   clang() { if (!audioCtx) return; const t = audioCtx.currentTime; [1240, 1810, 2650].forEach((f, i) => tone(t, f, f * 0.98, 0.6 - i * 0.12, 0.18, 'triangle')); noise(t, 0.05, 0.4, 'highpass', 4000, 3000); },

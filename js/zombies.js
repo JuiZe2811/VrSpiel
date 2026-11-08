@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js';
-import { addDynamic, removeDynamic, localBoxOf } from './physics.js';
-import { SFX3D } from './sfx.js';
-import { burst, addDebris } from './effects.js';
-import { cachedGeo } from './util.js';
+import { room, surfacesOf, isOpening } from './room.js?v=16';
+import { addDynamic, removeDynamic, localBoxOf } from './physics.js?v=16';
+import { SFX3D } from './sfx.js?v=16';
+import { burst, addDebris } from './effects.js?v=16';
+import { cachedGeo } from './util.js?v=16';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -323,14 +323,15 @@ export function pickType(wave) {
   if (wave >= 2 && r < 0.45) return 'crawler';
   return 'walker';
 }
-export function spawnZombie(wave, head, type = pickType(wave)) {
+// opts.hp / opts.speed: Faktoren für den Schwierigkeitsgrad
+export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
   const T = TYPES[type];
   const z = buildZombie(type);
   const scale = rand(T.scale[0], T.scale[1]);
   z.root.scale.setScalar(scale);
   const zombie = {
-    ...z, type, T, scale, hp: T.hp + wave * 10, maxHp: T.hp + wave * 10, legHp: [60, 60].map(v => v * T.hp / 100), armHp: [45, 45].map(v => v * T.hp / 100), legLost: [false, false], armLost: [false, false],
-    state: 'outside', pos: new THREE.Vector3(), yaw: 0, speed: Math.min(1.6, (rand(0.42, 0.58) + wave * 0.04) * T.speed), phase: Math.random() * 6, jawT: Math.random() * 6,
+    ...z, type, T, scale, hp: (T.hp + wave * 10) * (opts.hp || 1), maxHp: (T.hp + wave * 10) * (opts.hp || 1), legHp: [60, 60].map(v => v * T.hp / 100), armHp: [45, 45].map(v => v * T.hp / 100), legLost: [false, false], armLost: [false, false],
+    state: 'outside', pos: new THREE.Vector3(), yaw: 0, speed: Math.min(1.8, (rand(0.42, 0.58) + wave * 0.04) * T.speed * (opts.speed || 1)), phase: Math.random() * 6, jawT: Math.random() * 6,
     path: null, pathT: 0, attackT: 1, actionT: 0, deadT: 0, hurtT: 0, groanT: rand(1, 4), opening: null, enterT: 0, crawl: false, fallDir: 1, headless: false
   };
   const ops = openings();
@@ -402,8 +403,15 @@ export function damageZombie(mesh, point, dir, dmg) {
   if (!z || !partName || z.state === 'dead') return null;
   burst(point, 0x6a0000, 10);
   SFX3D.splat(point);
-  z.hurtT = 0.25;
+  z.hurtT = Math.max(z.hurtT, 0.25);
   z.hurtDir = dir.clone();
+  // harte Treffer lassen den Zombie taumeln und stoßen ihn zurück (Brocken nicht)
+  if (z.type !== 'brute' && z.state !== 'outside' && z.state !== 'tear' && z.state !== 'enter') {
+    const push = Math.min(0.12, dmg * 0.0035);
+    const nx = z.pos.x + dir.x * push, nz = z.pos.z + dir.z * push;
+    if (walkable(nx, nz)) { z.pos.x = nx; z.pos.z = nz; }
+    if (dmg >= 30) z.stagger = Math.max(z.stagger || 0, Math.min(0.6, dmg * 0.006));
+  }
   let headshot = false;
   if (partName === 'head') { z.hp -= dmg * 3; headshot = true; }
   else if (partName === 'torso') z.hp -= dmg;
@@ -418,13 +426,42 @@ export function damageZombie(mesh, point, dir, dmg) {
     z.legHp[k] -= dmg;
     if (z.legHp[k] <= 0 && !z.legLost[k]) { detach(z, z.legs[k].hip, 'leg', k); z.crawl = true; }
   }
-  const res = { part: partName, headshot, kill: false, limp: z.legHp.some(h => h < 30) && !z.crawl };
+  const res = { part: partName, headshot, kill: false, limp: z.legHp.some(h => h < 30) && !z.crawl, pos: z.pos.clone(), type: z.type, zombie: z };
   if (z.hp <= 0) {
     res.kill = true;
     if (headshot && dmg * 3 >= 150) { z.head.visible = false; z.headless = true; burst(point, 0x7a0000, 30); }
     kill(z, dir);
   }
   return res;
+}
+// Explosion (Handgranate): Schaden nimmt mit der Entfernung ab, nahe Treffer reißen Gliedmaßen ab
+export function explosionDamage(center, radius, maxDmg) {
+  const results = [];
+  for (const z of zombies) {
+    if (z.state === 'dead') continue;
+    const d = Math.hypot(z.pos.x - center.x, z.pos.z - center.z, Math.max(0, center.y - 1.0) * 0.5);
+    const f = 1 - d / radius;
+    if (f <= 0) continue;
+    const dir = new THREE.Vector3(z.pos.x - center.x, 0, z.pos.z - center.z).normalize();
+    z.hp -= maxDmg * f;
+    z.hurtT = 0.4;
+    burst(z.skull.getWorldPosition(new THREE.Vector3()), 0x6a0000, 12);
+    if (f > 0.45) {
+      for (let k = 0; k < 2; k++) {
+        if (Math.random() < f * 0.6 && !z.legLost[k]) { detach(z, z.legs[k].hip, 'leg', k); z.crawl = true; }
+        if (Math.random() < f * 0.5 && !z.armLost[k]) detach(z, z.arms[k].shoulder, 'arm', k);
+      }
+    }
+    if (z.state !== 'outside' && z.state !== 'tear' && z.state !== 'enter') {
+      const nx = z.pos.x + dir.x * f * 0.8, nz = z.pos.z + dir.z * f * 0.8;
+      if (walkable(nx, nz)) { z.pos.x = nx; z.pos.z = nz; }
+      z.stagger = 1;
+    }
+    const res = { part: 'torso', headshot: false, kill: false, pos: z.pos.clone(), type: z.type, zombie: z, explosion: true };
+    if (z.hp <= 0) { res.kill = true; kill(z, dir); }
+    results.push(res);
+  }
+  return results;
 }
 function kill(z, dir) {
   z.state = 'dead';
@@ -499,6 +536,7 @@ export function updateZombies(dt, head, opts = {}) {
   for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
     z.hurtT = Math.max(0, z.hurtT - dt);
+    if (z.stagger > 0) z.stagger -= dt;
     if (z.state === 'dead') {
       z.deadT += dt;
       const k = Math.min(1, z.deadT / 0.7);
@@ -512,6 +550,7 @@ export function updateZombies(dt, head, opts = {}) {
     z.groanT -= dt;
     if (z.groanT <= 0) { z.groanT = rand(2.5, 6); SFX3D.groan(z.skull.getWorldPosition(tmpV2), 1 / z.scale); }
     let speed = z.speed * (z.crawl ? 0.35 : z.legHp.some(h => h < 30) ? 0.55 : 1);
+    if (z.stagger > 0 && (z.state === 'walk' || z.state === 'attack')) speed = 0; // taumelt
     const o = z.opening;
     if (z.state === 'rise') {
       z.root.position.y = Math.min(0, z.root.position.y + dt * 0.9);
@@ -573,7 +612,7 @@ export function updateZombies(dt, head, opts = {}) {
       if (dist < reach) {
         z.state = 'attack';
         faceTowards(z, player, dt, 8);
-        z.attackT -= dt;
+        if (!(z.stagger > 0)) z.attackT -= dt; // taumelnd kein Angriff
         animateAttack(z, dt);
         if (z.attackT <= 0) {
           z.attackT = 1.3;

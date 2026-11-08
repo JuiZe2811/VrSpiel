@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { makePanel } from './util.js';
-import { heightAt } from './room.js';
-import { SFX } from './sfx.js';
+import { makePanel } from './util.js?v=16';
+import { heightAt } from './room.js?v=16';
+import { SFX } from './sfx.js?v=16';
 
 // Kurzlebige Effekte: Leuchtspuren, Partikel, Punkte-Text, Einschusslöcher, Hülsen
 let scene;
@@ -117,3 +117,54 @@ export function updateDebris(dt) {
     if (d.life <= 0) { scene.remove(d.obj); debris.splice(i, 1); }
   }
 }
+
+// Druckwelle einer Explosion
+const waveGeo = new THREE.SphereGeometry(1, 20, 14);
+export function shockwave(pos) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const m = new THREE.Mesh(waveGeo, mat);
+  m.position.copy(pos);
+  scene.add(m);
+  effects.push({ obj: m, life: 0.45, maxLife: 0.45, update(dt, k) { m.scale.setScalar(0.2 + (1 - k) * 3.2); mat.opacity = 0.6 * k; }, dispose() { mat.dispose(); } });
+  const smoke = new THREE.MeshBasicMaterial({ color: 0x2a2826, transparent: true, opacity: 0.5, depthWrite: false });
+  const s = new THREE.Mesh(waveGeo, smoke);
+  s.position.copy(pos);
+  scene.add(s);
+  effects.push({ obj: s, life: 2.2, maxLife: 2.2, update(dt, k) { s.scale.setScalar(0.4 + (1 - k) * 1.6); s.position.y += dt * 0.4; smoke.opacity = 0.5 * k; }, dispose() { smoke.dispose(); } });
+}
+
+// Blutlachen / Rußflecken auf dem Boden (bleiben bis zur nächsten Runde)
+function splatTex(rgb) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  for (let i = 0; i < 26; i++) {
+    const r = 6 + Math.random() * 28, a = Math.random() * Math.PI * 2, d = Math.random() * 34;
+    ctx.fillStyle = `rgba(${rgb},${0.5 + Math.random() * 0.45})`;
+    ctx.beginPath(); ctx.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, r, 0, Math.PI * 2); ctx.fill();
+  }
+  for (let i = 0; i < 18; i++) { // Spritzer
+    const a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 22;
+    ctx.beginPath(); ctx.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 1 + Math.random() * 3, 0, Math.PI * 2); ctx.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const DECAL_MATS = {
+  blood: new THREE.MeshBasicMaterial({ map: splatTex('95,0,0'), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
+  scorch: new THREE.MeshBasicMaterial({ map: splatTex('20,18,16'), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })
+};
+const decalGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const decals = [];
+export function floorDecal(pos, kind = 'blood', size = 0.7) {
+  const m = new THREE.Mesh(decalGeo, DECAL_MATS[kind]);
+  m.position.set(pos.x, heightAt(pos.x, pos.z) + 0.004, pos.z);
+  m.rotation.y = Math.random() * Math.PI * 2;
+  m.scale.setScalar(size);
+  m.renderOrder = 1;
+  scene.add(m);
+  decals.push(m);
+  if (decals.length > 30) scene.remove(decals.shift());
+}
+export function clearDecals() { while (decals.length) scene.remove(decals.pop()); }
