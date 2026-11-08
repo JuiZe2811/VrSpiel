@@ -17,6 +17,10 @@
       position: absolute; bottom: 70px; left: 16px; color: #fff; background: rgba(0,0,0,.55);
       padding: 8px 12px; border-radius: 8px; font-size: 14px; pointer-events: none; white-space: pre-line;
     }
+    #camBtn {
+      position: absolute; bottom: 20px; right: 16px; padding: 10px 14px; border-radius: 8px; border: 1px solid #fff;
+      background: rgba(0,0,0,.6); color: #fff; font: 13px system-ui, sans-serif; cursor: pointer; max-width: 42vw;
+    }
     #crosshair {
       position: absolute; left: 0; top: 0; width: 6px; height: 6px; margin: -3px 0 0 -3px;
       border-radius: 50%; background: rgba(255,255,255,.8); pointer-events: none;
@@ -34,10 +38,11 @@
 <body>
   <div id="info">
     <b>Passthrough Schießstand</b> – Quest 3: „START AR“ drücken.<br />
-    PC-Test: 1–4 Waffe · Linksklick schießen · Rechte Maustaste ziehen = umschauen · Leertaste = Visier · R nachladen · V Feuermodus · Mausrad Zoom
+    PC-Test: 1–4 Waffe · Linksklick schießen · Rechte Maustaste ziehen = umschauen · Leertaste = Visier · R nachladen · V Feuermodus · F Messer werfen · Mausrad Zoom
   </div>
   <div id="status"></div>
   <div id="crosshair"></div>
+  <button id="camBtn">📷 Kamera fürs Zielfernrohr erlauben (optional)</button>
 
   <script type="module">
     import * as THREE from 'three';
@@ -125,15 +130,16 @@
       scene.background = null;
       desktopFloor.visible = false;
       ensureAudio();
-      if (W) scene.add(W.root);
+      if (W) { if (W.root.parent) W.root.parent.remove(W.root); W = null; } // Waffe in VR neu von der Wand nehmen
       setTimeout(placeMenu, 300);
     });
     renderer.xr.addEventListener('sessionend', () => {
       scene.background = desktopBackground;
       desktopFloor.visible = true;
       camera.position.set(0, 1.6, 0);
-      if (W) { camera.add(W.root); W.hand = -1; }
+      if (W) { camera.add(W.root); W.root.quaternion.identity(); W.hand = -1; }
       for (const h of hands) clearHand(h);
+      while (looseWeapons.length) scene.remove(looseWeapons.pop().inst.root);
       placeMenu();
     });
 
@@ -601,13 +607,17 @@
         objective.position.set(0, 0.11, -0.2405);
         objective.rotation.y = Math.PI;
         m.add(objective);
-        const eyepiece = new THREE.Mesh(new THREE.CircleGeometry(0.0175, 32), new THREE.MeshBasicMaterial({ map: scopeRT.texture, toneMapped: false }));
-        eyepiece.position.set(0, 0.11, 0.1656);
-        m.add(eyepiece);
-        P.scopeLens = eyepiece;
-        const reticle = new THREE.Mesh(new THREE.CircleGeometry(0.0175, 32), new THREE.MeshBasicMaterial({ map: reticleTexture, transparent: true, depthWrite: false, toneMapped: false }));
-        reticle.position.set(0, 0.11, 0.1658);
-        m.add(reticle);
+        // Okular: mehrere Schichten (Kamerabild / Durchblick, vergrößerte Ziele, Abdunklung, Fadenkreuz)
+        const circ = () => new THREE.CircleGeometry(0.0175, 32);
+        const lensMat = (o) => new THREE.MeshBasicMaterial(Object.assign({ toneMapped: false, depthWrite: false, transparent: true }, o));
+        const layer = (mat, order, z) => { const l = new THREE.Mesh(circ(), mat); l.position.set(0, 0.11, z); l.renderOrder = order; m.add(l); return l; };
+        P.lensHole = layer(lensMat({ color: 0x000000, opacity: 0, blending: THREE.NoBlending }), 10, 0.1656);
+        P.lensVideo = layer(lensMat({ color: 0xffffff, transparent: false }), 10, 0.1656);
+        P.lensVideo.visible = false;
+        P.lensHole.visible = false;
+        P.lensRT = layer(lensMat({ map: scopeRT.texture }), 11, 0.16565);
+        P.lensShade = layer(lensMat({ color: 0x000000, opacity: 0 }), 12, 0.1657);
+        layer(lensMat({ map: reticleTexture }), 13, 0.1658);
         sock('sightRear', -0.166, 0.11);
         sock('sightFront', 0.24, 0.11);
         sock('scopeEye', -0.1656, 0.11);
@@ -733,10 +743,14 @@
     const hands = [0, 1].map(i => {
       const ray = renderer.xr.getController(i);
       scene.add(ray);
-      const h = { i, ray, src: null, handedness: i === 0 ? 'left' : 'right', btn: {}, prev: {}, item: null, grab: null, inBelt: false };
+      const h = {
+        i, ray, src: null, handedness: i === 0 ? 'left' : 'right', btn: {}, prev: {}, stickY: 0,
+        item: null, knife: null, grab: null, consumedTrigger: false,
+        hist: [], vel: new THREE.Vector3(), point: new THREE.Vector3()
+      };
       ray.addEventListener('connected', (e) => { h.src = e.data; h.handedness = e.data.handedness; });
-      ray.addEventListener('disconnected', () => { h.src = null; clearHand(h); });
-      // Zeigestrahl (nur im Menü ohne Waffe)
+      ray.addEventListener('disconnected', () => { clearHand(h); h.src = null; });
+      // Zeigestrahl (nur wenn die Hand leer ist und es etwas zu greifen gibt)
       const ptr = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
         new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }));
       ptr.scale.z = 3;
@@ -746,6 +760,12 @@
       return h;
     });
     const BTN = { trigger: 0, squeeze: 1, stick: 3, a: 4, b: 5 };
+    const tmpM = new THREE.Matrix4(), tmpM2 = new THREE.Matrix4();
+    const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpV3 = new THREE.Vector3();
+    const tmpQ = new THREE.Quaternion(), tmpS = new THREE.Vector3();
+    const FWD = new THREE.Vector3(0, 0, -1), XAXIS = new THREE.Vector3(1, 0, 0);
+
+    const handPoint = (h, out) => out.setFromMatrixPosition(tmpM.multiplyMatrices(h.ray.matrixWorld, HOLD_OFFSET));
     function readInputs() {
       for (const h of hands) {
         h.prev = h.btn;
@@ -753,6 +773,12 @@
         const gp = h.src && h.src.gamepad;
         for (const [k, idx] of Object.entries(BTN)) h.btn[k] = !!(gp && gp.buttons[idx] && gp.buttons[idx].pressed);
         h.stickY = gp && gp.axes.length > 3 ? gp.axes[3] : 0;
+        // Handposition + Geschwindigkeit (für Würfe)
+        handPoint(h, h.point);
+        h.hist.push({ p: h.point.clone(), t: elapsed });
+        while (h.hist.length > 2 && elapsed - h.hist[0].t > 0.1) h.hist.shift();
+        const a = h.hist[0], b = h.hist[h.hist.length - 1];
+        if (b.t - a.t > 0.001) h.vel.copy(b.p).sub(a.p).divideScalar(b.t - a.t);
       }
     }
     const down = (h, k) => h.btn[k] && !h.prev[k];
@@ -763,38 +789,110 @@
       const act = h && h.src && h.src.gamepad && h.src.gamepad.hapticActuators && h.src.gamepad.hapticActuators[0];
       if (act && act.pulse) act.pulse(intensity, ms);
     }
-    const handPoint = (h, out) => out.setFromMatrixPosition(tmpM.multiplyMatrices(h.ray.matrixWorld, HOLD_OFFSET));
     function clearHand(h) {
       if (h.item) { h.ray.remove(h.item.obj); h.item = null; }
+      if (h.knife) { h.ray.remove(h.knife.obj); h.knife = null; }
       h.grab = null;
+    }
+    // Hand lässt los (Griff-Taste losgelassen)
+    function releaseHand(h) {
+      if (h.grab) {
+        if (h.grab.back && W) actionForward(); // Federkraft schiebt nach vorne
+        h.grab = null;
+      }
+      if (h.item) {
+        const obj = h.item.obj;
+        obj.updateWorldMatrix(true, false);
+        obj.matrixWorld.decompose(obj.position, obj.quaternion, tmpS);
+        h.ray.remove(obj);
+        addDebris(obj, h.vel.clone(), 4, false);
+        h.item = null;
+      }
+      if (h.knife) throwKnife(h);
     }
 
     // =========================================================================
     // Waffe in der Hand: Zustand & Mechanik
     // =========================================================================
-    let W = null;
-    const tmpM = new THREE.Matrix4(), tmpM2 = new THREE.Matrix4();
-    const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpV3 = new THREE.Vector3();
-    const tmpQ = new THREE.Quaternion(), tmpS = new THREE.Vector3();
+    let W = null;               // Waffe, die gerade gehalten wird
+    const looseWeapons = [];    // abgelegte Waffen
+    const mode = () => W.def.modes[W.modeIdx];
+    const offHand = () => (W && W.hand >= 0 ? hands[1 - W.hand] : null);
 
     function equip(id, handIndex) {
-      if (W) { W.root.parent && W.root.parent.remove(W.root); }
-      for (const h of hands) clearHand(h);
       const inst = buildWeapon(id);
       const def = inst.def;
-      W = Object.assign(inst, {
+      Object.assign(inst, {
         id, hand: handIndex,
         chamber: 'live', magInserted: def.feed === 'mag', magRounds: def.capacity, tube: def.feed === 'tube' ? def.capacity : 0,
         actionOpen: false, modeIdx: def.startMode, cooldown: 0, recoil: 0, cycleAnim: 0, travel: 0,
-        twoHanding: false, zoom: 6, desktopBusy: false, aim: 0
+        twoHanding: false, zoom: 6, desktopBusy: false, aim: 0, aligned: false
       });
+      takeWeapon(inst, handIndex);
+    }
+    function takeWeapon(inst, handIndex) {
+      if (W) {
+        if (renderer.xr.isPresenting && W.hand >= 0) dropWeapon(hands[W.hand]);
+        else if (W.root.parent) W.root.parent.remove(W.root);
+      }
+      for (const h of hands) h.grab = null;
+      W = inst;
+      W.hand = handIndex;
+      W.twoHanding = false;
+      W.handTravel = false;
       if (renderer.xr.isPresenting) scene.add(W.root);
-      else camera.add(W.root);
+      else { camera.add(W.root); W.root.quaternion.identity(); }
+      setBeltWeapon(W.id);
       SFX.grab();
       boardDirty = true;
     }
-    const mode = () => W.def.modes[W.modeIdx];
-    const offHand = () => (W && W.hand >= 0 ? hands[1 - W.hand] : null);
+    function dropWeapon(h) {
+      const off = offHand();
+      if (off && off.grab) { if (off.grab.back) actionForward(); off.grab = null; }
+      W.twoHanding = false; W.handTravel = false; W.recoil = 0; W.cycleAnim = 0;
+      W.parts.flash.visible = false;
+      W.parts.flashLight.intensity = 0;
+      W.body.position.set(0, 0, 0);
+      W.body.rotation.set(0, 0, 0);
+      W.hand = -1;
+      const vel = h.vel.clone();
+      // Langsam losgelassen: bleibt in der Luft schweben (zum Umgreifen); geworfen: fällt
+      const hover = vel.length() < 0.8;
+      looseWeapons.push({ inst: W, vel: hover ? new THREE.Vector3() : vel, hover, resting: false, box: new THREE.Box3(),
+        spin: new THREE.Vector3().randomDirection().multiplyScalar(hover ? 0 : 3), t: 0, baseY: W.root.position.y });
+      if (looseWeapons.length > 4) { const old = looseWeapons.shift(); scene.remove(old.inst.root); }
+      W = null;
+      SFX.grab();
+      pulse(h, 0.3, 30);
+      boardDirty = true;
+    }
+    function pickUp(lw, handIndex) {
+      looseWeapons.splice(looseWeapons.indexOf(lw), 1);
+      takeWeapon(lw.inst, handIndex);
+    }
+    function updateLoose(dt) {
+      for (const lw of looseWeapons) {
+        const r = lw.inst.root;
+        lw.t += dt;
+        if (lw.hover) {
+          r.position.y = lw.baseY + Math.sin(lw.t * 2) * 0.005;
+        } else if (!lw.resting) {
+          lw.vel.y -= 9.81 * dt;
+          r.position.addScaledVector(lw.vel, dt);
+          r.rotation.x += lw.spin.x * dt;
+          r.rotation.z += lw.spin.z * dt;
+          if (r.position.y < 0.03) {
+            r.position.y = 0.03;
+            lw.resting = true;
+            const f = tmpV.set(0, 0, -1).applyQuaternion(r.quaternion);
+            r.quaternion.setFromEuler(new THREE.Euler(0, Math.atan2(-f.x, -f.z), Math.PI / 2, 'YXZ'));
+            SFX.click(500, 0.5, 0.1);
+          }
+        } else continue;
+        r.updateMatrixWorld(true);
+        lw.box.setFromObject(r);
+      }
+    }
 
     function ejectObject(obj, speed = 1.6) {
       // Hülse/Patrone fliegt rechts aus dem Auswurffenster
@@ -865,6 +963,28 @@
       return true;
     }
 
+    // ---- Treffer werten (Schuss und Messer) --------------------------------
+    function scoreTargetHit(target, ring, point, mult, prefix = '') {
+      let pts = RING_POINTS[ring];
+      if (target.userData.motion) pts += 2;
+      if (state === 'playing') {
+        hits++;
+        if (ring === 0) bullseyes++;
+        const gained = Math.round(pts * combo * mult);
+        score += gained;
+        floatingText(`${prefix}+${gained}${combo > 1 ? ` (x${combo})` : ''}`, point, ring === 0 ? '#ffd21f' : '#ffffff');
+        combo = Math.min(5, combo + 1);
+      }
+      SFX.hit(RING_POINTS[ring]);
+      burst(point, ring === 0 ? 0xffd21f : 0xff4433, ring === 0 ? 30 : 16);
+      explodeTarget(target);
+      boardDirty = true;
+    }
+    const ringOf = (face, point) => {
+      const local = face.worldToLocal(point.clone());
+      return { local, ring: Math.floor(Math.min(0.999, Math.hypot(local.x, local.y) / TARGET_RADIUS) * RING_POINTS.length) };
+    };
+
     // ---- Schießen ----------------------------------------------------------
     const raycaster = new THREE.Raycaster();
     function tryFire(desktopRay) {
@@ -896,10 +1016,7 @@
       let startHit = null;
       for (let p = 0; p < W.def.pellets; p++) {
         const d = dir.clone();
-        if (spread > 0) {
-          const r = spread * Math.sqrt(Math.random());
-          d.add(new THREE.Vector3().randomDirection().multiplyScalar(r)).normalize();
-        }
+        if (spread > 0) d.add(new THREE.Vector3().randomDirection().multiplyScalar(spread * Math.sqrt(Math.random()))).normalize();
         raycaster.set(origin, d);
         raycaster.far = 200;
         const hit = raycaster.intersectObjects(candidates, false)[0];
@@ -909,9 +1026,8 @@
         if (hit.object.userData.isStart) { startHit = hit; continue; }
         const target = hit.object.userData.target;
         if (!target || target.userData.dying) continue;
-        const local = hit.object.worldToLocal(hit.point.clone());
+        const { local, ring } = ringOf(hit.object, hit.point);
         bulletHole(hit.object, local);
-        const ring = Math.floor(Math.min(0.999, Math.hypot(local.x, local.y) / TARGET_RADIUS) * RING_POINTS.length);
         const prev = hitsByTarget.get(target);
         if (!prev || ring < prev.ring) hitsByTarget.set(target, { ring, point: hit.point.clone() });
       }
@@ -931,74 +1047,93 @@
         return true;
       }
       if (state === 'playing' && hitsByTarget.size === 0) combo = 1;
-      for (const [target, h] of hitsByTarget) {
-        let pts = RING_POINTS[h.ring];
-        if (target.userData.motion) pts += 2;
-        if (state === 'playing') {
-          hits++;
-          if (h.ring === 0) bullseyes++;
-          const gained = Math.round(pts * combo * W.def.scoreMult);
-          score += gained;
-          floatingText(`+${gained}${combo > 1 ? ` (x${combo})` : ''}`, h.point, h.ring === 0 ? '#ffd21f' : '#ffffff');
-          combo = Math.min(5, combo + 1);
-        }
-        SFX.hit(RING_POINTS[h.ring]);
-        burst(h.point, h.ring === 0 ? 0xffd21f : 0xff4433, h.ring === 0 ? 30 : 16);
-        explodeTarget(target);
-      }
+      for (const [target, h] of hitsByTarget) scoreTargetHit(target, h.ring, h.point, W.def.scoreMult);
       return true;
+    }
+
+    // ---- Hände: greifen, loslassen, zeigen (VR) ----------------------------
+    function tryOffhandGrab(h, p) {
+      if (!W || W.hand < 0 || W.hand === h.i) return false;
+      const opts = [];
+      if (W.def.action !== 'pump') opts.push({ type: 'charger', d: p.distanceTo(W.sockets.chargerGrab.getWorldPosition(tmpV)) / 0.07 });
+      if (W.sockets.foregrip) opts.push({ type: 'fore', d: p.distanceTo(W.sockets.foregrip.getWorldPosition(tmpV)) / 0.13 });
+      opts.push({ type: 'swap', d: p.distanceTo(W.root.getWorldPosition(tmpV)) / 0.06 });
+      opts.sort((a, b) => a.d - b.d);
+      const o = opts[0];
+      if (o.d > 1) return false;
+      if (o.type === 'swap') {
+        // Waffe in die andere Hand übergeben
+        W.hand = h.i;
+        h.consumedTrigger = h.btn.trigger;
+        SFX.grab();
+        pulse(h, 0.5, 40);
+        boardDirty = true;
+        return true;
+      }
+      h.grab = { type: o.type, startZ: W.root.worldToLocal(p.clone()).z, back: false };
+      SFX.grab();
+      pulse(h, 0.4, 30);
+      return true;
+    }
+
+    function updateHandsXR() {
+      for (const it of rackItems) it.hover = false;
+      for (const h of hands) {
+        if (!h.src) { h.pointer.visible = false; continue; }
+        const p = h.point;
+        const holdsWeapon = W && W.hand === h.i;
+        const busy = holdsWeapon || h.item || h.knife || h.grab;
+
+        // Zeigestrahl auf Waffenwand oder abgelegte Waffen
+        let pointed = null, pointDist = 3;
+        if (!busy && (rack.visible || looseWeapons.length)) {
+          h.ray.getWorldPosition(tmpV);
+          h.ray.getWorldQuaternion(tmpQ);
+          raycaster.set(tmpV, tmpV3.set(0, 0, -1).applyQuaternion(tmpQ));
+          const test = (box, obj) => {
+            const hit = raycaster.ray.intersectBox(box, tmpV2);
+            if (hit) { const d = hit.distanceTo(tmpV); if (d < pointDist) { pointDist = d; pointed = obj; } }
+          };
+          if (rack.visible) for (const it of rackItems) test(it.box, { rack: it });
+          for (const lw of looseWeapons) test(lw.box, { loose: lw });
+          h.pointer.visible = true;
+          h.pointer.scale.z = pointDist;
+        } else h.pointer.visible = false;
+
+        const nearRack = rack.visible ? rackItems.find(it => it.box.distanceToPoint(p) < 0.04) : null;
+        const nearLoose = looseWeapons.find(lw => lw.box.distanceToPoint(p) < 0.05);
+        if (nearRack) nearRack.hover = true;
+        if (pointed && pointed.rack) pointed.rack.hover = true;
+
+        if (down(h, 'squeeze') && !busy) {
+          if (tryOffhandGrab(h, p)) { /* Waffe mit 2. Hand gegriffen */ }
+          else if (tryBeltGrab(h, p)) { /* vom Gürtel genommen */ }
+          else if (nearLoose) pickUp(nearLoose, h.i);
+          else if (nearRack) equip(nearRack.id, h.i);
+          else if (pointed) pointed.rack ? equip(pointed.rack.id, h.i) : pickUp(pointed.loose, h.i);
+        }
+        if (down(h, 'trigger') && !busy && pointed) {
+          pointed.rack ? equip(pointed.rack.id, h.i) : pickUp(pointed.loose, h.i);
+          h.consumedTrigger = true;
+          pulse(h, 0.6, 50);
+        }
+        if (holdsWeapon && down(h, 'stick')) { dropWeapon(h); continue; }
+        if (up(h, 'squeeze')) releaseHand(h);
+      }
+      if (rack.visible) for (const it of rackItems) {
+        drawRackLabel(it, W && W.id === it.id, it.hover);
+        it.holder.scale.setScalar(it.hover ? 1.06 : 1);
+      }
     }
 
     // ---- Waffen-Logik pro Frame (VR) ---------------------------------------
     function updateWeaponXR(dt) {
       const main = hands[W.hand];
-      const off = offHand();
-      const offPos = off ? handPoint(off, new THREE.Vector3()) : null;
-      W.root.updateMatrixWorld(true);
-
-      // --- zweite Hand: greifen / loslassen
-      if (off && off.src) {
-        if (down(off, 'squeeze') && !off.item && !off.grab) {
-          const chPos = W.sockets.chargerGrab.getWorldPosition(new THREE.Vector3());
-          const fgPos = W.sockets.foregrip ? W.sockets.foregrip.getWorldPosition(new THREE.Vector3()) : null;
-          const local = W.root.worldToLocal(offPos.clone());
-          if (W.def.action !== 'pump' && offPos.distanceTo(chPos) < 0.09) {
-            off.grab = { type: 'charger', startZ: local.z, back: false };
-            SFX.grab(); pulse(off, 0.4, 30);
-          } else if (fgPos && offPos.distanceTo(fgPos) < 0.14) {
-            off.grab = { type: 'fore', startZ: local.z, back: false };
-            pulse(off, 0.4, 30);
-          } else if (isBeltZone(offPos)) {
-            const obj = W.def.feed === 'mag' ? BUILDERS[W.id + 'Mag']() : makeShell();
-            obj.position.set(0, 0.05, -0.03);
-            obj.rotation.x = -0.3;
-            off.ray.add(obj);
-            off.item = { type: W.def.feed, obj };
-            SFX.grab(); pulse(off, 0.5, 40);
-          }
-        }
-        if (up(off, 'squeeze')) {
-          if (off.grab && off.grab.back) actionForward(); // Federkraft schiebt nach vorne
-          off.grab = null;
-          if (off.item) {
-            // Fallen lassen
-            const obj = off.item.obj;
-            obj.updateWorldMatrix(true, false);
-            obj.matrixWorld.decompose(obj.position, obj.quaternion, tmpS);
-            off.ray.remove(obj);
-            addDebris(obj, new THREE.Vector3(0, -0.5, 0), 4, false);
-            off.item = null;
-          }
-        }
-        // Hüft-Zone: kurzes Vibrieren als Hinweis
-        const inBelt = !off.item && !off.grab && isBeltZone(offPos);
-        if (inBelt && !off.inBelt) pulse(off, 0.25, 25);
-        off.inBelt = inBelt;
-      }
-      W.twoHanding = !!(off && off.grab && off.grab.type === 'fore');
+      const off = hands[1 - W.hand];
+      const offPos = off.point;
+      W.twoHanding = !!(off.src && off.grab && off.grab.type === 'fore');
 
       // --- Pose berechnen
-      main.ray.updateMatrixWorld(true);
       tmpM.multiplyMatrices(main.ray.matrixWorld, HOLD_OFFSET);
       tmpM.decompose(W.root.position, W.root.quaternion, tmpS);
       if (W.twoHanding) {
@@ -1009,7 +1144,7 @@
       W.root.updateMatrixWorld(true);
 
       // --- Verschluss / Schlitten / Pumpe mit der Hand bewegen
-      if (off && off.grab && (off.grab.type === 'charger' || (off.grab.type === 'fore' && W.def.action === 'pump'))) {
+      if (off.grab && (off.grab.type === 'charger' || (off.grab.type === 'fore' && W.def.action === 'pump'))) {
         const local = W.root.worldToLocal(offPos.clone());
         const g = off.grab;
         W.travel = THREE.MathUtils.clamp(local.z - g.startZ, 0, W.def.travel);
@@ -1019,7 +1154,7 @@
       } else W.handTravel = false;
 
       // --- Magazin / Patrone einführen
-      if (off && off.item) {
+      if (off.item) {
         const itemPos = off.item.obj.getWorldPosition(new THREE.Vector3());
         if (off.item.type === 'mag' && !W.magInserted && itemPos.distanceTo(W.sockets.magwell.getWorldPosition(tmpV)) < 0.07) {
           off.ray.remove(off.item.obj);
@@ -1047,12 +1182,246 @@
       }
 
       // --- Abzug
+      if (main.consumedTrigger) { if (!main.btn.trigger) main.consumedTrigger = false; return; }
       if (down(main, 'trigger')) { if (W.cooldown <= 0) tryFire(); }
       else if (main.btn.trigger && mode() === 'auto' && W.cooldown <= 0 && W.chamber === 'live') tryFire();
     }
 
-    function isBeltZone(p) {
-      return p.y < headPos.y - 0.35;
+    // =========================================================================
+    // Gürtel mit Munition und Messer
+    // =========================================================================
+    const belt = new THREE.Group();
+    scene.add(belt);
+    const BELT_R = 0.17;
+    const beltSlots = [];
+    let beltWeaponId = null, beltYaw = 0;
+    const leather = new THREE.MeshStandardMaterial({ color: 0x4a2f1c, roughness: 0.75, side: THREE.DoubleSide });
+    const pouchMat = new THREE.MeshStandardMaterial({ color: 0x3c4130, roughness: 0.95 });
+    {
+      belt.add(new THREE.Mesh(new THREE.CylinderGeometry(BELT_R, BELT_R, 0.045, 48, 1, true), leather));
+      const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.052, 0.01), MAT.bright);
+      buckle.position.set(0, 0, -BELT_R - 0.004);
+      belt.add(buckle);
+      const inner = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.036, 0.012), leather);
+      inner.position.set(0, 0, -BELT_R - 0.006);
+      belt.add(inner);
+    }
+    function beltMount(phi) {
+      const g = new THREE.Group();
+      g.position.set(Math.sin(phi) * BELT_R, 0, -Math.cos(phi) * BELT_R);
+      g.rotation.y = -phi;
+      belt.add(g);
+      return g;
+    }
+    // Messerscheide
+    const knifeSlot = (() => {
+      const mount = beltMount(-1.3);
+      const sheath = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.14, 0.036), leather);
+      sheath.position.set(0, -0.075, -0.02);
+      mount.add(sheath);
+      const knife = makeKnife();
+      knife.rotation.x = -Math.PI / 2;
+      knife.position.set(0, 0.055, -0.02);
+      mount.add(knife);
+      const slot = { kind: 'knife', mount, obj: knife, available: true, refill: 0, radius: 0.1 };
+      beltSlots.push(slot);
+      return slot;
+    })();
+    function setBeltWeapon(id) {
+      if (id === beltWeaponId) return;
+      beltWeaponId = id;
+      for (let i = beltSlots.length - 1; i >= 0; i--) {
+        if (beltSlots[i].kind === 'knife') continue;
+        belt.remove(beltSlots[i].mount);
+        beltSlots.splice(i, 1);
+      }
+      const def = WEAPON_DEFS[id];
+      for (const side of [-1, 1]) {
+        const mount = beltMount(side * 0.55);
+        if (def.feed === 'mag') {
+          const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.075, 0.042), pouchMat);
+          pouch.position.set(0, -0.022, -0.024);
+          mount.add(pouch);
+          const mag = BUILDERS[id + 'Mag']();
+          mag.position.set(0, 0.035, -0.024);
+          mount.add(mag);
+          beltSlots.push({ kind: 'mag', mount, obj: mag, available: true, refill: 0, radius: 0.09 });
+        } else {
+          const strip = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.032, 0.008), leather);
+          strip.position.set(0, 0, -0.014);
+          mount.add(strip);
+          for (let k = 0; k < 4; k++) {
+            const sh = makeShell();
+            sh.position.set(-0.036 + k * 0.024, 0.008, -0.027);
+            mount.add(sh);
+            beltSlots.push({ kind: 'shell', mount, obj: sh, available: true, refill: 0, radius: 0.045 });
+          }
+        }
+      }
+    }
+    const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+    function updateBelt(dt) {
+      const view = getViewCamera();
+      view.getWorldQuaternion(tmpQ);
+      // Hüfte sitzt unter dem Hals, nicht unter den Augen (beim Runterschauen bleibt der Gürtel stehen)
+      const neck = tmpV.set(0, -0.08, 0.1).applyQuaternion(tmpQ).add(headPos);
+      belt.position.set(neck.x, neck.y - 0.5, neck.z);
+      const f = tmpV2.set(0, 0, -1).applyQuaternion(tmpQ);
+      if (Math.abs(f.y) < 0.85) {
+        const diff = wrapAngle(Math.atan2(-f.x, -f.z) - beltYaw);
+        if (Math.abs(diff) > 0.45) beltYaw += diff - Math.sign(diff) * 0.45;
+        beltYaw += diff * Math.min(1, dt * 0.7);
+      }
+      belt.rotation.y = beltYaw;
+      // Messer auf der Seite der freien Hand
+      const side = W && W.hand >= 0 && hands[W.hand].handedness === 'left' ? 1 : -1;
+      const phi = side * 1.3;
+      knifeSlot.mount.position.set(Math.sin(phi) * BELT_R, 0, -Math.cos(phi) * BELT_R);
+      knifeSlot.mount.rotation.y = -phi;
+      for (const s of beltSlots) {
+        if (s.available) continue;
+        s.refill -= dt;
+        if (s.refill <= 0) { s.available = true; s.obj.visible = true; }
+      }
+      belt.updateMatrixWorld(true);
+    }
+    function tryBeltGrab(h, p) {
+      let best = null, bd = Infinity;
+      const offHandOfWeapon = W && W.hand >= 0 && W.hand !== h.i;
+      for (const s of beltSlots) {
+        if (!s.available) continue;
+        if (s.kind !== 'knife' && !offHandOfWeapon) continue; // Munition nur mit der freien Hand
+        const d = s.obj.getWorldPosition(tmpV).distanceTo(p);
+        if (d < s.radius && d < bd) { bd = d; best = s; }
+      }
+      if (!best) return false;
+      best.available = false;
+      best.obj.visible = false;
+      best.refill = best.kind === 'knife' ? 2 : 1.2;
+      if (best.kind === 'knife') {
+        const k = makeKnife();
+        k.position.set(0, -0.045, 0.015);
+        h.ray.add(k);
+        h.knife = { obj: k };
+      } else {
+        const obj = best.kind === 'mag' ? BUILDERS[W.id + 'Mag']() : makeShell();
+        obj.position.set(0, 0.05, -0.03);
+        obj.rotation.x = -0.3;
+        h.ray.add(obj);
+        h.item = { type: best.kind === 'mag' ? 'mag' : 'tube', obj };
+      }
+      SFX.grab();
+      pulse(h, 0.5, 40);
+      return true;
+    }
+
+    // =========================================================================
+    // Wurfmesser
+    // =========================================================================
+    function makeKnife() {
+      const g = new THREE.Group();
+      g.add(prof([[-0.055, -0.011], [0.035, -0.012], [0.035, 0.012], [-0.055, 0.011], [-0.062, 0]], 0.022, MAT.grip, 0.004));
+      g.add(box(0.026, 0.036, 0.006, MAT.steel, 0.038, 0));
+      g.add(prof([[0.04, 0.011], [0.13, 0.011], [0.175, 0.0], [0.16, -0.008], [0.04, -0.011]], 0.004, MAT.bright, 0.001));
+      g.add(box(0.024, 0.022, 0.008, MAT.steel, -0.064, 0));
+      return g;
+    }
+    const knives = [];
+    function throwKnife(h) {
+      const k = h.knife.obj;
+      h.knife = null;
+      k.updateWorldMatrix(true, false);
+      k.matrixWorld.decompose(k.position, k.quaternion, tmpS);
+      h.ray.remove(k);
+      scene.add(k);
+      const v = h.vel.clone();
+      if (v.length() < 1.5) {
+        // Langsam losgelassen: zurück in die Scheide oder fallen lassen
+        if (k.position.distanceTo(knifeSlot.obj.getWorldPosition(tmpV)) < 0.15) {
+          scene.remove(k);
+          knifeSlot.available = true;
+          knifeSlot.obj.visible = true;
+          SFX.click(900, 0.3, 0.05);
+          return;
+        }
+        knives.push({ obj: k, vel: v, flying: true, spin: 0, spinRate: 3, life: 6 });
+        return;
+      }
+      launchKnife(k, aimAssist(k.position, v.multiplyScalar(1.5)));
+    }
+    function launchKnife(k, vel) {
+      if (state === 'playing') { shots++; boardDirty = true; }
+      knives.push({ obj: k, vel, flying: true, spin: 0, spinRate: 14, life: 8 });
+      if (audioCtx) noise(audioCtx.currentTime, 0.25, 0.25, 'bandpass', 700, 2200, 2);
+      while (knives.length > 10) { const old = knives.shift(); if (old.obj.parent) old.obj.parent.remove(old.obj); }
+    }
+    // Wurfhilfe: Liegt eine Scheibe ungefähr in Wurfrichtung, wird die Flugbahn passend berechnet
+    function aimAssist(pos, vel) {
+      const flat = new THREE.Vector3(vel.x, 0, vel.z);
+      if (flat.lengthSq() < 1e-4) return vel;
+      flat.normalize();
+      const cands = targets.filter(t => !t.userData.dying).map(t => t.position);
+      if (startButton.visible) cands.push(startButton.getWorldPosition(new THREE.Vector3()));
+      let best = null, bestAng = 0.26;
+      for (const c of cands) {
+        const to = c.clone().sub(pos);
+        const d = Math.hypot(to.x, to.z);
+        if (d < 0.5 || d > 14) continue;
+        const ang = flat.angleTo(new THREE.Vector3(to.x, 0, to.z).normalize());
+        if (ang < bestAng) { bestAng = ang; best = c; }
+      }
+      if (!best) return vel;
+      const to = best.clone().sub(pos);
+      const d = Math.hypot(to.x, to.z), hgt = to.y, g = 9.81;
+      const v = THREE.MathUtils.clamp(vel.length(), 7, 15);
+      const disc = v ** 4 - g * (g * d * d + 2 * hgt * v * v);
+      if (disc < 0) return vel;
+      const theta = Math.atan((v * v - Math.sqrt(disc)) / (g * d));
+      return new THREE.Vector3(to.x, 0, to.z).normalize().multiplyScalar(v * Math.cos(theta)).add(new THREE.Vector3(0, v * Math.sin(theta), 0));
+    }
+    function updateKnives(dt) {
+      for (let i = knives.length - 1; i >= 0; i--) {
+        const k = knives[i];
+        k.life -= dt;
+        if (k.life <= 0) { if (k.obj.parent) k.obj.parent.remove(k.obj); knives.splice(i, 1); continue; }
+        if (!k.flying) continue;
+        k.vel.y -= 9.81 * dt;
+        const step = k.vel.clone().multiplyScalar(dt);
+        const len = step.length();
+        const dir = step.clone().normalize();
+        raycaster.set(k.obj.position, dir);
+        raycaster.far = len + 0.15;
+        const cands = startButton.visible ? [...hitMeshes, ...startButton.userData.hit] : hitMeshes;
+        const hit = raycaster.intersectObjects(cands, false)[0];
+        if (hit) { stickKnife(k, hit, dir); continue; }
+        k.obj.position.add(step);
+        k.spin += k.spinRate * dt;
+        k.obj.quaternion.setFromUnitVectors(FWD, dir).multiply(tmpQ.setFromAxisAngle(XAXIS, -k.spin));
+        if (k.obj.position.y < 0.02) {
+          k.flying = false;
+          k.life = 4;
+          k.obj.position.y = 0.012;
+          k.obj.quaternion.setFromEuler(new THREE.Euler(0, Math.random() * 6.28, Math.PI / 2, 'YXZ'));
+          SFX.click(2200, 0.3, 0.06);
+        }
+      }
+    }
+    function stickKnife(k, hit, dir) {
+      k.flying = false;
+      k.life = 3;
+      k.obj.quaternion.setFromUnitVectors(FWD, dir);
+      k.obj.position.copy(hit.point).addScaledVector(dir, -0.14);
+      hit.object.attach(k.obj);
+      if (audioCtx) { const t = audioCtx.currentTime; noise(t, 0.08, 0.7, 'lowpass', 900, 200); tone(t, 180, 90, 0.1, 0.4); }
+      if (hit.object.userData.isStart) {
+        burst(hit.point, 0x33ff77, 20);
+        if (state !== 'playing') startRound();
+        return;
+      }
+      const target = hit.object.userData.target;
+      if (!target || target.userData.dying) return;
+      const { ring } = ringOf(hit.object, hit.point);
+      scoreTargetHit(target, ring, hit.point, 2, '🔪 ');
     }
 
     // ---- Desktop: automatisierte Abläufe ------------------------------------
@@ -1315,9 +1684,9 @@
           ctx.fillText('🎯 Schießstand', w / 2, h * 0.17);
           ctx.font = '34px system-ui, sans-serif';
           ctx.fillStyle = '#cfd8e3';
-          ctx.fillText('1. Waffe an der Wand greifen (Griff-Taste)', w / 2, h * 0.36);
-          ctx.fillText('   oder darauf zeigen + Abzug', w / 2, h * 0.47);
-          ctx.fillText(`2. Auf START schießen · ${ROUND_TIME} Sekunden Zeit`, w / 2, h * 0.6);
+          ctx.fillText('1. Waffe von der Wand nehmen (Griff oder Zeigen + Abzug)', w / 2, h * 0.34);
+          ctx.fillText(`2. Auf START schießen · ${ROUND_TIME} Sekunden Zeit`, w / 2, h * 0.46);
+          ctx.fillText('Munition & Wurfmesser: am Gürtel (nach unten schauen)', w / 2, h * 0.58);
           ctx.fillStyle = '#ffcc33';
           ctx.font = 'bold 40px system-ui, sans-serif';
           ctx.fillText(W ? `Gewählt: ${W.def.name}` : 'Noch keine Waffe gewählt', w / 2, h * 0.76);
@@ -1392,10 +1761,11 @@
       timeLeft = ROUND_TIME;
       startButton.visible = false;
       rack.visible = false;
-      const boardPos = pointInFront(Math.max(6, W.def.range[1] * 0.8), 0, playerHead.y + 1.6);
+      const range = W ? W.def.range : [2.5, 6];
+      const boardPos = pointInFront(Math.max(6, range[1] * 0.8), 0, playerHead.y + 1.6);
       board.mesh.position.copy(boardPos);
       board.mesh.lookAt(playerHead);
-      board.mesh.scale.setScalar(Math.max(1.6, W.def.range[1] * 0.18));
+      board.mesh.scale.setScalar(Math.max(1.6, range[1] * 0.18));
       for (let i = 0; i < MAX_TARGETS; i++) spawnTarget();
       SFX.jingle([523, 659, 784]);
       boardDirty = true;
@@ -1410,47 +1780,6 @@
       SFX.jingle([784, 659, 523, 392], 0.35);
       boardDirty = true;
     }
-
-    // ---- Menü-Interaktion (VR) ---------------------------------------------
-    function updateMenuXR() {
-      if (!rack.visible) { for (const h of hands) h.pointer.visible = false; return; }
-      for (const it of rackItems) it.hover = false;
-      for (const h of hands) {
-        if (!h.src) { h.pointer.visible = false; continue; }
-        const holdsWeapon = W && W.hand === h.i;
-        const p = handPoint(h, new THREE.Vector3());
-        // Greifen in Reichweite
-        let near = rackItems.find(it => it.box.distanceToPoint(p) < 0.04);
-        // oder Zeigestrahl
-        let pointed = null;
-        if (!holdsWeapon) {
-          h.ray.getWorldPosition(tmpV);
-          h.ray.getWorldQuaternion(tmpQ);
-          raycaster.set(tmpV, new THREE.Vector3(0, 0, -1).applyQuaternion(tmpQ));
-          let best = Infinity;
-          for (const it of rackItems) {
-            const hit = raycaster.ray.intersectBox(it.box, tmpV2);
-            if (hit) { const d = hit.distanceTo(tmpV); if (d < best) { best = d; pointed = it; } }
-          }
-          h.pointer.visible = !off_item(h);
-          h.pointer.scale.z = pointed ? best : 3;
-        } else h.pointer.visible = false;
-        if (near) near.hover = true;
-        if (pointed) pointed.hover = true;
-        const pick = (down(h, 'squeeze') && near) || (!holdsWeapon && down(h, 'trigger') && (pointed || near));
-        if (pick) {
-          const it = near || pointed;
-          equip(it.id, h.i);
-          pulse(h, 0.7, 60);
-          h.consumedTrigger = true;
-        }
-      }
-      for (const it of rackItems) {
-        drawRackLabel(it, W && W.id === it.id, it.hover);
-        it.holder.scale.setScalar(it.hover ? 1.06 : 1);
-      }
-    }
-    const off_item = (h) => !!h.item;
 
     // ---- Effekte -----------------------------------------------------------
     const effects = [];
@@ -1555,11 +1884,13 @@
       }
     }
 
-    // ---- Statusanzeige an der zweiten Hand ---------------------------------
-    const hud = makePanel(0.2, 0.085, 2000);
+    // ---- Anzeige am Handgelenk der freien Hand ------------------------------
+    // Erscheint nur, wenn man auf das Handgelenk schaut, und nie beim Zielen.
+    const hud = makePanel(0.12, 0.05, 2800);
     hud.mesh.visible = false;
+    hud.mesh.renderOrder = 5;
     scene.add(hud.mesh);
-    let hudKey = '';
+    let hudKey = '', hudAlpha = 0;
     function statusLines() {
       if (!W) return null;
       const d = W.def;
@@ -1568,28 +1899,25 @@
       const A = main ? btnName(main, 'a') : 'R', B = main ? btnName(main, 'b') : 'V';
       const desk = !renderer.xr.isPresenting;
       const modeName = { safe: 'GESICHERT', semi: d.modes.length > 2 ? 'EINZEL' : 'FEUER', auto: 'DAUERFEUER' }[mode()];
-      const ammo = d.feed === 'mag'
-        ? `Magazin ${W.magInserted ? W.magRounds : '–'}/${d.capacity} + ${W.chamber === 'live' ? 1 : 0}`
-        : `Röhre ${W.tube}/${d.capacity} + ${W.chamber === 'live' ? 1 : 0}`;
-      let line2 = `${ammo} · ${modeName}${d.sight === 'scope' ? ` · ${W.zoom.toFixed(0)}x` : ''}`;
+      const loaded = W.chamber === 'live' ? 1 : 0;
+      const ammo = d.feed === 'mag' ? `${W.magInserted ? W.magRounds : '–'}/${d.capacity}+${loaded}` : `${W.tube}/${d.capacity}+${loaded}`;
+      const line2 = `${ammo} · ${modeName}${d.sight === 'scope' ? ` · ${W.zoom.toFixed(0)}x` : ''}`;
       let hint = '';
       const holding = off && off.item;
       if (mode() === 'safe') hint = desk ? 'Gesichert – V: entsichern' : `Gesichert – ${B}: entsichern`;
-      else if (d.feed === 'mag' && !W.magInserted) hint = desk ? 'R: nachladen' : holding ? 'Magazin von unten in den Schacht schieben' : 'Andere Hand an die Hüfte + Griff = neues Magazin';
-      else if (d.feed === 'mag' && W.chamber !== 'live' && W.magRounds === 0) hint = desk ? 'Leer – R: nachladen' : `Magazin leer – ${A}: Magazin auswerfen`;
-      else if (d.feed === 'tube' && W.chamber !== 'live' && W.tube === 0) hint = desk ? 'Leer – R: nachladen' : holding ? 'Patrone unten in die Ladeöffnung' : 'Hüfte + Griff = Patrone holen, unten einführen';
+      else if (d.feed === 'mag' && !W.magInserted) hint = desk ? 'R: nachladen' : holding ? 'Magazin von unten einschieben' : 'Magazin vom Gürtel holen';
+      else if (d.feed === 'mag' && W.chamber !== 'live' && W.magRounds === 0) hint = desk ? 'Leer – R: nachladen' : `Leer – ${A}: Magazin raus`;
+      else if (d.feed === 'tube' && W.chamber !== 'live' && W.tube === 0) hint = desk ? 'Leer – R: nachladen' : holding ? 'Patrone unten einführen' : 'Patronen vom Gürtel holen';
       else if (W.chamber !== 'live' || W.actionOpen) {
         if (desk) hint = 'Lade durch…';
-        else if (d.action === 'slide') hint = `Schlitten hinten greifen & ziehen (oder ${B})`;
-        else if (d.action === 'charge') hint = 'Spannhebel hinten greifen & zurückziehen';
-        else if (d.action === 'pump') hint = 'Repetieren: Vorderschaft zurück & vor';
-        else hint = 'Kammerstängel (rechts) greifen, zurück & vor';
-      } else if (holding && d.feed === 'tube' && W.tube < d.capacity) hint = 'Patrone unten in die Ladeöffnung';
-      else if (!desk && d.twoHand && !W.twoHanding) hint = 'Tipp: Vorderschaft mit 2. Hand greifen (Griff)';
-      else if (!desk && d.sight === 'scope') hint = 'Stick ↑↓ = Zoom';
+        else if (d.action === 'slide') hint = `Schlitten ziehen (oder ${B})`;
+        else if (d.action === 'charge') hint = 'Spannhebel zurückziehen';
+        else if (d.action === 'pump') hint = 'Vorderschaft zurück & vor';
+        else hint = 'Kammerstängel zurück & vor';
+      } else if (holding && d.feed === 'tube' && W.tube < d.capacity) hint = 'Patrone unten einführen';
       return { title: d.name, line2, hint };
     }
-    function updateHud() {
+    function updateHud(dt) {
       const s = statusLines();
       if (!renderer.xr.isPresenting) {
         statusEl.style.display = s ? 'block' : 'none';
@@ -1599,26 +1927,31 @@
       }
       statusEl.style.display = 'none';
       const off = offHand();
-      if (!s || !off || !off.src) { hud.mesh.visible = false; return; }
-      hud.mesh.visible = true;
-      handPoint(off, tmpV);
-      hud.mesh.position.copy(tmpV).add(new THREE.Vector3(0, 0.13, 0));
+      if (!s || !off || !off.src) { hud.mesh.visible = false; hudAlpha = 0; return; }
+      // auf dem Handgelenk (hinter dem Controller)
+      off.ray.getWorldQuaternion(tmpQ);
+      hud.mesh.position.copy(off.point).add(tmpV.set(0, 0.035, 0.1).applyQuaternion(tmpQ));
       hud.mesh.lookAt(headPos);
+      // nur sichtbar, wenn man hinschaut
+      getViewCamera().getWorldDirection(tmpV2);
+      const look = tmpV3.copy(hud.mesh.position).sub(headPos).normalize().dot(tmpV2);
+      let target = THREE.MathUtils.smoothstep(look, Math.cos(0.55), Math.cos(0.3));
+      if (W.twoHanding || W.aligned) target = 0;
+      hudAlpha = THREE.MathUtils.damp(hudAlpha, target, 12, dt);
+      hud.mesh.material.opacity = hudAlpha;
+      hud.mesh.visible = hudAlpha > 0.02;
       const key = JSON.stringify(s);
       if (key === hudKey) return;
       hudKey = key;
       hud.draw((ctx, w, h) => {
-        panelBg(ctx, w, h, 24, s.hint ? '#ffcc33' : '#55ff77');
+        panelBg(ctx, w, h, 22, s.hint ? '#ffcc33' : '#55ff77');
         ctx.textBaseline = 'middle';
         ctx.fillStyle = '#fff';
-        ctx.font = 'bold 30px system-ui, sans-serif';
-        ctx.fillText(s.title, 16, h * 0.22);
-        ctx.font = '26px system-ui, sans-serif';
-        ctx.fillStyle = '#9ad';
-        ctx.fillText(s.line2, 16, h * 0.5);
-        ctx.fillStyle = '#ffcc33';
-        ctx.font = 'bold 24px system-ui, sans-serif';
-        if (s.hint) ctx.fillText('➜ ' + s.hint, 16, h * 0.78);
+        ctx.font = 'bold 34px system-ui, sans-serif';
+        ctx.fillText(s.line2, 18, h * 0.3);
+        ctx.fillStyle = s.hint ? '#ffcc33' : '#9ad';
+        ctx.font = 'bold 26px system-ui, sans-serif';
+        ctx.fillText(s.hint || s.title, 18, h * 0.7);
       });
     }
 
@@ -1638,10 +1971,38 @@
       }
       return best;
     }
+
+    // Kamerabild der Quest für das Zielfernrohr (optional, falls der Browser es erlaubt)
+    const CAM_HFOV = THREE.MathUtils.degToRad(72); // ungefähres Sichtfeld der Passthrough-Kamera
+    let camVideo = null, camTex = null;
+    const camBtn = document.getElementById('camBtn');
+    async function startCamera() {
+      if (camTex || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
+        camVideo = document.createElement('video');
+        camVideo.muted = true;
+        camVideo.playsInline = true;
+        camVideo.srcObject = stream;
+        await camVideo.play();
+        camTex = new THREE.VideoTexture(camVideo);
+        camTex.colorSpace = THREE.SRGBColorSpace;
+        camBtn.textContent = '📷 Kamera fürs Zielfernrohr aktiv';
+      } catch (e) {
+        camBtn.textContent = '📷 Kamera nicht verfügbar – Zielfernrohr zeigt den Raum durchs Glas';
+      }
+    }
+    camBtn.addEventListener('click', startCamera);
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'camera' }).then(r => { if (r.state === 'granted') startCamera(); }).catch(() => {});
+    }
+
     function updateSights() {
       redDot.visible = false;
-      if (!W || !W.root.parent) return;
+      if (!W || !W.root.parent || (renderer.xr.isPresenting && W.hand < 0)) { if (W) W.aligned = false; return; }
       const axis = W.sockets.sightFront.getWorldPosition(new THREE.Vector3()).sub(W.sockets.sightRear.getWorldPosition(tmpV3)).normalize();
+      const iron = eyeAlignment(W.sockets.sightRear, axis);
+      W.aligned = iron.along > 0 && iron.along < 0.5 && iron.perp < 0.05;
       if (W.def.sight === 'reddot') {
         const a = eyeAlignment(W.sockets.dotLens, axis);
         if (a.along > 0 && a.along < 0.7 && a.perp < 0.016) {
@@ -1650,28 +2011,51 @@
           redDot.scale.setScalar(0.14);
         }
       } else if (W.def.sight === 'scope') {
+        const P = W.parts;
         const a = eyeAlignment(W.sockets.scopeEye, axis);
-        // Augenabstand: außerhalb der Austrittspupille wird es dunkel
+        // Austrittspupille: neben der Achse wird es dunkel
         const k = a.along > 0 ? THREE.MathUtils.clamp(1 - (a.perp - 0.008) / 0.02, 0, 1) : 0;
-        W.parts.scopeLens.material.color.setScalar(k);
+        if (a.along < 0.6 && a.perp < 0.06) W.aligned = true;
+        P.lensShade.material.opacity = 1 - k;
+        const xr = renderer.xr.isPresenting;
+        const useVideo = xr && camTex && camVideo.videoWidth > 0;
+        P.lensVideo.visible = !!useVideo;
+        P.lensHole.visible = xr && !useVideo; // „Loch“: zeigt den echten Raum durchs Glas
         if (k > 0 && a.along < 0.6) {
+          const fovDeg = 24 / W.zoom;
           W.sockets.scopeCam.getWorldPosition(scopeCam.position);
           W.body.getWorldQuaternion(scopeCam.quaternion);
-          scopeCam.fov = 24 / W.zoom;
+          scopeCam.fov = fovDeg;
           scopeCam.updateProjectionMatrix();
           scopeCam.updateMatrixWorld(true);
-          const xrOn = renderer.xr.enabled;
           const prevTarget = renderer.getRenderTarget();
           const prevBg = scene.background;
           renderer.xr.enabled = false;
-          scene.background = scopeBackground;
+          scene.background = xr ? null : scopeBackground; // in VR: durchsichtig, nur Ziele werden vergrößert eingeblendet
           W.root.visible = false;
+          const hudVis = hud.mesh.visible;
+          hud.mesh.visible = false;
           renderer.setRenderTarget(scopeRT);
+          renderer.clear();
           renderer.render(scene, scopeCam);
           renderer.setRenderTarget(prevTarget);
           W.root.visible = true;
+          hud.mesh.visible = hudVis;
           scene.background = prevBg;
-          renderer.xr.enabled = xrOn;
+          renderer.xr.enabled = true;
+          if (useVideo) {
+            // Passenden, vergrößerten Ausschnitt aus dem Kamerabild wählen
+            if (P.lensVideo.material.map !== camTex) { P.lensVideo.material.map = camTex; P.lensVideo.material.needsUpdate = true; }
+            getViewCamera().getWorldQuaternion(tmpQ);
+            const d = axis.clone().applyQuaternion(tmpQ.invert());
+            const tx = Math.tan(CAM_HFOV / 2), ty = tx * camVideo.videoHeight / camVideo.videoWidth;
+            const half = Math.tan(THREE.MathUtils.degToRad(fovDeg / 2));
+            if (d.z < -0.2) {
+              const u = 0.5 + (d.x / -d.z) / (2 * tx), v = 0.5 + (d.y / -d.z) / (2 * ty);
+              camTex.repeat.set(half / tx, half / ty);
+              camTex.offset.set(u - camTex.repeat.x / 2, v - camTex.repeat.y / 2);
+            }
+          }
         }
       }
     }
@@ -1712,11 +2096,19 @@
       if (renderer.xr.isPresenting) return;
       const n = parseInt(e.key, 10);
       if (n >= 1 && n <= 4 && state !== 'playing') equip(WEAPON_ORDER[n - 1], -1);
+      if (e.key === 'f' || e.key === 'F') desktopThrowKnife();
       if (!W) return;
       if (e.key === 'r' || e.key === 'R') desktopReload();
       if (e.key === 'v' || e.key === 'V') toggleMode();
       if (e.code === 'Space') { aiming = !aiming; e.preventDefault(); }
     });
+    function desktopThrowKnife() {
+      raycaster.setFromCamera(mouseNdc, camera);
+      const k = makeKnife();
+      k.position.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, 0.3).add(new THREE.Vector3(0, -0.1, 0));
+      scene.add(k);
+      launchKnife(k, aimAssist(k.position, raycaster.ray.direction.clone().multiplyScalar(11)));
+    }
     function desktopShoot() {
       let ray = null;
       if (!aiming) { raycaster.setFromCamera(mouseNdc, camera); ray = raycaster.ray.clone(); }
@@ -1764,21 +2156,21 @@
         if (timers[i].t <= 0) { const f = timers[i].fn; timers.splice(i, 1); f(); }
       }
 
+      updateBelt(dt);
       if (xr) {
         // Menü neu ausrichten, falls der Spieler sich weit davon entfernt hat
         if (state !== 'playing' && headPos.distanceTo(playerHead) > 1.0) placeMenu();
         readInputs();
-        updateMenuXR();
-        if (W && W.hand >= 0 && hands[W.hand].src) {
-          if (hands[W.hand].consumedTrigger) { if (!hands[W.hand].btn.trigger) hands[W.hand].consumedTrigger = false; }
-          else updateWeaponXR(dt);
-          W.root.visible = true;
-        } else if (W) W.root.visible = false;
+        updateHandsXR();
+        if (W && W.hand >= 0 && hands[W.hand].src) { updateWeaponXR(dt); W.root.visible = true; }
+        else if (W) W.root.visible = false;
       } else {
         for (const it of rackItems) drawRackLabel(it, W && W.id === it.id, false);
         if (W) updateWeaponDesktop(dt);
       }
       if (W) updateWeaponVisuals(dt);
+      updateLoose(dt);
+      updateKnives(dt);
 
       if (state === 'playing') {
         const prev = Math.ceil(timeLeft);
@@ -1820,7 +2212,7 @@
       if (startButton.visible) startButton.scale.setScalar(1 + Math.sin(elapsed * 4) * 0.05);
       updateEffects(dt);
       updateDebris(dt);
-      updateHud();
+      updateHud(dt);
       if (boardDirty) { drawBoard(); boardDirty = false; }
 
       scene.updateMatrixWorld();
@@ -1830,7 +2222,7 @@
 
     // Für automatisierte Tests
     window.__game = {
-      get W() { return W; }, get state() { return state; }, equip, desktopReload, hands, rackItems,
+      get W() { return W; }, get state() { return state; }, equip, desktopReload, hands, rackItems, beltSlots, knives, looseWeapons, belt,
       startPos: () => startButton.getWorldPosition(new THREE.Vector3()),
       forceMenu: () => { if (state === 'playing') { timeLeft = 0.001; } }
     };

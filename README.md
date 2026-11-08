@@ -28,25 +28,34 @@ Einhändig streuen sie stärker.
 | Aktion | So geht's |
 |---|---|
 | Schießen | Abzug der Waffenhand |
+| Waffe ablegen | **Stick drücken** an der Waffenhand (langsam = bleibt in der Luft schweben, geworfen = fällt zu Boden) |
+| Waffe aufheben / Hand wechseln | Mit einer Hand hingreifen + Griff-Taste (oder darauf zeigen + Abzug) |
 | Magazin auswerfen | **A / X** an der Waffenhand |
-| Neues Magazin / Patrone | Zweite Hand an die **Hüfte** + Griff-Taste |
+| Neues Magazin / Patrone | **Nach unten schauen**: am Gürtel greifen (Griff-Taste) |
 | Magazin einsetzen | Magazin von unten in den Magazinschacht führen |
 | Schrotpatrone laden | Patrone an die Ladeöffnung unten am Gehäuse führen |
 | Durchladen | Schlitten / Spannhebel / Kammerstängel mit der zweiten Hand greifen, zurückziehen, loslassen |
 | Repetieren (Flinte) | Vorderschaft zurück- und wieder vorschieben |
 | Feuermodus / Sicherung | **B / Y** an der Waffenhand (Pistole: Schlittenfang lösen) |
 | Zoom (Zielfernrohr) | Stick hoch / runter |
+| Wurfmesser | Am Gürtel (Seite der freien Hand) greifen, ausholen und Griff-Taste beim Werfen loslassen. Langsam an der Scheide loslassen = zurückstecken |
 
-Über der zweiten Hand schwebt eine kleine Anzeige mit Munition, Feuermodus und dem nächsten Schritt.
+**Gürtel:** Er sitzt an deiner Hüfte und dreht sich mit dir. Je nach Waffe stecken dort Magazine oder Schrotpatronen,
+die nach dem Herausnehmen nachgefüllt werden. Messertreffer zählen doppelt; eine Wurfhilfe lenkt Würfe,
+die ungefähr auf eine Scheibe zielen.
 
-Hinweis: Das Bild im Zielfernrohr ist ein „digitales“ Zielfernrohr. Es zeigt Zielscheiben vergrößert,
-aber nicht deinen echten Raum, weil Browser-Spiele keinen Zugriff auf das Passthrough-Kamerabild haben.
+**Info-Anzeige:** Kleine Anzeige am Handgelenk der freien Hand (Munition, Feuermodus, nächster Schritt).
+Sie erscheint nur, wenn du aufs Handgelenk schaust, und ist beim Zielen ausgeblendet.
+
+**Zielfernrohr:** Du siehst durchs Glas deinen echten Raum, die Zielscheiben werden darin vergrößert eingeblendet.
+Optional: Mit dem Knopf „📷 Kamera fürs Zielfernrohr erlauben“ (vor „START AR“) wird zusätzlich das Kamerabild
+der Quest vergrößert angezeigt – das funktioniert nur, wenn dein Quest-Browser den Zugriff auf die Kameras erlaubt.
 
 ## Am PC testen
 
 `python3 -m http.server` im Ordner starten und `http://localhost:8000` öffnen.
 1–4 Waffe wählen · Linksklick schießen · rechte Maustaste ziehen = umschauen · Leertaste = Visier ·
-R nachladen · V Feuermodus · Mausrad Zoom.
+R nachladen · V Feuermodus · F Messer werfen · Mausrad Zoom.
 
 ## Technik
 
