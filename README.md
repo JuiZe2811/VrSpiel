@@ -1,15 +1,16 @@
-# 🎯 Passthrough-Schießstand (Quest 3, WebXR)
+# 🧟 Zombie-Abwehr im eigenen Zimmer (Quest 3, WebXR)
 
-Ein Mixed-Reality-Schießspiel für die Meta Quest 3, das direkt im Browser läuft.
-Du richtest zuerst deinen echten Raum ein (Wände, Tische, Stühle). Danach erscheinen die Ziele
-genau dort: an deinen Wänden, auf dem Tisch und auf Stühlen.
+Ein Mixed-Reality-Zombiespiel für die Meta Quest 3, das direkt im Browser läuft.
+Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und Stühle. Die Zombies kommen durch
+deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
+und wollen dich töten.
 
 ## Spielen
 
 1. Die Seite muss über **HTTPS** erreichbar sein (z. B. GitHub Pages: *Settings → Pages → Branch wählen → Save*).
 2. Die URL im **Browser der Quest 3** öffnen und **„START AR“** tippen.
 3. **Spielbereich einrichten** (siehe unten), dann **✔ Fertig**.
-4. Eine Waffe vom **Waffentisch** nehmen, Spielmodus wählen und auf die grüne **START**-Scheibe schießen
+4. Eine Waffe vom **Waffenständer** nehmen, Spielmodus wählen und auf die grüne **START**-Scheibe schießen
    (oder den Knopf ▶ START drücken).
 
 ## Spielbereich einrichten
@@ -19,27 +20,29 @@ Alles geht per **Laser** – du musst nichts berühren. Menü: Zeigestrahl + Abz
 | Werkzeug | So geht's |
 |---|---|
 | 📏 Bodenhöhe | Controller auf den Boden legen + Abzug. Danach mit **Stick ▲▼** fein einstellen, bis das türkise Gitter genau auf dem echten Boden liegt (wird gespeichert) |
-| 📡 Quest-Raum | Übernimmt Wände, Tische und Sofas aus deiner Quest-Raumeinrichtung (passiert beim Start automatisch, falls vorhanden) |
+| 📡 Quest-Raum | Übernimmt Wände, Türen, Fenster, Tische und Sofas aus deiner Quest-Raumeinrichtung (passiert beim Start automatisch, falls vorhanden) |
 | 🧱 Wand | Laser auf den Boden an einer Ecke der Wand richten, **Abzug halten**, an der Wand entlang zur anderen Ecke fahren, loslassen |
+| 🚪 Tür | Laser auf den Boden an einer Seite der Tür, Abzug halten, zur anderen Seite fahren, loslassen |
+| 🪟 Fenster | Breite unter dem Fenster auf dem Boden aufziehen, dann mit dem Laser auf die **Unterkante** zeigen + Abzug, dann auf die **Oberkante** + Abzug |
 | 🪑 Tisch / 💺 Stuhl | Grundfläche mit dem Laser auf dem Boden aufziehen (Ecke zu Ecke), dann mit dem Laser auf die **Tischkante** zeigen = Höhe, Abzug = fertig. Stick ◀ ▶ dreht, B/Y bricht ab |
-| 🔫 Waffentisch | Laser auf den Boden + Abzug (ziehen = Ausrichtung). Dort liegen die Waffen zu Beginn **jeder Runde** |
+| 🔫 Waffenständer | Laser auf den Boden + Abzug (ziehen = Ausrichtung). Kompakter Ständer (90 × 45 cm): Langwaffen stehen aufrecht, die Pistole liegt davor – zu Beginn **jeder Runde** |
 | ↶ Rückgängig / 🗑 Alles löschen | Letzte Fläche bzw. alles entfernen |
 | 💾 Laden | Lädt den zuletzt eingerichteten Raum (passt nur, wenn du am selben Platz und in dieselbe Richtung startest) |
 
-Echte Wände und Möbel verdecken virtuelle Dinge dahinter, und Waffen, Magazine und Dosen prallen physikalisch daran ab.
+Echte Wände und Möbel verdecken virtuelle Dinge dahinter (Zombies hinter der Wand sieht man nur durch Tür/Fenster), und Waffen, Magazine und Dosen prallen physikalisch daran ab.
 Schüsse hinterlassen Einschusslöcher an den Wänden, Messer bleiben darin stecken.
 
 ## Waffen
 
-Alle vier Waffen liegen auf dem **Waffentisch** – jede genau einmal. Zu Beginn jeder Runde werden alle Waffen,
-die du nicht in der Hand hältst, wieder voll geladen auf den Waffentisch gelegt.
+Alle vier Waffen stehen im **Waffenständer** – jede genau einmal. Zu Beginn jeder Runde kommen alle Waffen,
+die du nicht in der Hand hältst, voll geladen zurück in den Ständer.
 
 | Waffe | Visier | Magazin | Besonderheit |
 |---|---|---|---|
 | Pistole P9 | Kimme & Korn | 15 | einhändig, Schlittenfang |
 | Maschinenpistole MPX | Rotpunktvisier | 30 | Sicher / Einzel / Dauerfeuer, Vordergriff |
 | Pump-Flinte | Perlkorn | 6 + 1 (Röhre) | Schrot, nach jedem Schuss repetieren |
-| Scharfschützengewehr | Zielfernrohr 4–12x | 5 | Kammerverschluss, Punkte x1,5 |
+| Scharfschützengewehr | Zielfernrohr 4–12x | 5 | Kammerverschluss, sehr hoher Schaden |
 
 ## Steuerung (Quest-Controller)
 
@@ -64,21 +67,29 @@ die du nicht in der Hand hältst, wieder voll geladen auf den Waffentisch gelegt
 Am Handgelenk der freien Hand zeigt eine kleine Anzeige Munition, Feuermodus und den nächsten Schritt –
 nur wenn du hinschaust, nie beim Zielen.
 
-## Spielmodi und Ziele
+## Zombies
 
-- **⏱ Zeitjagd** – 60 Sekunden, so viele Punkte wie möglich
-- **🌊 Wellen** – jede Welle abräumen, bevor die Zeit abläuft; jede Welle hat mehr Ziele
-- **🎯 Training** – ohne Zeitlimit, Beenden über die Tafel
+- Vor jeder Welle sind Türen und Fenster mit **Brettern** vernagelt. Die Zombies reißen sie nacheinander ab
+  (du hörst es krachen) – du kannst sie schon durch die Lücken beschießen.
+- Danach kommen sie durch die Tür bzw. **klettern durchs Fenster** und laufen um Wände, Tische und Stühle herum zu dir.
+- Hast du keine Türen/Fenster eingerichtet, kommen sie aus dem Boden.
+- Du hörst sie räumlich stöhnen – dreh dich um!
 
-| Ziel | Wo | Punkte |
-|---|---|---|
-| Ringscheibe (teils beweglich oder als Wendescheibe) | Wand, Ständer auf Tisch/Stuhl | 10 · 8 · 6 · 4 · 2 (+2 wenn beweglich) |
-| Stahlplatte | Tisch / Stuhl | 8, kippt mit Physik um |
-| Dosen | Tisch / Stuhl | 6, fliegen weg |
-| ★ Goldscheibe | Wand | 25 und +3 Sekunden, verschwindet schnell |
-| ✋ Nicht schießen | Wand / Ständer | −25 und Combo weg |
+| Treffer | Wirkung |
+|---|---|
+| Kopf | 3-facher Schaden – meist sofort tot (Scharfschützengewehr: Kopf weg) |
+| Körper | normaler Schaden |
+| Bein | Zombie **humpelt** langsamer; nach mehreren Treffern fällt das Bein ab und er **kriecht** |
+| Arm | weniger Schaden; nach mehreren Treffern fällt der Arm ab – er schlägt schwächer zu |
 
-Treffer hintereinander erhöhen die **Combo** (bis x5), Messertreffer zählen doppelt.
+Schaden pro Treffer: Pistole 34 · MP 24 · Schrot 15 pro Kugel (9 Kugeln) · Scharfschützengewehr 150 · Messer 90.
+Zombies haben 100 Lebenspunkte (+10 pro Welle).
+
+Wenn ein Zombie dich erreicht, schlägt er zu: Die Sicht wird rot, der Controller vibriert. Leben regeneriert langsam,
+wenn du eine Weile nicht getroffen wurdest. Bei 0 ist die Runde vorbei.
+
+**Modi:** 🧟 Überleben (Wellen, immer mehr und schnellere Zombies) · 🎯 Training (Zombies tun dir nichts).
+Punkte: Treffer +10, erledigt +100, Kopfschuss +150, überlebte Welle +50 × Welle.
 
 ## Am PC testen
 
@@ -89,6 +100,6 @@ R nachladen · V Feuermodus · F Messer werfen · Enter Start · Mausrad Zoom.
 ## Technik
 
 - `index.html` + Module in `js/`: `main.js` (Spielablauf, Hände, Waffen-Mechanik), `weapons.js` (Modelle),
-  `room.js` (Raum), `targets.js` (Ziele), `physics.js` (cannon-es), `effects.js`, `sfx.js`, `util.js`
+  `room.js` (Raum), `zombies.js` (Zombies, Bretter, Wegfindung), `physics.js` (cannon-es), `effects.js`, `sfx.js`, `util.js`
 - [three.js](https://threejs.org/) und [cannon-es](https://github.com/pmndrs/cannon-es) über CDN
 - WebXR `immersive-ar` (Passthrough) mit `plane-detection` für die Quest-Raumdaten

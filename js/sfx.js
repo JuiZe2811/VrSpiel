@@ -10,7 +10,7 @@ export function ensureAudio() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
-export function noise(t, dur, vol, type, f0, f1, q = 1) {
+export function noise(t, dur, vol, type, f0, f1, q = 1, out = null) {
   const src = audioCtx.createBufferSource();
   src.buffer = noiseBuffer;
   const filter = audioCtx.createBiquadFilter();
@@ -21,11 +21,11 @@ export function noise(t, dur, vol, type, f0, f1, q = 1) {
   const g = audioCtx.createGain();
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  src.connect(filter).connect(g).connect(audioCtx.destination);
+  src.connect(filter).connect(g).connect(out || audioCtx.destination);
   src.start(t);
   src.stop(t + dur + 0.02);
 }
-export function tone(t, f0, f1, dur, vol, type = 'sine') {
+export function tone(t, f0, f1, dur, vol, type = 'sine', out = null) {
   const osc = audioCtx.createOscillator();
   osc.type = type;
   osc.frequency.setValueAtTime(f0, t);
@@ -33,7 +33,7 @@ export function tone(t, f0, f1, dur, vol, type = 'sine') {
   const g = audioCtx.createGain();
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  osc.connect(g).connect(audioCtx.destination);
+  osc.connect(g).connect(out || audioCtx.destination);
   osc.start(t);
   osc.stop(t + dur + 0.02);
 }
@@ -75,3 +75,74 @@ export const SFX = {
 
 export const audioNow = () => (audioCtx ? audioCtx.currentTime : null);
 
+
+// ---- Räumlicher Klang (Zombies) ------------------------------------------------
+export function setListener(pos, fwd, up) {
+  if (!audioCtx) return;
+  const l = audioCtx.listener;
+  if (l.positionX) {
+    l.positionX.value = pos.x; l.positionY.value = pos.y; l.positionZ.value = pos.z;
+    l.forwardX.value = fwd.x; l.forwardY.value = fwd.y; l.forwardZ.value = fwd.z;
+    l.upX.value = up.x; l.upY.value = up.y; l.upZ.value = up.z;
+  } else {
+    l.setPosition(pos.x, pos.y, pos.z);
+    l.setOrientation(fwd.x, fwd.y, fwd.z, up.x, up.y, up.z);
+  }
+}
+function panner(pos) {
+  const p = audioCtx.createPanner();
+  p.panningModel = 'HRTF';
+  p.distanceModel = 'inverse';
+  p.refDistance = 1;
+  p.rolloffFactor = 1.2;
+  if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y; p.positionZ.value = pos.z; } else p.setPosition(pos.x, pos.y, pos.z);
+  p.connect(audioCtx.destination);
+  return p;
+}
+export const SFX3D = {
+  groan(pos, pitch = 1) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime, out = panner(pos), dur = 0.7 + Math.random() * 0.7;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sawtooth';
+    const f = (70 + Math.random() * 40) * pitch;
+    osc.frequency.setValueAtTime(f, t);
+    osc.frequency.linearRampToValueAtTime(f * (0.7 + Math.random() * 0.5), t + dur);
+    const lfo = audioCtx.createOscillator(), lg = audioCtx.createGain();
+    lfo.frequency.value = 5 + Math.random() * 4; lg.gain.value = 6;
+    lfo.connect(lg).connect(osc.frequency);
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 4; bp.frequency.setValueAtTime(450 + Math.random() * 300, t); bp.frequency.linearRampToValueAtTime(300, t + dur);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.7, t + 0.12); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(bp).connect(g).connect(out);
+    osc.start(t); lfo.start(t); osc.stop(t + dur + 0.05); lfo.stop(t + dur + 0.05);
+    noise(t, dur * 0.8, 0.12, 'bandpass', 900, 500, 2, out);
+  },
+  crack(pos) { // Brett wird abgerissen
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime, out = panner(pos);
+    noise(t, 0.05, 1.0, 'bandpass', 2500, 1500, 2, out);
+    noise(t + 0.03, 0.25, 0.6, 'lowpass', 1200, 200, 1, out);
+    tone(t, 220, 90, 0.15, 0.4, 'square', out);
+  },
+  bang(pos) { // Schlag gegen die Bretter
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime, out = panner(pos);
+    noise(t, 0.12, 0.8, 'lowpass', 700, 150, 1, out);
+    tone(t, 120, 60, 0.15, 0.5, 'sine', out);
+  },
+  splat(pos) { // Treffer
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime, out = panner(pos);
+    noise(t, 0.09, 0.7, 'lowpass', 1800, 300, 1, out);
+  },
+  swing(pos) { // Zombie schlägt zu
+    if (!audioCtx) return;
+    noise(audioCtx.currentTime, 0.25, 0.4, 'bandpass', 400, 1400, 2, panner(pos));
+  }
+};
+export const SFX_PLAYER = {
+  hurt() { if (!audioCtx) return; const t = audioCtx.currentTime; noise(t, 0.15, 0.8, 'lowpass', 600, 100); tone(t, 180, 110, 0.25, 0.35, 'triangle'); },
+  heartbeat() { if (!audioCtx) return; const t = audioCtx.currentTime; tone(t, 60, 40, 0.12, 0.5); tone(t + 0.18, 55, 38, 0.12, 0.4); }
+};

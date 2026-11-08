@@ -2,12 +2,12 @@ import * as THREE from 'three';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { makePanel, panelBg, roundRect, MAT } from './util.js';
-import { SFX, ensureAudio } from './sfx.js';
+import { SFX, ensureAudio, setListener, SFX_PLAYER } from './sfx.js';
 import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, scopeRT, scopeCam } from './weapons.js';
 import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics } from './physics.js';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName } from './room.js';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addOpening, makeOpening, roomOccluders, isOpening } from './room.js';
 import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris } from './effects.js';
-import { initTargets, targets, spawnTarget, updateTargets, hittableMeshes, hitTarget, clearTargets, dismissTargets, remainingRequired } from './targets.js';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings } from './zombies.js';
 
 // =============================================================================
 // Grundgerüst
@@ -28,7 +28,7 @@ scene.background = desktopBackground;
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 scene.add(room.group);
 initEffects(scene);
-initTargets(scene);
+initZombies(scene, (dmg, z) => playerHit(dmg, z));
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 200);
 camera.position.set(0, 1.6, 0);
@@ -75,7 +75,7 @@ function inFront(dist, angle, height, yaw = headYaw()) {
 function freeDistance(from, dir, max) {
   raycaster.set(from, dir.clone().normalize());
   raycaster.far = max;
-  const hit = raycaster.intersectObjects(room.surfaces.map(s => s.occluder), false)[0];
+  const hit = raycaster.intersectObjects(roomOccluders(), false)[0];
   return hit ? hit.distance : max;
 }
 
@@ -214,38 +214,57 @@ function setupBench() {
   }
   placeBench(inFront(0.95, angle, 0, yaw), yaw + angle);
 }
+// Kompakter Waffenständer: Langwaffen stehen aufrecht in der Halterung, die Pistole liegt davor
+let benchRack = null;
 function placeBench(c, by) {
   for (const old of room.surfaces.filter(x => x.type === 'bench')) removeSurface(old);
   const X = new THREE.Vector3(Math.cos(by), 0, -Math.sin(by)), Z = new THREE.Vector3(Math.sin(by), 0, Math.cos(by));
-  const p1 = c.clone().addScaledVector(X, -0.7).addScaledVector(Z, -0.47), p2 = c.clone().addScaledVector(X, 0.7).addScaledVector(Z, 0.47);
+  const p1 = c.clone().addScaledVector(X, -0.45).addScaledVector(Z, -0.22), p2 = c.clone().addScaledVector(X, 0.45).addScaledVector(Z, 0.22);
   bench = addBox('bench', p1.setY(0.8), p2.setY(0.8), by);
+  if (benchRack) scene.remove(benchRack);
+  benchRack = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x5a4128, roughness: 0.8 });
+  const mk = (w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wood); m.position.set(x, y, z); benchRack.add(m); };
+  // Halterung an der Rückseite (vom Spieler weg)
+  const back = Z.dot(headPos.clone().sub(c)) > 0 ? -1 : 1;
+  for (const x of [-0.43, 0.43]) mk(0.035, 0.6, 0.035, x, 0.8 + 0.3, back * 0.2);
+  mk(0.9, 0.04, 0.05, 0, 1.35, back * 0.2);
+  mk(0.9, 0.03, 0.09, 0, 0.815, back * 0.17);
+  benchRack.position.set(c.x, 0, c.z);
+  benchRack.rotation.y = by;
+  scene.add(benchRack);
 }
 function placeOnBench(list) {
   if (!bench || !room.surfaces.includes(bench)) setupBench();
-  // Reihen-Richtung S soll zum Spieler zeigen
   const L = bench.X.clone(), S = bench.Z.clone();
-  if (S.dot(headPos.clone().sub(bench.center)) < 0) { S.negate(); L.negate(); } // Mündung entlang L, Reihen entlang S (S zeigt zum Spieler)
-  const yawW = Math.atan2(-L.x, -L.z);
-  const order = WEAPON_ORDER;
-  let across = 0.38;
-  for (const id of order) {
+  if (S.dot(headPos.clone().sub(bench.center)) < 0) S.negate(); // S zeigt zum Spieler
+  const top = bench.height;
+  let along = -0.36;
+  for (const id of WEAPON_ORDER) {
     const w = arsenal.find(a => a.id === id);
+    const upright = id !== 'pistol';
     const width = w.localBox.max.y - w.localBox.min.y;
-    const rowCenter = across - width / 2;
-    across -= width + 0.035;
+    let target;
+    if (upright) { target = bench.center.clone().addScaledVector(L, along + width / 2).addScaledVector(S, -0.15); along += width + 0.03; }
+    else target = bench.center.clone().addScaledVector(S, 0.1);
     if (!list.includes(w) || w.holder >= 0 || w === deskW) continue;
     if (w.phys) { removeDynamic(w.phys); w.phys = null; }
     if (w.root.parent !== scene) scene.add(w.root);
-    w.root.quaternion.setFromEuler(new THREE.Euler(0, yawW, Math.PI / 2, 'YXZ'));
+    if (upright) {
+      // Mündung nach oben, rechte Seite zum Spieler
+      w.root.quaternion.setFromAxisAngle(UP, Math.atan2(-S.z, S.x)).multiply(new THREE.Quaternion().setFromAxisAngle(XAXIS, Math.PI / 2));
+    } else {
+      const yawW = Math.atan2(-L.x, -L.z);
+      w.root.quaternion.setFromEuler(new THREE.Euler(0, yawW, Math.PI / 2, 'YXZ'));
+    }
     w.root.position.copy(bench.center);
     w.root.updateMatrixWorld(true);
     const bb = new THREE.Box3().setFromObject(w.root);
-    const c = bb.getCenter(new THREE.Vector3());
-    const target = bench.center.clone().addScaledVector(S, rowCenter);
-    w.root.position.x += target.x - c.x;
-    w.root.position.z += target.z - c.z;
-    w.root.position.y += bench.height + 0.004 - bb.min.y;
-    makeLoose(w);
+    const cc = bb.getCenter(new THREE.Vector3());
+    w.root.position.x += target.x - cc.x;
+    w.root.position.z += target.z - cc.z;
+    w.root.position.y += top + 0.004 - bb.min.y;
+    if (!upright) makeLoose(w); // Pistole liegt mit Physik, Langwaffen stehen fest im Ständer
   }
 }
 function resetWeapons() {
@@ -327,6 +346,7 @@ function toggleMode(w) {
 }
 
 // ---- Schießen ----------------------------------------------------------------------
+const DAMAGE = { pistol: 34, smg: 24, shotgun: 15, sniper: 150, knife: 90 }; // Schaden pro Treffer (Schrot: pro Kugel)
 const wallMarks = [];
 const markGeo = new THREE.CircleGeometry(0.006, 8);
 const markMat = new THREE.MeshBasicMaterial({ color: 0x151515 });
@@ -363,9 +383,8 @@ function tryFire(w, desktopRay) {
   const muzzlePos = w.sockets.muzzle.getWorldPosition(new THREE.Vector3());
   flashLight.position.copy(muzzlePos);
   flashLight.intensity = 4;
-  const occ = room.surfaces.map(s => s.occluder);
-  const cands = [...hittableMeshes(), ...occ, ...(startButton.visible ? startButton.userData.hit : [])];
-  const perTarget = new Map();
+  const cands = [...zombieHitMeshes(), ...plankMeshes(), ...roomOccluders(), ...(startButton.visible ? startButton.userData.hit : [])];
+  const dmg = DAMAGE[w.id];
   let startHit = null;
   for (let p = 0; p < w.def.pellets; p++) {
     const d = dir.clone();
@@ -375,14 +394,11 @@ function tryFire(w, desktopRay) {
     const hit = raycaster.intersectObjects(cands, false)[0];
     if (p < 3) spawnTracer(muzzlePos, hit ? hit.point : origin.clone().addScaledVector(d, 60));
     if (!hit) continue;
-    if (hit.object.userData.isStart) { startHit = hit; continue; }
-    if (hit.object.userData.surface) { if (p < 4) wallImpact(hit, d); continue; }
-    const t = hit.object.userData.target;
-    if (!t) continue;
-    const local = hit.object.worldToLocal(hit.point.clone());
-    const r = Math.hypot(local.x, local.y);
-    const prev = perTarget.get(t);
-    if (!prev || r < prev.r) perTarget.set(t, { hit, r, dir: d });
+    const ud = hit.object.userData;
+    if (ud.isStart) { startHit = hit; continue; }
+    if (ud.surface) { if (p < 4) wallImpact(hit, d); continue; }
+    if (ud.plank) { burst(hit.point, 0xb08850, 6); continue; }
+    if (ud.zombie) handleZombieHit(damageZombie(hit.object, hit.point, d, dmg), hit.point);
   }
   if (w.def.autoCycle) { // Halbautomat: auswerfen und nachladen
     ejectChamber(w);
@@ -391,9 +407,7 @@ function tryFire(w, desktopRay) {
   }
   if (inRound()) stats.shots++;
   boardDirty = true;
-  if (startHit) { burst(startHit.point, 0x33ff77, 20); startPressed(); return true; }
-  if (inRound() && perTarget.size === 0) combo = 1;
-  for (const [t, x] of perTarget) handleResult(hitTarget(t, x.hit, x.dir), x.hit.point, w.def.scoreMult);
+  if (startHit) { burst(startHit.point, 0x33ff77, 20); startPressed(); }
   return true;
 }
 
@@ -552,7 +566,7 @@ function aimAssist(pos, vel) {
   const flat = new THREE.Vector3(vel.x, 0, vel.z);
   if (flat.lengthSq() < 1e-4) return vel;
   flat.normalize();
-  const cands = targets.filter(t => t.hittable).map(t => t.hitMeshes[0].getWorldPosition(new THREE.Vector3()));
+  const cands = zombieHeads();
   if (startButton.visible) cands.push(startButton.getWorldPosition(new THREE.Vector3()));
   let best = null, bestAng = 0.26;
   for (const c of cands) {
@@ -582,7 +596,7 @@ function updateKnives(dt) {
     const dir = step.clone().normalize();
     raycaster.set(k.obj.position, dir);
     raycaster.far = step.length() + 0.15;
-    const cands = [...hittableMeshes(), ...room.surfaces.map(s => s.occluder), ...(startButton.visible ? startButton.userData.hit : [])];
+    const cands = [...zombieHitMeshes(), ...roomOccluders(), ...(startButton.visible ? startButton.userData.hit : [])];
     const hit = raycaster.intersectObjects(cands, false)[0];
     if (hit) { stickKnife(k, hit, dir); continue; }
     k.obj.position.add(step);
@@ -604,8 +618,7 @@ function stickKnife(k, hit, dir) {
   if (hit.object.userData.surface) { scene.attach(k.obj); return; } // steckt in echter Wand / Tisch
   hit.object.attach(k.obj);
   if (hit.object.userData.isStart) { burst(hit.point, 0x33ff77, 20); startPressed(); return; }
-  const t = hit.object.userData.target;
-  if (t) handleResult(hitTarget(t, hit, dir), hit.point, 2, '🔪 ');
+  if (hit.object.userData.zombie) handleZombieHit(damageZombie(hit.object, hit.point, dir, DAMAGE.knife), hit.point, '🔪 ');
 }
 
 // =============================================================================
@@ -945,7 +958,9 @@ const TOOL_HELP = {
   wall: ['WAND: Laser auf den Boden an einer Ecke der Wand richten,', 'Abzug halten, an der Wand entlang zur anderen Ecke fahren, loslassen.'],
   table: ['TISCH: Grundfläche mit dem Laser auf dem Boden aufziehen (Ecke zu Ecke),', 'dann mit dem Laser auf die Tischkante zeigen = Höhe, Abzug = fertig.'],
   chair: ['STUHL: Grundfläche mit dem Laser auf dem Boden aufziehen,', 'dann auf die Sitzfläche zeigen = Höhe, Abzug = fertig.'],
-  bench: ['WAFFENTISCH: Mit dem Laser auf den Boden zeigen und Abzug drücken', '(ziehen = Ausrichtung). Hier liegen die Waffen zu Beginn jeder Runde.'],
+  bench: ['WAFFENSTÄNDER: Mit dem Laser auf den Boden zeigen und Abzug drücken', '(ziehen = Ausrichtung). Hier stehen die Waffen zu Beginn jeder Runde.'],
+  door: ['TÜR: Laser auf den Boden an einer Seite der Tür, Abzug halten,', 'zur anderen Seite fahren, loslassen. Hier brechen Zombies durch.'],
+  window: ['FENSTER: Breite unter dem Fenster auf dem Boden aufziehen, dann mit dem', 'Laser auf Unterkante zeigen + Abzug, dann auf Oberkante + Abzug.'],
   floor: ['BODENHÖHE: Controller auf den Boden legen und Abzug drücken, dann mit', 'Stick ▲▼ fein einstellen, bis das Gitter genau auf dem echten Boden liegt.']
 };
 function refreshSetupPanel() {
@@ -953,29 +968,34 @@ function refreshSetupPanel() {
   const pend = setup.pending;
   setupPanel.set((ctx, w) => {
     text(ctx, '🧱 Spielbereich einrichten', w / 2, 44, 42, '#fff', 'center', true);
-    const help = pend ? ['Mit dem Laser auf die Oberkante zeigen = Höhe (' + pend.height.toFixed(2) + ' m),', 'Abzug = übernehmen · Stick ◀ ▶ = drehen · B/Y = abbrechen']
+    const help = pend && pend.type === 'window' ? [`Laser auf die ${pend.stage === 'bottom' ? 'UNTERKANTE' : 'OBERKANTE'} des Fensters zeigen (${(pend.stage === 'bottom' ? pend.bottom : pend.top).toFixed(2)} m),`, 'Abzug = übernehmen · B/Y = abbrechen']
+      : pend ? ['Mit dem Laser auf die Oberkante zeigen = Höhe (' + pend.height.toFixed(2) + ' m),', 'Abzug = übernehmen · Stick ◀ ▶ = drehen · B/Y = abbrechen']
       : setup.tool ? TOOL_HELP[setup.tool] : ['Wähle unten ein Werkzeug. Die Zielscheiben erscheinen dann an', 'deinen Wänden, auf Tischen und Stühlen. Tipp: zuerst die Bodenhöhe prüfen.'];
     text(ctx, help[0], w / 2, 94, 21, '#cfd8e3');
     text(ctx, help[1], w / 2, 124, 21, '#cfd8e3');
-    text(ctx, `Wände: ${count('wall')} · Tische: ${count('table')} · Stühle: ${count('chair')} · Waffentisch: ${count('bench') ? '✔' : '–'} · Boden: ${floorOffset >= 0 ? '+' : ''}${(floorOffset * 100).toFixed(1)} cm`, w / 2, 166, 21, '#9ad', 'center', true);
+    text(ctx, `Wände ${count('wall')} · Türen ${count('door')} · Fenster ${count('window')} · Tische ${count('table')} · Stühle ${count('chair')} · Ständer ${count('bench') ? '✔' : '–'} · Boden ${floorOffset >= 0 ? '+' : ''}${(floorOffset * 100).toFixed(1)} cm`, w / 2, 166, 19, '#9ad', 'center', true);
     if (setup.msg) text(ctx, setup.msg, w / 2, 200, 24, '#ffcc33', 'center', true);
   }, [
-    ...row(224, 66, [
+    ...row(220, 62, [
       { id: 'wall', label: '🧱 Wand', active: setup.tool === 'wall', onClick: () => setTool('wall') },
+      { id: 'door', label: '🚪 Tür', active: setup.tool === 'door', onClick: () => setTool('door') },
+      { id: 'window', label: '🪟 Fenster', active: setup.tool === 'window', onClick: () => setTool('window') }
+    ], 760),
+    ...row(292, 62, [
       { id: 'table', label: '🪑 Tisch', active: setup.tool === 'table', onClick: () => setTool('table') },
-      { id: 'chair', label: '💺 Stuhl', active: setup.tool === 'chair', onClick: () => setTool('chair') }
+      { id: 'chair', label: '💺 Stuhl', active: setup.tool === 'chair', onClick: () => setTool('chair') },
+      { id: 'bench', label: '🔫 Waffenständer', font: 26, active: setup.tool === 'bench', onClick: () => setTool('bench') }
     ], 760),
-    ...row(302, 66, [
-      { id: 'bench', label: '🔫 Waffentisch', font: 28, active: setup.tool === 'bench', onClick: () => setTool('bench') },
-      { id: 'floor', label: '📏 Bodenhöhe', font: 28, active: setup.tool === 'floor', onClick: () => setTool('floor') },
-      { id: 'quest', label: '📡 Quest-Raum', font: 28, disabled: !setup.planeSupport, onClick: () => { setup.importReq = true; } }
+    ...row(364, 58, [
+      { id: 'floor', label: '📏 Bodenhöhe', font: 27, active: setup.tool === 'floor', onClick: () => setTool('floor') },
+      { id: 'quest', label: '📡 Quest-Raum', font: 27, disabled: !setup.planeSupport, onClick: () => { setup.importReq = true; } },
+      { id: 'load', label: '💾 Laden', font: 27, disabled: !hasSavedRoom(), onClick: () => { const n = loadRoom(); bench = null; setup.msg = `${n} Flächen geladen (passt nur, wenn du am selben Platz gestartet bist)`; refreshSetupPanel(); } }
     ], 760),
-    ...row(380, 60, [
-      { id: 'load', label: '💾 Laden', font: 28, disabled: !hasSavedRoom(), onClick: () => { const n = loadRoom(); bench = null; setup.msg = `${n} Flächen geladen (passt nur, wenn du am selben Platz gestartet bist)`; refreshSetupPanel(); } },
-      { id: 'undo', label: '↶ Rückgängig', font: 28, onClick: undoSurface },
-      { id: 'clear', label: '🗑 Alles löschen', font: 28, onClick: () => { clearRoom(); bench = null; setup.last = null; setup.pending = null; setup.msg = 'Alles gelöscht'; refreshSetupPanel(); } }
-    ], 760),
-    ...row(454, 70, [{ id: 'done', label: '✔ Fertig', font: 38, onClick: finishSetup }], 760, 200)
+    ...row(432, 62, [
+      { id: 'undo', label: '↶ Rückgängig', font: 27, onClick: undoSurface },
+      { id: 'clear', label: '🗑 Alles löschen', font: 27, onClick: () => { clearRoom(); bench = null; setup.last = null; setup.pending = null; setup.msg = 'Alles gelöscht'; refreshSetupPanel(); } },
+      { id: 'done', label: '✔ Fertig', font: 36, onClick: finishSetup }
+    ], 760)
   ]);
 }
 function setTool(t) {
@@ -1009,20 +1029,29 @@ function floorHit(r, maxDist = 12) {
   return t > 0 && t < maxDist ? r.o.clone().addScaledVector(r.d, t) : null;
 }
 // Höhe aus dem Laser: Schnitt mit senkrechter Ebene durch die Mitte (zum Spieler gedreht)
-function heightFromRay(r, center) {
+function heightFromRay(r, center, maxH = 1.6) {
   const n = new THREE.Vector3(headPos.x - center.x, 0, headPos.z - center.z);
   if (n.lengthSq() < 1e-4) return null;
   n.normalize();
   const denom = r.d.dot(n);
   if (Math.abs(denom) < 1e-3) return null;
   const t = center.clone().sub(r.o).dot(n) / denom;
-  return t > 0 ? THREE.MathUtils.clamp(r.o.y + r.d.y * t, 0.15, 1.6) : null;
+  return t > 0 ? THREE.MathUtils.clamp(r.o.y + r.d.y * t, 0.15, maxH) : null;
 }
 const boxWithHeight = (p) => makeBox(p.type, p.p1.clone().setY(p.height), p.p2.clone().setY(p.height), p.yaw);
 
 // Abzug gedrückt (mit Laser, nicht auf ein Menü)
 function setupTriggerDown(src) {
   const tool = setup.tool;
+  if (setup.pending && setup.pending.type === 'window') { // Fenster: erst Unter-, dann Oberkante
+    const p = setup.pending;
+    if (p.stage === 'bottom') { p.stage = 'top'; p.top = Math.max(p.top, p.bottom + 0.4); refreshSetupPanel(); return; }
+    setup.pending = null;
+    const s = addOpening('window', p.a, p.b, headPos, p.bottom, Math.max(p.top, p.bottom + 0.2));
+    if (s) { setup.last = s; setup.msg = 'Fenster hinzugefügt'; SFX.magIn(); saveRoom(); }
+    refreshSetupPanel();
+    return;
+  }
   if (setup.pending) { // Höhe bestätigen
     const p = setup.pending;
     setup.pending = null;
@@ -1055,17 +1084,23 @@ function setupTriggerUp() {
   if (setup.tool === 'wall') {
     const s = addWall(d.start, d.cur, headPos);
     if (s) { setup.last = s; setup.msg = 'Wand hinzugefügt'; SFX.magIn(); saveRoom(); } else setup.msg = 'Zu kurz – nochmal';
+  } else if (setup.tool === 'door') {
+    const s = addOpening('door', d.start, d.cur, headPos, 0, 2.05);
+    if (s) { setup.last = s; setup.msg = 'Tür hinzugefügt'; SFX.magIn(); saveRoom(); } else setup.msg = 'Zu schmal – nochmal';
+  } else if (setup.tool === 'window') {
+    if (len < 0.25) setup.msg = 'Zu schmal – Breite unter dem Fenster aufziehen';
+    else { setup.pending = { type: 'window', a: d.start, b: d.cur, stage: 'bottom', bottom: 0.9, top: 2.0, src: d.src }; setup.msg = ''; }
   } else if (setup.tool === 'bench') {
     const yaw = len > 0.2 ? Math.atan2(-(d.cur.z - d.start.z), d.cur.x - d.start.x) : headYaw();
     placeBench(len > 0.2 ? d.start.clone().add(d.cur).multiplyScalar(0.5) : d.start, yaw);
     resetWeapons();
-    setup.msg = 'Waffentisch platziert';
+    setup.msg = 'Waffenständer platziert';
     SFX.magIn();
     saveRoom();
   } else if (setup.tool === 'table' || setup.tool === 'chair') {
     if (len < 0.15) setup.msg = 'Zu klein – Grundfläche von Ecke zu Ecke aufziehen';
     else {
-      setup.pending = { type: setup.tool, p1: d.start, p2: d.cur, yaw: d.yaw, height: setup.tool === 'table' ? 0.75 : 0.45 };
+      setup.pending = { type: setup.tool, p1: d.start, p2: d.cur, yaw: d.yaw, height: setup.tool === 'table' ? 0.75 : 0.45, src: d.src };
       setup.msg = '';
     }
   }
@@ -1092,11 +1127,11 @@ function updateSetup(dt) {
     d.yaw = suggestYaw(d.start, headYaw());
     previewLine.visible = true;
     previewLine.geometry.setFromPoints([d.start.clone().setY(0.01), d.cur.clone().setY(0.01)]);
-    if (setup.tool === 'wall') {
-      const s = makeWall(d.start, d.cur, headPos);
+    if (setup.tool === 'wall' || setup.tool === 'door' || setup.tool === 'window') {
+      const s = setup.tool === 'wall' ? makeWall(d.start, d.cur, headPos) : makeOpening(setup.tool, d.start, d.cur, headPos, setup.tool === 'door' ? 0 : 0.9, setup.tool === 'door' ? 2.05 : 2.0);
       if (s) {
         previewWall.visible = true;
-        previewWall.scale.set(s.width, s.height, 1);
+        previewWall.scale.set(s.width, s.type === 'wall' ? s.height : s.top - s.bottom, 1);
         previewWall.position.copy(s.center);
         previewWall.quaternion.setFromRotationMatrix(tmpM.makeBasis(s.right, UP, s.normal));
       }
@@ -1112,8 +1147,24 @@ function updateSetup(dt) {
   const p = setup.pending;
   const stickX = hands.reduce((a, h) => (Math.abs(h.stickX) > Math.abs(a) ? h.stickX : a), 0);
   const stickY = hands.reduce((a, h) => (Math.abs(h.stickY) > Math.abs(a) ? h.stickY : a), 0);
-  if (p) {
-    const src = renderer.xr.isPresenting ? (hands.find(h => h.src && isFree(h) && !h.uiHover) || null) : 'mouse';
+  if (p && p.type === 'window') {
+    // die Hand, die gezeichnet hat, bestimmt die Höhe
+    const src = !renderer.xr.isPresenting ? 'mouse' : (p.src && p.src !== 'mouse' && p.src.src && !p.src.uiHover ? p.src : (hands.find(h => h.src && isFree(h) && !h.uiHover) || null));
+    const mid = p.a.clone().add(p.b).multiplyScalar(0.5).setY(0);
+    if (src) { const hgt = heightFromRay(rayOf(src), mid, 2.6); if (hgt) p[p.stage] = THREE.MathUtils.damp(p[p.stage], hgt, 20, dt); }
+    if (hands.some(h => down(h, 'b'))) { setup.pending = null; setup.msg = 'Abgebrochen'; refreshSetupPanel(); return; }
+    const s = makeOpening('window', p.a, p.b, headPos, p.bottom, p.stage === 'bottom' ? p.bottom + 0.02 : Math.max(p.top, p.bottom + 0.05));
+    if (s) {
+      previewWall.visible = true;
+      previewWall.scale.set(s.width, Math.max(0.02, s.top - s.bottom), 1);
+      previewWall.position.copy(s.center);
+      previewWall.quaternion.setFromRotationMatrix(tmpM.makeBasis(s.right, UP, s.normal));
+    }
+    setup.refT -= dt;
+    if (setup.refT <= 0) { setup.refT = 0.15; refreshSetupPanel(); }
+  } else if (p) {
+    // die Hand, die gezeichnet hat, bestimmt die Höhe
+    const src = !renderer.xr.isPresenting ? 'mouse' : (p.src && p.src !== 'mouse' && p.src.src && !p.src.uiHover ? p.src : (hands.find(h => h.src && isFree(h) && !h.uiHover) || null));
     const s0 = boxWithHeight(p);
     if (src) {
       const hgt = heightFromRay(rayOf(src), s0.center.clone().setY(0));
@@ -1160,7 +1211,8 @@ function updateSetup(dt) {
 function enterSetup() {
   state = 'setup';
   setEditMode(true);
-  clearTargets();
+  clearZombies();
+  clearPlanks();
   menuPanel.visible = board.visible = false;
   startButton.visible = false;
   setupPanel.visible = true;
@@ -1184,21 +1236,28 @@ function finishSetup() {
 }
 
 // =============================================================================
-// Spielablauf: Menü → Countdown → Runde → Ergebnis
+// Spielablauf: Menü → Countdown → Zombie-Wellen → Ergebnis
 // =============================================================================
 const MODES = {
-  time: { name: '⏱ Zeitjagd', desc: '60 Sekunden – so viele Punkte wie möglich' },
-  waves: { name: '🌊 Wellen', desc: 'Räume jede Welle ab, bevor die Zeit abläuft' },
-  training: { name: '🎯 Training', desc: 'Ohne Zeitlimit üben – Beenden über die Tafel' }
+  survival: { icon: '🧟', label: 'Überleben', desc: 'Zombies kommen in Wellen durch Türen & Fenster – überlebe!' },
+  training: { icon: '🎯', label: 'Training', desc: 'Langsame Zombies, die dir nichts tun – zum Üben' }
 };
-let state = 'menu', gameMode = 'time';
-let score = 0, combo = 1, timeLeft = 0, wave = 0, waveBreak = 0, countdown = 0, roundClock = 0, spawnDelay = 0, extraTimer = 0;
+let state = 'menu', gameMode = 'survival';
+let score = 0, wave = 0, waveBreak = 0, countdown = 0, roundClock = 0, toSpawn = 0, spawnT = 0;
+let playerHp = 100, hurtFlash = 0, regenT = 0, heartT = 0;
 let boardDirty = true, lastResult = null;
-const stats = { shots: 0, hits: 0, bullseyes: 0 };
+const stats = { shots: 0, hits: 0, kills: 0, headshots: 0 };
 const inRound = () => state === 'playing';
-const hsKey = (m) => 'vrspiel-hs-' + m;
+const hsKey = (m) => 'vrspiel-zombie-hs-' + m;
 function getHighscore(m) { try { return parseInt(localStorage.getItem(hsKey(m)) || '0', 10); } catch { return 0; } }
 function setHighscore(m, v) { try { localStorage.setItem(hsKey(m), String(v)); } catch { /* ignorieren */ } }
+
+// roter Schleier bei Treffern / wenig Leben
+const hurtMesh = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xaa0000, transparent: true, opacity: 0, side: THREE.BackSide, depthTest: false, depthWrite: false, toneMapped: false }));
+hurtMesh.renderOrder = 2000;
+hurtMesh.visible = false;
+camera.add(hurtMesh);
 
 function enterMenu() {
   state = lastResult ? 'over' : 'menu';
@@ -1214,21 +1273,22 @@ function enterMenu() {
 function refreshMenu() {
   const best = getHighscore(gameMode);
   const r = lastResult;
+  const nOpen = openings().length;
   menuPanel.set((ctx, w) => {
     if (r) {
-      text(ctx, r.record ? '🏆 Neuer Rekord!' : 'Runde beendet', w / 2, 44, 40, '#fff', 'center', true);
-      text(ctx, `${r.score} Punkte`, w / 2, 98, 56, '#ffcc33', 'center', true);
-      text(ctx, `Treffer ${r.hits} · Schüsse ${r.shots} · Genauigkeit ${r.acc}% · Volltreffer ${r.bull}${r.wave ? ` · Welle ${r.wave}` : ''}`, w / 2, 146, 24, '#cfd8e3');
+      text(ctx, r.died ? '💀 Die Zombies haben dich erwischt!' : r.record ? '🏆 Neuer Rekord!' : 'Runde beendet', w / 2, 44, 38, '#fff', 'center', true);
+      text(ctx, `${r.score} Punkte · Welle ${r.wave}`, w / 2, 98, 50, '#ffcc33', 'center', true);
+      text(ctx, `Zombies erledigt ${r.kills} · Kopfschüsse ${r.headshots} · Genauigkeit ${r.acc}%`, w / 2, 146, 24, '#cfd8e3');
     } else {
-      text(ctx, '🎯 Schießstand', w / 2, 50, 48, '#fff', 'center', true);
-      text(ctx, 'Waffe vom Waffentisch nehmen: hingreifen & Griff-Taste HALTEN.', w / 2, 102, 24, '#cfd8e3');
-      text(ctx, 'Loslassen = ablegen oder werfen. Munition & Messer am Gürtel.', w / 2, 134, 24, '#cfd8e3');
+      text(ctx, '🧟 Zombie-Abwehr', w / 2, 50, 48, '#fff', 'center', true);
+      text(ctx, 'Waffe vom Waffenständer nehmen: hingreifen & Griff-Taste HALTEN.', w / 2, 102, 24, '#cfd8e3');
+      text(ctx, nOpen ? `Die Zombies kommen durch deine ${nOpen} Türen/Fenster.` : '⚠ Keine Türen/Fenster eingerichtet – Zombies kommen aus dem Boden.', w / 2, 134, 24, nOpen ? '#cfd8e3' : '#ffb04a');
     }
-    text(ctx, MODES[gameMode].desc, w / 2, 190, 26, '#9ad', 'center', true);
-    text(ctx, `Rekord ${MODES[gameMode].name.slice(2)}: ${best}`, w / 2, 395, 26, '#9ad');
-    text(ctx, 'Starten: auf die grüne START-Scheibe schießen oder Knopf drücken', w / 2, 505, 22, '#cfd8e3');
+    text(ctx, MODES[gameMode].desc, w / 2, 190, 24, '#9ad', 'center', true);
+    text(ctx, `Rekord ${MODES[gameMode].label}: ${best}`, w / 2, 395, 26, '#9ad');
+    text(ctx, 'Kopfschüsse machen 3-fachen Schaden · Beine treffen = Zombie humpelt', w / 2, 505, 22, '#cfd8e3');
   }, [
-    ...row(214, 74, Object.entries(MODES).map(([id, m]) => ({ id, label: m.name, active: gameMode === id, onClick: () => { gameMode = id; refreshMenu(); } })), 792),
+    ...row(214, 74, Object.entries(MODES).map(([id, m]) => ({ id, label: `${m.icon} ${m.label}`, active: gameMode === id, onClick: () => { gameMode = id; refreshMenu(); } })), 792),
     ...row(300, 72, [{ id: 'start', label: '▶ START', font: 40, onClick: startPressed }], 792, 220),
     ...row(420, 62, [
       { id: 'room', label: '🧱 Raum bearbeiten', onClick: enterSetup },
@@ -1245,9 +1305,12 @@ function startCountdown() {
   lastResult = null;
   menuPanel.visible = false;
   startButton.visible = false;
-  clearTargets();
+  clearZombies();
+  setupPlanks();
+  buildNav(headPos);
+  playerHp = 100;
   for (const w of arsenal) if (w.holder >= 0 || w === deskW) refillWeapon(w);
-  resetWeapons(); // nicht gehaltene Waffen liegen zu Beginn jeder Runde wieder auf dem Waffentisch
+  resetWeapons(); // nicht gehaltene Waffen stehen zu Beginn jeder Runde wieder im Waffenständer
   const fd = freeDistance(headPos, inFront(1, 0, headPos.y + 0.6).sub(headPos), 3.2);
   board.place(Math.max(1.2, Math.min(3, fd - 0.2)), 0, 0.6);
   board.mesh.scale.setScalar(1.3);
@@ -1256,43 +1319,52 @@ function startCountdown() {
 }
 function beginRound() {
   state = 'playing';
-  score = 0; combo = 1; roundClock = 0; spawnDelay = 0; extraTimer = 3;
-  stats.shots = stats.hits = stats.bullseyes = 0;
-  wave = 0;
-  timeLeft = gameMode === 'time' ? 60 : Infinity;
-  if (gameMode === 'waves') nextWave();
-  SFX.jingle([523, 659, 784]);
-  refreshBoard();
+  score = 0; roundClock = 0; wave = 0;
+  stats.shots = stats.hits = stats.kills = stats.headshots = 0;
+  nextWave();
+  SFX.jingle([392, 330, 262]);
 }
 function nextWave() {
   wave++;
-  const n = 2 + wave;
-  for (let i = 0; i < n; i++) spawn(true);
-  timeLeft = 8 + n * 2.6;
+  toSpawn = gameMode === 'training' ? 2 + wave : 3 + wave * 2;
+  spawnT = 1.5;
   waveBreak = 0;
+  setupPlanks(); // Bretter werden vor jeder Welle wieder angenagelt
+  buildNav(headPos);
   boardDirty = true;
 }
-function endRound() {
+function endRound(died = false) {
   state = 'over';
-  dismissTargets();
+  clearZombies();
+  hurtFlash = 0;
   const acc = stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0;
   const record = score > getHighscore(gameMode);
   if (record) setHighscore(gameMode, score);
-  lastResult = { score, hits: stats.hits, shots: stats.shots, acc, bull: stats.bullseyes, wave: gameMode === 'waves' ? wave : 0, record };
-  SFX.jingle([784, 659, 523, 392], 0.35);
+  lastResult = { score, kills: stats.kills, headshots: stats.headshots, acc, wave, record, died };
+  if (died) SFX.jingle([392, 370, 349, 330, 196], 0.4); else SFX.jingle([784, 659, 523, 392], 0.35);
   enterMenu();
 }
-const difficulty = () => gameMode === 'time' ? Math.min(1, roundClock / 60) : gameMode === 'waves' ? Math.min(1, (wave - 1) / 8) : 0.35;
 function currentRange() {
   const ws = hands.map(heldWeapon).filter(Boolean);
   if (deskW) ws.push(deskW);
   if (!ws.length) return [2.5, 6];
   return [Math.min(...ws.map(w => w.def.range[0])), Math.max(...ws.map(w => w.def.range[1]))];
 }
-function spawn(onlyRequired, kind) {
-  return spawnTarget({ difficulty: difficulty(), head: headPos.clone(), yaw: headYaw(), range: currentRange(), onlyRequired, kind });
+function playerHit(dmg) {
+  if (state !== 'playing') return;
+  playerHp -= dmg;
+  hurtFlash = 1;
+  regenT = 4;
+  SFX_PLAYER.hurt();
+  for (const h of hands) pulse(h, 1, 150);
+  boardDirty = true;
+  if (playerHp <= 0) { playerHp = 0; endRound(true); }
 }
 function updateGame(dt) {
+  hurtFlash = Math.max(0, hurtFlash - dt * 1.5);
+  const low = state === 'playing' && playerHp < 35 ? (0.35 - playerHp / 100) * (0.6 + 0.4 * Math.sin(elapsed * 6)) : 0;
+  hurtMesh.material.opacity = Math.min(0.6, hurtFlash * 0.45 + low);
+  hurtMesh.visible = hurtMesh.material.opacity > 0.01;
   if (state === 'countdown') {
     const prev = Math.ceil(countdown);
     countdown -= dt;
@@ -1302,67 +1374,65 @@ function updateGame(dt) {
   }
   if (state !== 'playing') return;
   roundClock += dt;
-  const prevT = Math.ceil(timeLeft);
-  if (Number.isFinite(timeLeft)) timeLeft -= dt;
-  if (Math.ceil(timeLeft) !== prevT) { boardDirty = true; if (timeLeft <= 5 && timeLeft > 0) SFX.beep(); }
-  if (gameMode === 'waves') {
-    if (waveBreak > 0) { waveBreak -= dt; if (waveBreak <= 0) nextWave(); return; }
-    if (remainingRequired() === 0) {
-      const bonus = 20 * wave + Math.max(0, Math.ceil(timeLeft)) * 3;
-      score += bonus;
-      floatingText(`Welle ${wave} geschafft! +${bonus}`, board.mesh.position.clone().add(new THREE.Vector3(0, -0.5, 0)), '#7dffa8');
-      SFX.jingle([659, 784, 1046]);
-      waveBreak = 2;
-      timeLeft = Infinity;
+  // Leben regeneriert langsam, wenn man eine Weile nicht getroffen wurde
+  regenT -= dt;
+  if (regenT <= 0 && playerHp < 100) { playerHp = Math.min(100, playerHp + dt * 3); if (Math.random() < dt * 2) boardDirty = true; }
+  if (playerHp < 35) { heartT -= dt; if (heartT <= 0) { heartT = 0.9; SFX_PLAYER.heartbeat(); } }
+  if (waveBreak > 0) {
+    waveBreak -= dt;
+    if (waveBreak <= 0) nextWave();
+    return;
+  }
+  // Zombies nach und nach erscheinen lassen
+  if (toSpawn > 0) {
+    spawnT -= dt;
+    if (spawnT <= 0 && aliveCount() < 3 + wave) {
+      spawnZombie(gameMode === 'training' ? 0 : wave, headPos);
+      toSpawn--;
+      spawnT = Math.max(0.8, 3.5 - wave * 0.3) * THREE.MathUtils.randFloat(0.7, 1.3);
       boardDirty = true;
-      return;
     }
-    extraTimer -= dt;
-    if (extraTimer <= 0) { extraTimer = THREE.MathUtils.randFloat(3, 6); spawn(false, Math.random() < 0.5 ? 'bonus' : 'noshoot'); }
-  } else {
-    const want = 3 + Math.floor(difficulty() * 2);
-    spawnDelay -= dt;
-    if (remainingRequired() < want && spawnDelay <= 0) { spawn(false); spawnDelay = 0.35; }
+  } else if (aliveCount() === 0) {
+    const bonus = 50 * wave;
+    score += bonus;
+    floatingText(`Welle ${wave} überlebt! +${bonus}`, board.mesh.position.clone().add(new THREE.Vector3(0, -0.5, 0)), '#7dffa8');
+    SFX.jingle([523, 659, 784, 1046]);
+    waveBreak = 5;
+    boardDirty = true;
   }
-  if (timeLeft <= 0) endRound();
 }
-function handleResult(res, point, mult, prefix = '') {
+function handleZombieHit(res, point, prefix = '') {
   if (!res) return;
-  let label;
-  if (res.penalty) {
-    if (inRound()) { score = Math.max(0, score + res.pts); combo = 1; }
-    label = res.label;
-  } else {
-    const gained = Math.round(res.pts * (inRound() ? combo : 1) * mult);
-    label = `${prefix}+${gained}${res.timeBonus ? ` +${res.timeBonus}s` : ''}${inRound() && combo > 1 ? ` (x${combo})` : ''}`;
-    if (inRound()) {
-      score += gained;
-      stats.hits++;
-      if (res.ring === 0) stats.bullseyes++;
-      combo = Math.min(5, combo + 1);
-      if (res.timeBonus && Number.isFinite(timeLeft)) timeLeft += res.timeBonus;
+  if (inRound()) {
+    stats.hits++;
+    score += 10;
+    if (res.kill) {
+      stats.kills++;
+      score += res.headshot ? 150 : 100;
+      if (res.headshot) stats.headshots++;
     }
   }
-  floatingText(label, point, res.color || '#fff');
+  if (res.kill) floatingText(prefix + (res.headshot ? 'KOPFSCHUSS! +160' : 'Erledigt +110'), point, res.headshot ? '#ffd21f' : '#ffffff');
   boardDirty = true;
 }
 function refreshBoard() {
   const training = gameMode === 'training' && state === 'playing';
-  board.set((ctx, w, h) => {
+  board.set((ctx, w) => {
     if (state === 'countdown') {
-      text(ctx, MODES[gameMode].name, w / 2, 70, 44, '#9ad', 'center', true);
+      text(ctx, `${MODES[gameMode].icon} ${MODES[gameMode].label}`, w / 2, 70, 44, '#9ad', 'center', true);
       text(ctx, countdown > 0.5 ? String(Math.ceil(countdown - 0.5)) : 'LOS!', w / 2, 200, 150, '#ffcc33', 'center', true);
       return;
     }
-    text(ctx, `${score} Punkte`, w / 2, 66, 76, '#fff', 'center', true);
-    let line = '';
-    if (gameMode === 'time') line = `⏱ ${Math.max(0, Math.ceil(timeLeft))} s`;
-    else if (gameMode === 'waves') line = waveBreak > 0 ? `Welle ${wave} geschafft!` : `Welle ${wave} · ⏱ ${Math.max(0, Math.ceil(timeLeft))} s · noch ${remainingRequired()}`;
-    else line = 'Training';
-    text(ctx, line, w / 2, 150, 50, timeLeft < 10 ? '#ff5a4a' : '#9ad', 'center', true);
-    const acc = stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0;
-    text(ctx, `Treffer ${stats.hits}/${stats.shots} (${acc}%) · Combo x${combo}`, w / 2, 214, 30, '#cfd8e3');
-  }, training ? row(240, 60, [{ id: 'end', label: '■ Training beenden', onClick: endRound }], 768, 230) : []);
+    const left = aliveCount() + toSpawn;
+    text(ctx, waveBreak > 0 ? `Welle ${wave} überlebt!` : `Welle ${wave} · 🧟 ${left}`, w / 2, 56, 56, '#fff', 'center', true);
+    // Lebensbalken
+    const bx = 90, bw = w - 180, by = 104;
+    ctx.fillStyle = '#333'; ctx.fillRect(bx, by, bw, 30);
+    ctx.fillStyle = playerHp > 50 ? '#3ad35a' : playerHp > 25 ? '#f0b020' : '#e02a2a';
+    ctx.fillRect(bx, by, bw * playerHp / 100, 30);
+    text(ctx, `❤ ${Math.ceil(playerHp)}`, w / 2, by + 16, 24, '#fff', 'center', true);
+    text(ctx, `${score} Punkte · Erledigt ${stats.kills} · Kopfschüsse ${stats.headshots}`, w / 2, 176, 30, '#cfd8e3', 'center', true);
+  }, training ? row(220, 60, [{ id: 'end', label: '■ Training beenden', onClick: () => endRound(false) }], 768, 230) : []);
 }
 
 // =============================================================================
@@ -1382,7 +1452,7 @@ function statusLines(w, h) {
   const modeName = { safe: 'GESICHERT', semi: d.modes.length > 2 ? 'EINZEL' : 'FEUER', auto: 'DAUERFEUER' }[mode(w)];
   const loaded = w.chamber === 'live' ? 1 : 0;
   const ammo = d.feed === 'mag' ? `${w.magInserted ? w.magRounds : '–'}/${d.capacity}+${loaded}` : `${w.tube}/${d.capacity}+${loaded}`;
-  const line2 = `${ammo} · ${modeName}${d.sight === 'scope' ? ` · ${w.zoom.toFixed(0)}x` : ''}`;
+  const line2 = `${inRound() ? `❤${Math.ceil(playerHp)} · ` : ''}${ammo} · ${modeName}${d.sight === 'scope' ? ` · ${w.zoom.toFixed(0)}x` : ''}`;
   let hint = '';
   if (mode(w) === 'safe') hint = `Gesichert – ${B}: entsichern`;
   else if (d.feed === 'mag' && !w.magInserted) hint = desk ? 'R: nachladen' : holding ? 'Magazin von unten einschieben' : 'Magazin vom Gürtel holen';
@@ -1659,6 +1729,8 @@ function buildDemoRoom() {
   addWall(v(-3.2, 0, -5), v(-3.2, 0, 1), headPos);
   addBox('table', v(0.4, 0.75, -2.9), v(1.8, 0.75, -2.2), 0);
   addBox('chair', v(-1.7, 0.46, -3.3), v(-1.25, 0.46, -2.85), 0);
+  addOpening('door', v(-3.2, 0, -3.6), v(-3.2, 0, -2.6), headPos, 0, 2.05);
+  addOpening('window', v(-0.6, 0, -5), v(0.6, 0, -5), headPos, 0.9, 2.0);
 }
 
 // =============================================================================
@@ -1736,7 +1808,9 @@ renderer.setAnimationLoop(() => {
   flashLight.intensity = Math.max(0, flashLight.intensity - dt * 60);
   stepPhysics(dt);
   updateKnives(dt);
-  updateTargets(dt);
+  updateZombies(dt, headPos, { harmless: gameMode === 'training' });
+  getViewCamera().getWorldDirection(tmpV);
+  setListener(headPos, tmpV, UP.clone().applyQuaternion(getViewCamera().getWorldQuaternion(tmpQ)));
   updateGame(dt);
   if (startButton.visible) startButton.scale.setScalar(1 + Math.sin(elapsed * 4) * 0.05);
   updateEffects(dt);
@@ -1753,7 +1827,7 @@ renderer.setAnimationLoop(() => {
 
 // Für automatisierte Tests
 window.__game = {
-  get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, targets, uiPanels,
+  get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound
 };
