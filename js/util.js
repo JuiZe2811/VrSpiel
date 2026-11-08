@@ -99,33 +99,40 @@ export function profileGeo(pts, width, bevel = 0.0015, holes) {
   g.translate(-depth / 2, 0, 0);
   return g;
 }
-export const prof = (pts, width, mat, bevel, holes) => new THREE.Mesh(profileGeo(pts, width, bevel, holes), mat);
+// Geometrie-Zwischenspeicher: gleiche Formen werden nur einmal erzeugt und geteilt.
+// Wichtig gegen Speicherlecks (z. B. eine neue Hülse bei jedem Schuss).
+const geoCache = new Map();
+export function cachedGeo(key, make) {
+  let g = geoCache.get(key);
+  if (!g) { g = make(); g.userData.shared = true; geoCache.set(key, g); }
+  return g;
+}
+export const prof = (pts, width, mat, bevel, holes) =>
+  new THREE.Mesh(cachedGeo('p' + JSON.stringify([pts, width, bevel, holes]), () => profileGeo(pts, width, bevel, holes)), mat);
 export function box(w, h, l, mat, s, y, x = 0) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, l), mat);
+  const m = new THREE.Mesh(cachedGeo(`b${w}|${h}|${l}`, () => new THREE.BoxGeometry(w, h, l)), mat);
   m.position.set(x, y, -s);
   return m;
 }
 export function cylZ(rFront, rRear, len, mat, s, y, x = 0, seg = 20, open = false) {
-  const g = new THREE.CylinderGeometry(rRear, rFront, len, seg, 1, open);
-  g.rotateX(Math.PI / 2);
+  const g = cachedGeo(`z${rFront}|${rRear}|${len}|${seg}|${open}`, () => new THREE.CylinderGeometry(rRear, rFront, len, seg, 1, open).rotateX(Math.PI / 2));
   const m = new THREE.Mesh(g, mat);
   m.position.set(x, y, -s);
   return m;
 }
 export function cylY(rTop, rBot, len, mat, s, y, x = 0, seg = 16) {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, len, seg), mat);
+  const m = new THREE.Mesh(cachedGeo(`y${rTop}|${rBot}|${len}|${seg}`, () => new THREE.CylinderGeometry(rTop, rBot, len, seg)), mat);
   m.position.set(x, y, -s);
   return m;
 }
 export function cylX(r, len, mat, s, y, x = 0, seg = 16) {
-  const g = new THREE.CylinderGeometry(r, r, len, seg);
-  g.rotateZ(Math.PI / 2);
+  const g = cachedGeo(`x${r}|${len}|${seg}`, () => new THREE.CylinderGeometry(r, r, len, seg).rotateZ(Math.PI / 2));
   const m = new THREE.Mesh(g, mat);
   m.position.set(x, y, -s);
   return m;
 }
 export function sphere(r, mat, s, y, x = 0) {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 8), mat);
+  const m = new THREE.Mesh(cachedGeo(`s${r}`, () => new THREE.SphereGeometry(r, 12, 8)), mat);
   m.position.set(x, y, -s);
   return m;
 }

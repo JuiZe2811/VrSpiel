@@ -97,6 +97,7 @@ function panner(pos) {
   p.rolloffFactor = 1.2;
   if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y; p.positionZ.value = pos.z; } else p.setPosition(pos.x, pos.y, pos.z);
   p.connect(audioCtx.destination);
+  setTimeout(() => { try { p.disconnect(); } catch { /* schon getrennt */ } }, 3000); // sonst sammeln sich Audio-Knoten an
   return p;
 }
 export const SFX3D = {

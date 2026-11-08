@@ -695,8 +695,10 @@ function pointerTarget(h) {
   raycaster.set(tmpV, tmpV3.set(0, 0, -1).applyQuaternion(h.quat));
   raycaster.far = 6;
   let best = null;
-  const panelsHit = raycaster.intersectObjects(uiPanels.filter(p => p.mesh.visible).map(p => p.mesh), false)[0];
-  if (panelsHit) best = { kind: 'ui', dist: panelsHit.distance, panel: panelsHit.object.userData.ui, uv: panelsHit.uv };
+  // Menüs zählen nur, wenn ein Knopf getroffen wird – sonst geht der Laser durch (z. B. zur Wand dahinter)
+  for (const ph of raycaster.intersectObjects(uiPanels.filter(p => p.mesh.visible).map(p => p.mesh), false)) {
+    if (ph.object.userData.ui.buttonAt(ph.uv)) { best = { kind: 'ui', dist: ph.distance, panel: ph.object.userData.ui, uv: ph.uv }; break; }
+  }
   const objs = [];
   for (const w of arsenal) if (w.holder < 0 && w !== deskW) objs.push({ o: w.root, kind: 'weapon', w });
   for (const m of looseMags) objs.push({ o: m, kind: 'mag', obj: m });
@@ -720,8 +722,13 @@ function updateHandsXR(dt) {
     let len = pt ? pt.dist : 2;
     let showPtr = free && (pt || state !== 'playing');
     if (state === 'setup' && free && !pt && setup.tool && setup.tool !== 'floor') {
-      const fh = floorHit(rayOf(h));
-      len = fh ? fh.distanceTo(h.tip) : 4;
+      if (setup.tool === 'door' || setup.tool === 'window') {
+        const wh = setup.drag && setup.drag.src === h ? wallHit(rayOf(h), setup.drag.wall) : wallHit(rayOf(h));
+        len = wh ? wh.point.distanceTo(h.tip) : 4;
+      } else {
+        const fh = floorHit(rayOf(h));
+        len = fh ? fh.distanceTo(h.tip) : 4;
+      }
     }
     h.pointer.visible = !!showPtr;
     h.pointer.scale.z = len;
@@ -959,8 +966,8 @@ const TOOL_HELP = {
   table: ['TISCH: Grundfläche mit dem Laser auf dem Boden aufziehen (Ecke zu Ecke),', 'dann mit dem Laser auf die Tischkante zeigen = Höhe, Abzug = fertig.'],
   chair: ['STUHL: Grundfläche mit dem Laser auf dem Boden aufziehen,', 'dann auf die Sitzfläche zeigen = Höhe, Abzug = fertig.'],
   bench: ['WAFFENSTÄNDER: Mit dem Laser auf den Boden zeigen und Abzug drücken', '(ziehen = Ausrichtung). Hier stehen die Waffen zu Beginn jeder Runde.'],
-  door: ['TÜR: Laser auf den Boden an einer Seite der Tür, Abzug halten,', 'zur anderen Seite fahren, loslassen. Hier brechen Zombies durch.'],
-  window: ['FENSTER: Breite unter dem Fenster auf dem Boden aufziehen, dann mit dem', 'Laser auf Unterkante zeigen + Abzug, dann auf Oberkante + Abzug.'],
+  door: ['TÜR: Laser oben an eine Türecke auf der Wand, Abzug halten,', 'zur anderen Ecke ziehen, loslassen. Unten = automatisch Boden.'],
+  window: ['FENSTER: Laser an eine Fensterecke auf der Wand, Abzug halten,', 'zur gegenüberliegenden Ecke ziehen, loslassen.'],
   floor: ['BODENHÖHE: Controller auf den Boden legen und Abzug drücken, dann mit', 'Stick ▲▼ fein einstellen, bis das Gitter genau auf dem echten Boden liegt.']
 };
 function refreshSetupPanel() {
@@ -1038,6 +1045,31 @@ function heightFromRay(r, center, maxH = 1.6) {
   const t = center.clone().sub(r.o).dot(n) / denom;
   return t > 0 ? THREE.MathUtils.clamp(r.o.y + r.d.y * t, 0.15, maxH) : null;
 }
+// Laser trifft eine markierte Wand: Position entlang der Wand (u) und Höhe (v)
+function wallHit(r, only = null) {
+  let best = null;
+  for (const w of only ? [only] : surfacesOf('wall')) {
+    const denom = r.d.dot(w.normal);
+    if (Math.abs(denom) < 1e-4) continue;
+    const t = ((w.mid.x - r.o.x) * w.normal.x + (w.mid.z - r.o.z) * w.normal.z) / denom;
+    if (t <= 0 || t > 15) continue;
+    const p = r.o.clone().addScaledVector(r.d, t);
+    let u = (p.x - w.a.x) * w.right.x + (p.z - w.a.z) * w.right.z, v = p.y;
+    if (only) { u = THREE.MathUtils.clamp(u, 0, w.width); v = THREE.MathUtils.clamp(v, 0, w.height); }
+    else if (u < -0.05 || u > w.width + 0.05 || v < 0 || v > w.height) continue;
+    if (!best || t < best.t) best = { wall: w, u, v, t, point: w.a.clone().addScaledVector(w.right, u).setY(v) };
+  }
+  return best;
+}
+// Rechteck einer Tür/eines Fensters aus dem Ziehen auf der Wand
+function openingFromDrag(d) {
+  const w = d.wall;
+  const u0 = Math.min(d.u0, d.u), u1 = Math.max(d.u0, d.u);
+  let bottom, top;
+  if (setup.tool === 'door') { bottom = 0; top = THREE.MathUtils.clamp(Math.max(d.v0, d.v), 1.6, w.height - 0.02); }
+  else { bottom = Math.min(d.v0, d.v); top = Math.max(d.v0, d.v); if (top - bottom < 0.25) top = Math.min(w.height, bottom + 0.25); }
+  return { a: w.a.clone().addScaledVector(w.right, u0), b: w.a.clone().addScaledVector(w.right, u1), inside: w.mid.clone().add(w.normal), bottom, top, width: u1 - u0 };
+}
 const boxWithHeight = (p) => makeBox(p.type, p.p1.clone().setY(p.height), p.p2.clone().setY(p.height), p.yaw);
 
 // Abzug gedrückt (mit Laser, nicht auf ein Menü)
@@ -1070,6 +1102,13 @@ function setupTriggerDown(src) {
     }
     return;
   }
+  if (tool === 'door' || tool === 'window') {
+    const wh = wallHit(rayOf(src));
+    if (!wh) { setup.msg = surfacesOf('wall').length ? 'Zeige mit dem Laser auf eine markierte (blaue) Wand' : 'Zuerst Wände markieren – dann Türen/Fenster einzeichnen'; refreshSetupPanel(); return; }
+    setup.drag = { src, wall: wh.wall, u0: wh.u, v0: wh.v, u: wh.u, v: wh.v };
+    if (src !== 'mouse') pulse(src, 0.4, 30);
+    return;
+  }
   const hit = floorHit(rayOf(src));
   if (!tool || !hit) return;
   setup.drag = { src, start: hit, cur: hit.clone() };
@@ -1080,6 +1119,14 @@ function setupTriggerUp() {
   setup.drag = null;
   previewWall.visible = previewLine.visible = false;
   if (!d) return;
+  if (d.wall) { // Tür / Fenster in der Wand
+    const o = openingFromDrag(d);
+    const s = o.width >= 0.3 ? addOpening(setup.tool, o.a, o.b, o.inside, o.bottom, o.top) : null;
+    if (s) { setup.last = s; setup.msg = `${surfaceName(s.type)} hinzugefügt (${o.width.toFixed(2)} × ${(o.top - o.bottom).toFixed(2)} m)`; SFX.magIn(); saveRoom(); }
+    else setup.msg = 'Zu schmal – nochmal ziehen';
+    refreshSetupPanel();
+    return;
+  }
   const len = d.start.distanceTo(d.cur);
   if (setup.tool === 'wall') {
     const s = addWall(d.start, d.cur, headPos);
@@ -1115,13 +1162,28 @@ function updateSetup(dt) {
   for (const src of srcs) {
     const marker = src === 'mouse' ? mouseMarker : src.floorMarker;
     if (!laserTool || (src !== 'mouse' && (!isFree(src) || src.uiHover))) continue;
+    if (setup.tool === 'door' || setup.tool === 'window') {
+      const wh = setup.drag && setup.drag.src === src ? wallHit(rayOf(src), setup.drag.wall) : wallHit(rayOf(src));
+      if (wh) { marker.visible = true; marker.position.copy(wh.point).addScaledVector(wh.wall.normal, 0.01); marker.quaternion.setFromUnitVectors(UP, wh.wall.normal); }
+      continue;
+    }
+    marker.quaternion.identity();
     const hit = floorHit(rayOf(src));
     if (hit) { marker.visible = true; marker.position.copy(hit).setY(0.003); }
   }
   // Ziehen
   const d = setup.drag;
   previewWall.visible = previewBox.visible = previewLine.visible = false;
-  if (d) {
+  if (d && d.wall) {
+    const wh = wallHit(rayOf(d.src), d.wall);
+    if (wh) { d.u = wh.u; d.v = wh.v; }
+    const o = openingFromDrag(d);
+    const w = d.wall;
+    previewWall.visible = true;
+    previewWall.scale.set(Math.max(0.02, o.width), Math.max(0.02, o.top - o.bottom), 1);
+    previewWall.position.copy(o.a).addScaledVector(w.right, o.width / 2).setY((o.bottom + o.top) / 2).addScaledVector(w.normal, 0.01);
+    previewWall.quaternion.setFromRotationMatrix(tmpM.makeBasis(w.right, UP, w.normal));
+  } else if (d) {
     const hit = floorHit(rayOf(d.src));
     if (hit) d.cur = hit;
     d.yaw = suggestYaw(d.start, headYaw());
@@ -1216,7 +1278,7 @@ function enterSetup() {
   menuPanel.visible = board.visible = false;
   startButton.visible = false;
   setupPanel.visible = true;
-  setupPanel.place(0.9, 0.35, -0.2);
+  setupPanel.place(0.85, 0.65, -0.4);
   refreshSetupPanel();
 }
 function finishSetup() {
@@ -1781,7 +1843,33 @@ setupBench();
 resetWeapons();
 enterMenu();
 
+// Fehler werden gemeldet, aber das Spiel läuft weiter (sonst friert die VR-Ansicht ein)
+const errorEl = document.createElement('div');
+errorEl.style.cssText = 'position:absolute;bottom:120px;left:16px;right:16px;color:#ffb0b0;font:12px monospace;white-space:pre-wrap;pointer-events:none';
+document.body.appendChild(errorEl);
+let errorCount = 0, lastErrorShown = -10;
+function reportError(e) {
+  errorCount++;
+  console.error(e);
+  errorEl.textContent = `Fehler (${errorCount}): ${e && e.message ? e.message : e}`;
+  if (renderer.xr.isPresenting && elapsed - lastErrorShown > 5) {
+    lastErrorShown = elapsed;
+    try { floatingText('⚠ Fehler abgefangen – Spiel läuft weiter', inFront(1.2, 0, headPos.y), '#ff9090'); } catch { /* egal */ }
+  }
+}
+window.addEventListener('error', (ev) => reportError(ev.error || ev.message));
+window.addEventListener('unhandledrejection', (ev) => reportError(ev.reason));
+
 renderer.setAnimationLoop(() => {
+  try { frame(); }
+  catch (e) {
+    reportError(e);
+    // Zustand nach einem Fehler mitten im Zielfernrohr-Rendern wiederherstellen
+    renderer.xr.enabled = true;
+    try { renderer.setRenderTarget(null); renderer.render(scene, camera); } catch { /* nächstes Bild */ }
+  }
+});
+function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
   elapsed += dt;
   const xr = renderer.xr.isPresenting;
@@ -1797,7 +1885,7 @@ renderer.setAnimationLoop(() => {
   if (xr) {
     readInputs();
     // Bedienfelder folgen, wenn man sich weit entfernt
-    for (const p of [setupPanel, menuPanel]) if (p.visible && headPos.distanceTo(p.anchor) > 1.3) p === menuPanel ? enterMenu() : p.place(0.9, 0.35, -0.2);
+    for (const p of [setupPanel, menuPanel]) if (p.visible && headPos.distanceTo(p.anchor) > 1.3) p === menuPanel ? enterMenu() : p.place(0.85, 0.65, -0.4);
     updateHandsXR(dt);
     if (state === 'setup') updateSetup(dt);
   } else {
@@ -1823,11 +1911,11 @@ renderer.setAnimationLoop(() => {
   for (const h of hands) updateSights(heldWeapon(h));
   updateSights(deskW);
   renderer.render(scene, camera);
-});
+}
 
 // Für automatisierte Tests
 window.__game = {
-  get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
+  renderer, get errors() { return errorCount; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound
 };

@@ -16,7 +16,7 @@ export function spawnTracer(from, to) {
   const mat = new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.6 });
   const line = new THREE.Line(geo, mat);
   scene.add(line);
-  effects.push({ obj: line, life: 0.06, maxLife: 0.06, update(dt, k) { mat.opacity = 0.6 * k; } });
+  effects.push({ obj: line, life: 0.06, maxLife: 0.06, update(dt, k) { mat.opacity = 0.6 * k; }, dispose() { geo.dispose(); mat.dispose(); } });
 }
 
 const particleGeo = new THREE.BoxGeometry(0.02, 0.02, 0.02);
@@ -28,7 +28,7 @@ export function burst(point, color, count) {
     const v = new THREE.Vector3().randomDirection().multiplyScalar(THREE.MathUtils.randFloat(1, 3));
     scene.add(p);
     effects.push({
-      obj: p, life: 0.7, maxLife: 0.7, keepGeo: true,
+      obj: p, life: 0.7, maxLife: 0.7, keepGeo: true, dispose: i === count - 1 ? () => mat.dispose() : null,
       update(dt, k) {
         v.y -= 6 * dt;
         p.position.addScaledVector(v, dt);
@@ -91,7 +91,7 @@ export function updateEffects(dt) {
 
 // Hülsen & Patronen: einfache Flugbahn, landen auf Boden oder Tisch
 export function addDebris(obj, vel, life = 4) {
-  scene.add(obj);
+  if (obj.parent !== scene) scene.attach(obj);
   debris.push({ obj, vel, life, ang: new THREE.Vector3().randomDirection().multiplyScalar(18), bounced: 0 });
   if (debris.length > 50) { const d = debris.shift(); scene.remove(d.obj); }
 }

@@ -3,6 +3,7 @@ import { room, surfacesOf, isOpening } from './room.js';
 import { addDynamic, removeDynamic, localBoxOf } from './physics.js';
 import { SFX3D } from './sfx.js';
 import { burst, addDebris } from './effects.js';
+import { cachedGeo } from './util.js';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -18,83 +19,163 @@ const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
 
 export function initZombies(s, hitCallback) { scene = s; onPlayerHit = hitCallback; }
 
-// ---- Aussehen -----------------------------------------------------------------
-function clothTex(base) {
+// ---- Aussehen -------------------------------------------------------------------
+// Alle Formen und Texturen werden geteilt (kein Speicherleck bei vielen Zombies).
+function canvasTex(w, h, draw) {
   const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = base; ctx.fillRect(0, 0, 64, 64);
-  for (let i = 0; i < 90; i++) { // Dreck, Risse, Blut
-    ctx.fillStyle = Math.random() < 0.25 ? 'rgba(90,0,0,0.6)' : `rgba(0,0,0,${Math.random() * 0.35})`;
-    ctx.fillRect(Math.random() * 64, Math.random() * 64, 1 + Math.random() * 6, 1 + Math.random() * 3);
-  }
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
-const SKINS = [0x7f9a6c, 0x8d9c7a, 0x9aa38a, 0x6f8a68].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 }));
-const SHIRTS = ['#5b5145', '#3f4d5c', '#6b3b33', '#4c5b3c', '#7a7262'].map(c => new THREE.MeshStandardMaterial({ map: clothTex(c), roughness: 0.95 }));
-const PANTS = ['#2c3340', '#3d3226', '#28302a'].map(c => new THREE.MeshStandardMaterial({ map: clothTex(c), roughness: 0.95 }));
-const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffe14a, toneMapped: false });
+function grime(ctx, w, h, n, blood = 0.25) {
+  for (let i = 0; i < n; i++) {
+    ctx.fillStyle = Math.random() < blood ? `rgba(${90 + Math.random() * 60},0,0,${0.4 + Math.random() * 0.5})` : `rgba(0,0,0,${Math.random() * 0.35})`;
+    ctx.beginPath();
+    ctx.ellipse(Math.random() * w, Math.random() * h, 1 + Math.random() * w / 30, 1 + Math.random() * h / 40, Math.random() * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+const clothTex = (base) => canvasTex(64, 64, (ctx, w, h) => {
+  ctx.fillStyle = base; ctx.fillRect(0, 0, w, h);
+  grime(ctx, w, h, 60, 0.3);
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; // Risse
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(Math.random() * w, Math.random() * h); ctx.lineTo(Math.random() * w, Math.random() * h); ctx.stroke(); }
+});
+const skinTex = (base) => canvasTex(64, 64, (ctx, w, h) => {
+  ctx.fillStyle = base; ctx.fillRect(0, 0, w, h);
+  grime(ctx, w, h, 40, 0.35);
+  ctx.strokeStyle = 'rgba(40,20,60,0.45)'; // Adern
+  for (let i = 0; i < 6; i++) { ctx.beginPath(); let x = Math.random() * w, y = Math.random() * h; ctx.moveTo(x, y); for (let k = 0; k < 4; k++) { x += (Math.random() - 0.5) * 14; y += Math.random() * 10; ctx.lineTo(x, y); } ctx.stroke(); }
+});
+// Gesicht auf der Kopfkugel: Mitte vorne liegt bei u = 0.25
+function faceTex(base, variant) {
+  return canvasTex(256, 128, (ctx, w, h) => {
+    ctx.fillStyle = base; ctx.fillRect(0, 0, w, h);
+    grime(ctx, w, h, 50, 0.3);
+    const cx = w * 0.25;
+    // Augenhöhlen
+    ctx.fillStyle = 'rgba(15,5,5,0.9)';
+    for (const sx of [-1, 1]) { ctx.beginPath(); ctx.ellipse(cx + sx * 11, 52, 7.5, 6, sx * 0.3, 0, Math.PI * 2); ctx.fill(); }
+    // Nase (eingefallen)
+    ctx.fillStyle = 'rgba(30,5,5,0.8)';
+    ctx.beginPath(); ctx.moveTo(cx - 3, 66); ctx.lineTo(cx + 3, 66); ctx.lineTo(cx, 60); ctx.fill();
+    // Mund mit Zähnen
+    ctx.fillStyle = '#1a0303';
+    ctx.beginPath(); ctx.ellipse(cx, 80, 12, variant === 1 ? 9 : 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#d8cfa8';
+    for (let i = -4; i <= 4; i++) { if (Math.random() < 0.25) continue; ctx.fillRect(cx + i * 2.6 - 1, 74 + Math.random() * 2, 1.8, 3 + Math.random() * 2); }
+    // Blut aus dem Mund / Wunden
+    ctx.strokeStyle = 'rgba(120,0,0,0.85)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) { const x = cx + (Math.random() - 0.5) * 20; ctx.beginPath(); ctx.moveTo(x, 84); ctx.lineTo(x + (Math.random() - 0.5) * 3, 92 + Math.random() * 18); ctx.stroke(); }
+    if (variant === 2) { ctx.fillStyle = 'rgba(110,0,0,0.9)'; ctx.beginPath(); ctx.ellipse(cx + 22, 40, 9, 12, 0.4, 0, Math.PI * 2); ctx.fill(); }
+  });
+}
+const SKIN_COLORS = ['#5f6e4c', '#6c6d55', '#7a7464', '#55654b', '#7d6c60'];
+const SKINS = SKIN_COLORS.map(c => new THREE.MeshStandardMaterial({ map: skinTex(c), roughness: 0.75, envMapIntensity: 0.35 }));
+const FACES = SKIN_COLORS.map((c, i) => new THREE.MeshStandardMaterial({ map: faceTex(c, i % 3), roughness: 0.75, envMapIntensity: 0.35 }));
+const SHIRTS = ['#5b5145', '#3f4d5c', '#6b3b33', '#4c5b3c', '#7a7262', '#2b2b2b', '#8a8a80'].map(c => new THREE.MeshStandardMaterial({ map: clothTex(c), roughness: 0.95, envMapIntensity: 0.3 }));
+const PANTS = ['#2c3340', '#3d3226', '#28302a', '#45403a'].map(c => new THREE.MeshStandardMaterial({ map: clothTex(c), roughness: 0.95, envMapIntensity: 0.3 }));
+const EYES = [0xffe14a, 0xff2a1a, 0xe8f4ff].map(c => new THREE.MeshBasicMaterial({ color: c, toneMapped: false }));
+const hairMat = new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 1 });
 const mouthMat = new THREE.MeshStandardMaterial({ color: 0x220707, roughness: 1 });
-const stumpMat = new THREE.MeshStandardMaterial({ color: 0x5a0606, roughness: 0.6 });
+const boneMat = new THREE.MeshStandardMaterial({ color: 0xcfc6a8, roughness: 0.7 });
+const woundMat = new THREE.MeshStandardMaterial({ color: 0x5a0606, roughness: 0.5 });
+const stumpMat = woundMat;
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const capGeo = (r, len) => cachedGeo(`zc${r}|${len}`, () => new THREE.CapsuleGeometry(r, len, 4, 10));
+const sphGeo = (r) => cachedGeo(`zs${r}`, () => new THREE.SphereGeometry(r, 16, 12));
+const coneGeo = cachedGeo('zclaw', () => new THREE.ConeGeometry(0.008, 0.06, 5));
+const hairGeo = cachedGeo('zhair', () => new THREE.SphereGeometry(0.108, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.45));
+const stumpGeo = cachedGeo('zstump', () => new THREE.SphereGeometry(0.05, 8, 6));
 
-function part(w, h, d, mat, y, name, z = 0) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  m.position.set(0, y, z);
+function mesh(geo, mat, x, y, z, name, sx = 1, sy = 1, sz = 1) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, z);
+  m.scale.set(sx, sy, sz);
   if (name) m.userData.part = name;
   return m;
 }
-function buildZombie() {
-  const skin = pick(SKINS), shirt = pick(SHIRTS), pants = pick(PANTS);
+// Zombie-Typen: Schlurfer, Renner, Brocken, Kriecher
+export const TYPES = {
+  walker: { name: 'Schlurfer', scale: [0.86, 0.96], width: 1, hp: 100, speed: 1, dmg: 10 },
+  runner: { name: 'Renner', scale: [0.84, 0.92], width: 0.85, hp: 70, speed: 1.9, dmg: 8 },
+  brute: { name: 'Brocken', scale: [0.97, 1.04], width: 1.35, hp: 220, speed: 0.7, dmg: 18 },
+  crawler: { name: 'Kriecher', scale: [0.82, 0.9], width: 0.95, hp: 60, speed: 1.4, dmg: 7 }
+};
+function buildZombie(type) {
+  const T = TYPES[type];
+  const si = Math.floor(Math.random() * SKINS.length);
+  const skin = SKINS[si], face = FACES[si], shirt = pick(SHIRTS), pants = pick(PANTS);
+  const sleeves = Math.random() < 0.5 ? shirt : skin; // zerrissene Ärmel
   const root = new THREE.Group();   // steht auf dem Boden, schaut nach +Z
   const body = new THREE.Group();   // für Umfallen / Kriechen
   root.add(body);
   const hips = new THREE.Group();
-  hips.position.y = 0.95;
+  hips.position.y = 0.86;
   body.add(hips);
-  hips.add(part(0.36, 0.16, 0.22, pants, -0.02, 'torso'));
+  hips.add(mesh(sphGeo(0.12), pants, 0, 0, 0, 'torso', 1.15 * T.width, 0.8, 0.85));
   const torso = new THREE.Group();
+  torso.scale.x = T.width;
   hips.add(torso);
-  torso.add(part(0.4, 0.58, 0.24, shirt, 0.31, 'torso'));
+  torso.add(mesh(capGeo(0.105, 0.14), shirt, 0, 0.15, 0, 'torso', 1.05, 1, 0.85));
+  torso.add(mesh(capGeo(0.13, 0.12), shirt, 0, 0.35, 0.01, 'torso', 1.3, 1, 0.8));
+  // offene Wunde / Rippen auf der Brust
+  if (Math.random() < 0.6) {
+    const wx = (Math.random() - 0.5) * 0.12;
+    torso.add(mesh(sphGeo(0.05), woundMat, wx, 0.3, 0.095, null, 1, 1.2, 0.3));
+    for (let k = 0; k < 3; k++) torso.add(mesh(capGeo(0.006, 0.06), boneMat, wx, 0.27 + k * 0.025, 0.11, null).rotateZ(Math.PI / 2));
+  }
   const neck = new THREE.Group();
-  neck.position.y = 0.6;
+  neck.position.y = 0.5;
+  neck.rotation.x = 0.25; // Kopf hängt nach vorne
   torso.add(neck);
-  neck.add(part(0.1, 0.08, 0.1, skin, 0.03));
+  neck.add(mesh(capGeo(0.042, 0.06), skin, 0, 0.03, 0));
   const head = new THREE.Group();
-  head.position.y = 0.06;
+  head.position.y = 0.09;
   neck.add(head);
-  const skull = part(0.22, 0.26, 0.24, skin, 0.13, 'head');
+  const skull = mesh(sphGeo(0.1), face, 0, 0.1, 0, 'head', 0.92, 1.12, 1);
+  skull.rotation.y = 0; // Gesicht zeigt nach +Z
   head.add(skull);
-  for (const sx of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), eyeMat); e.position.set(sx * 0.055, 0.16, 0.121); head.add(e); }
-  head.add(part(0.12, 0.05, 0.02, mouthMat, 0.06, null, 0.121));
+  if (Math.random() < 0.6) head.add(mesh(hairGeo, hairMat, 0, 0.115, -0.005, null, 0.95, 1.1, 1.02));
+  const eyeMat = type === 'runner' ? EYES[1] : pick(EYES);
+  for (const sx of [-1, 1]) if (Math.random() > 0.12) head.add(mesh(sphGeo(0.014), eyeMat, sx * 0.034, 0.118, 0.077));
+  const jaw = new THREE.Group();
+  jaw.position.set(0, 0.06, 0.02);
+  head.add(jaw);
+  jaw.add(mesh(sphGeo(0.06), skin, 0, -0.02, 0.025, 'head', 1.05, 0.55, 1));
+  jaw.add(mesh(sphGeo(0.04), mouthMat, 0, 0.0, 0.05, null, 1.1, 0.5, 0.5));
   const arms = [], legs = [];
   for (const side of [-1, 1]) {
     const name = side < 0 ? 'armL' : 'armR';
     const shoulder = new THREE.Group();
-    shoulder.position.set(side * 0.25, 0.54, 0);
+    shoulder.position.set(side * 0.18, 0.42, 0);
     torso.add(shoulder);
-    shoulder.add(part(0.11, 0.32, 0.11, shirt, -0.16, name));
+    shoulder.add(mesh(capGeo(0.042, 0.2), sleeves, 0, -0.13, 0, name));
     const elbow = new THREE.Group();
-    elbow.position.y = -0.32;
+    elbow.position.y = -0.27;
     shoulder.add(elbow);
-    elbow.add(part(0.09, 0.3, 0.09, skin, -0.15, name));
-    elbow.add(part(0.08, 0.1, 0.05, skin, -0.34, name));
+    elbow.add(mesh(capGeo(0.034, 0.2), skin, 0, -0.12, 0, name));
+    const hand = new THREE.Group();
+    hand.position.y = -0.26;
+    elbow.add(hand);
+    hand.add(mesh(sphGeo(0.04), skin, 0, -0.015, 0, name, 0.8, 1.1, 0.55));
+    for (let k = -1; k <= 1; k++) { const c = mesh(coneGeo, boneMat, k * 0.016, -0.065, 0.01, name); c.rotation.x = Math.PI; hand.add(c); } // Krallen
     arms.push({ shoulder, elbow, side, name });
     const lname = side < 0 ? 'legL' : 'legR';
     const hip = new THREE.Group();
-    hip.position.set(side * 0.1, -0.06, 0);
+    hip.position.set(side * 0.085, -0.03, 0);
     hips.add(hip);
-    hip.add(part(0.15, 0.46, 0.16, pants, -0.23, lname));
+    hip.add(mesh(capGeo(0.062, 0.28), pants, 0, -0.2, 0, lname));
     const knee = new THREE.Group();
-    knee.position.y = -0.44;
+    knee.position.y = -0.41;
     hip.add(knee);
-    knee.add(part(0.13, 0.44, 0.13, pants, -0.22, lname));
-    knee.add(part(0.13, 0.07, 0.24, mouthMat, -0.45, lname, 0.05));
+    knee.add(mesh(capGeo(0.05, 0.28), Math.random() < 0.3 ? skin : pants, 0, -0.19, 0, lname));
+    knee.add(mesh(capGeo(0.04, 0.1), Math.random() < 0.5 ? mouthMat : skin, 0, -0.4, 0.04, lname).rotateX(Math.PI / 2));
     legs.push({ hip, knee, side, name: lname });
   }
-  return { root, body, hips, torso, neck, head, skull, arms, legs };
+  return { root, body, hips, torso, neck, head, skull, jaw, arms, legs };
 }
 
 // ---- Bretter vor Türen und Fenstern -------------------------------------------
@@ -111,10 +192,10 @@ export function setupPlanks() {
     for (let i = 0; i < n; i++) {
       const g = new THREE.Group();
       const len = o.width + 0.18;
-      const board = new THREE.Mesh(new THREE.BoxGeometry(len, rand(0.11, 0.15), 0.025), pick(plankMat));
+      const board = new THREE.Mesh(cachedGeo(`plank${len.toFixed(2)}`, () => new THREE.BoxGeometry(len, 0.13, 0.025)), pick(plankMat));
       board.userData.plank = true;
       g.add(board);
-      for (const sx of [-1, 1]) { const nail = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.01, 6), nailMat); nail.rotation.x = Math.PI / 2; nail.position.set(sx * (len / 2 - 0.05), 0, 0.014); g.add(nail); }
+      for (const sx of [-1, 1]) { const nail = new THREE.Mesh(cachedGeo('nail', () => new THREE.CylinderGeometry(0.006, 0.006, 0.01, 6)), nailMat); nail.rotation.x = Math.PI / 2; nail.position.set(sx * (len / 2 - 0.05), 0, 0.014); g.add(nail); }
       g.position.copy(o.a).addScaledVector(o.right, o.width / 2).setY(lo + (hi - lo) * (i + 0.5) / n).addScaledVector(o.normal, 0.03);
       g.quaternion.copy(q).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rand(-0.12, 0.12)));
       scene.add(g);
@@ -148,18 +229,22 @@ export function buildNav(head) {
   const walls = surfacesOf('wall');
   let minX = head.x - 6, maxX = head.x + 6, minZ = head.z - 6, maxZ = head.z + 6;
   for (const w of walls) {
-    const b = w.a.clone().addScaledVector(w.right, w.width);
-    minX = Math.min(minX, w.a.x, b.x); maxX = Math.max(maxX, w.a.x, b.x);
-    minZ = Math.min(minZ, w.a.z, b.z); maxZ = Math.max(maxZ, w.a.z, b.z);
+    const bx = w.a.x + w.right.x * w.width, bz = w.a.z + w.right.z * w.width;
+    minX = Math.min(minX, w.a.x, bx); maxX = Math.max(maxX, w.a.x, bx);
+    minZ = Math.min(minZ, w.a.z, bz); maxZ = Math.max(maxZ, w.a.z, bz);
   }
-  minX = Math.max(minX - 1, head.x - 12); maxX = Math.min(maxX + 1, head.x + 12);
-  minZ = Math.max(minZ - 1, head.z - 12); maxZ = Math.min(maxZ + 1, head.z + 12);
+  minX = Math.max(minX - 1, head.x - 10); maxX = Math.min(maxX + 1, head.x + 10);
+  minZ = Math.max(minZ - 1, head.z - 10); maxZ = Math.min(maxZ + 1, head.z + 10);
   nav.minX = minX; nav.minZ = minZ;
   nav.w = Math.ceil((maxX - minX) / nav.cell);
   nav.h = Math.ceil((maxZ - minZ) / nav.cell);
   nav.blocked = new Uint8Array(nav.w * nav.h);
   const boxes = room.surfaces.filter(s => s.type === 'table' || s.type === 'chair' || s.type === 'bench');
-  const ops = openings();
+  // Türen je Wand vorab als begehbare Abschnitte berechnen
+  const wallInfo = walls.map(w => ({
+    w, doors: openings().filter(o => o.type === 'door' && Math.abs(o.normal.dot(w.normal)) > 0.9 && Math.abs((o.mid.x - w.mid.x) * w.normal.x + (o.mid.z - w.mid.z) * w.normal.z) < 0.3)
+      .map(o => { const u = (o.mid.x - w.a.x) * w.right.x + (o.mid.z - w.a.z) * w.right.z; return [u - o.width / 2 + 0.05, u + o.width / 2 - 0.05]; })
+  }));
   for (let j = 0; j < nav.h; j++) for (let i = 0; i < nav.w; i++) {
     const x = minX + (i + 0.5) * nav.cell, z = minZ + (j + 0.5) * nav.cell;
     let blocked = false;
@@ -167,14 +252,11 @@ export function buildNav(head) {
       const dx = x - s.center.x, dz = z - s.center.z;
       if (Math.abs(dx * s.X.x + dz * s.X.z) <= s.hx + RADIUS && Math.abs(dx * s.Z.x + dz * s.Z.z) <= s.hz + RADIUS) { blocked = true; break; }
     }
-    if (!blocked) for (const w of walls) {
+    if (!blocked) for (const { w, doors } of wallInfo) {
       const u = (x - w.a.x) * w.right.x + (z - w.a.z) * w.right.z;
       const d = (x - w.a.x) * w.normal.x + (z - w.a.z) * w.normal.z;
       if (u < -RADIUS || u > w.width + RADIUS || Math.abs(d) > RADIUS) continue;
-      // Türen sind begehbar
-      const inDoor = ops.some(o => o.type === 'door' && Math.abs(o.mid.clone().sub(w.mid).dot(w.normal)) < 0.3 &&
-        Math.abs((x - o.mid.x) * o.right.x + (z - o.mid.z) * o.right.z) < o.width / 2 - 0.05);
-      if (!inDoor) { blocked = true; break; }
+      if (!doors.some(([u0, u1]) => u > u0 && u < u1)) { blocked = true; break; }
     }
     nav.blocked[j * nav.w + i] = blocked ? 1 : 0;
   }
@@ -190,25 +272,28 @@ function nearestFree(i, j) {
   }
   return null;
 }
+// A* mit Binär-Heap (schnell, keine Ruckler)
+let gScore, fScore, came, closed, heapArr;
 function findPath(from, to) {
   if (!nav.blocked) return [to.clone()];
   const s = nearestFree(...cellOf(from.x, from.z)), g = nearestFree(...cellOf(to.x, to.z));
   if (!s || !g) return [to.clone()];
   const W = nav.w, N = W * nav.h, start = s[1] * W + s[0], goal = g[1] * W + g[0];
-  const gScore = new Float32Array(N).fill(Infinity), came = new Int32Array(N).fill(-1), closed = new Uint8Array(N);
-  const open = [start];
-  const h = (k) => Math.hypot((k % W) - g[0], Math.floor(k / W) - g[1]);
-  const f = new Float32Array(N).fill(Infinity);
-  gScore[start] = 0; f[start] = h(start);
-  let iter = 0;
-  while (open.length && iter++ < 6000) {
-    let bi = 0;
-    for (let k = 1; k < open.length; k++) if (f[open[k]] < f[open[bi]]) bi = k;
-    const cur = open[bi];
-    open[bi] = open[open.length - 1]; open.pop();
-    if (cur === goal) break;
+  if (!gScore || gScore.length !== N) { gScore = new Float32Array(N); fScore = new Float32Array(N); came = new Int32Array(N); closed = new Uint8Array(N); heapArr = new Int32Array(N * 4); }
+  gScore.fill(Infinity); came.fill(-1); closed.fill(0);
+  let size = 0;
+  const push = (k) => { let i = size++; heapArr[i] = k; while (i > 0) { const p = (i - 1) >> 1; if (fScore[heapArr[p]] <= fScore[heapArr[i]]) break; [heapArr[p], heapArr[i]] = [heapArr[i], heapArr[p]]; i = p; } };
+  const pop = () => { const top = heapArr[0]; heapArr[0] = heapArr[--size]; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < size && fScore[heapArr[l]] < fScore[heapArr[m]]) m = l; if (r < size && fScore[heapArr[r]] < fScore[heapArr[m]]) m = r; if (m === i) break; [heapArr[m], heapArr[i]] = [heapArr[i], heapArr[m]]; i = m; } return top; };
+  const gx = g[0], gy = g[1];
+  gScore[start] = 0; fScore[start] = Math.hypot(s[0] - gx, s[1] - gy); push(start);
+  let found = start === goal;
+  while (size > 0 && !found) {
+    if (size >= heapArr.length - 8) break;
+    const cur = pop();
+    if (closed[cur]) continue;
+    if (cur === goal) { found = true; break; }
     closed[cur] = 1;
-    const ci = cur % W, cj = Math.floor(cur / W);
+    const ci = cur % W, cj = (cur / W) | 0;
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
       if (!di && !dj) continue;
       const ni = ci + di, nj = cj + dj;
@@ -217,27 +302,35 @@ function findPath(from, to) {
       const nk = nj * W + ni;
       if (closed[nk]) continue;
       const ng = gScore[cur] + (di && dj ? 1.414 : 1);
-      if (ng < gScore[nk]) { gScore[nk] = ng; f[nk] = ng + h(nk); came[nk] = cur; if (!open.includes(nk)) open.push(nk); }
+      if (ng < gScore[nk]) { gScore[nk] = ng; fScore[nk] = ng + Math.hypot(ni - gx, nj - gy); came[nk] = cur; push(nk); }
     }
   }
-  if (came[goal] < 0 && goal !== start) return [to.clone()];
+  if (!found) return [to.clone()];
   const path = [];
-  for (let k = goal; k !== -1 && k !== start; k = came[k]) path.push(new THREE.Vector3(nav.minX + ((k % W) + 0.5) * nav.cell, 0, nav.minZ + (Math.floor(k / W) + 0.5) * nav.cell));
+  for (let k = goal; k !== -1 && k !== start; k = came[k]) path.push(new THREE.Vector3(nav.minX + ((k % W) + 0.5) * nav.cell, 0, nav.minZ + (((k / W) | 0) + 0.5) * nav.cell));
   path.reverse();
-  // Glätten: nur jeden 3. Punkt + Ziel
-  const out = path.filter((_, i) => i % 3 === 2);
+  const out = path.filter((_, i) => i % 3 === 2); // glätten
   out.push(to.clone().setY(0));
   return out;
 }
+let planBudget = 0; // höchstens 2 Wegberechnungen pro Bild
 
 // ---- Zombies erzeugen ------------------------------------------------------------
-export function spawnZombie(wave, head) {
-  const z = buildZombie();
-  const scale = rand(0.92, 1.08);
+export function pickType(wave) {
+  const r = Math.random();
+  if (wave >= 3 && r < 0.12) return 'brute';
+  if (wave >= 2 && r < 0.32) return 'runner';
+  if (wave >= 2 && r < 0.45) return 'crawler';
+  return 'walker';
+}
+export function spawnZombie(wave, head, type = pickType(wave)) {
+  const T = TYPES[type];
+  const z = buildZombie(type);
+  const scale = rand(T.scale[0], T.scale[1]);
   z.root.scale.setScalar(scale);
   const zombie = {
-    ...z, scale, hp: 100 + wave * 10, maxHp: 100 + wave * 10, legHp: [60, 60], armHp: [45, 45], legLost: [false, false], armLost: [false, false],
-    state: 'outside', pos: new THREE.Vector3(), yaw: 0, speed: Math.min(1.25, rand(0.45, 0.6) + wave * 0.05), phase: Math.random() * 6,
+    ...z, type, T, scale, hp: T.hp + wave * 10, maxHp: T.hp + wave * 10, legHp: [60, 60].map(v => v * T.hp / 100), armHp: [45, 45].map(v => v * T.hp / 100), legLost: [false, false], armLost: [false, false],
+    state: 'outside', pos: new THREE.Vector3(), yaw: 0, speed: Math.min(1.6, (rand(0.42, 0.58) + wave * 0.04) * T.speed), phase: Math.random() * 6, jawT: Math.random() * 6,
     path: null, pathT: 0, attackT: 1, actionT: 0, deadT: 0, hurtT: 0, groanT: rand(1, 4), opening: null, enterT: 0, crawl: false, fallDir: 1, headless: false
   };
   const ops = openings();
@@ -258,6 +351,11 @@ export function spawnZombie(wave, head) {
     }
     zombie.root.position.y = -1.9 * scale;
   }
+  if (type === 'crawler') { // ohne Beine: kriecht von Anfang an
+    zombie.crawl = true;
+    zombie.legLost = [true, true];
+    for (const l of zombie.legs) l.hip.visible = false;
+  }
   zombie.root.position.x = zombie.pos.x;
   zombie.root.position.z = zombie.pos.z;
   zombie.root.traverse(o => { if (o.isMesh && o.userData.part) o.userData.zombie = zombie; });
@@ -276,7 +374,7 @@ export function zombieHitMeshes() {
   const out = [];
   for (const z of zombies) {
     if (z.state === 'dead') continue;
-    z.root.traverse(o => { if (o.isMesh && o.userData.part && o.visible) out.push(o); });
+    z.root.traverseVisible(o => { if (o.isMesh && o.userData.part) out.push(o); });
   }
   return out;
 }
@@ -287,7 +385,7 @@ const limbs = [];
 function detach(z, group, kind, sideIndex) {
   // Körperteil fällt ab (Physik), am Rumpf bleibt ein Stumpf
   group.updateWorldMatrix(true, true);
-  const stump = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.1), stumpMat);
+  const stump = new THREE.Mesh(stumpGeo, stumpMat);
   stump.position.copy(group.position);
   group.parent.add(stump);
   scene.attach(group);
@@ -363,7 +461,7 @@ function animateWalk(z, dt, speed) {
     // liegt auf dem Bauch: Körper nach vorne gekippt, Füße hinter dem Standpunkt
     z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, 1.45, 6, dt);
     z.body.position.y = THREE.MathUtils.damp(z.body.position.y, 0.06, 6, dt);
-    z.body.position.z = THREE.MathUtils.damp(z.body.position.z, -1.0, 6, dt);
+    z.body.position.z = THREE.MathUtils.damp(z.body.position.z, -0.85, 6, dt);
     z.arms.forEach((a, i) => { a.shoulder.rotation.x = -2.6 + (i ? s : -s) * 0.5; a.elbow.rotation.x = -0.4; });
     z.legs.forEach((l, i) => { l.hip.rotation.x = 0.1 + (i ? -s : s) * 0.15; l.knee.rotation.x = 0.3; });
     return;
@@ -375,7 +473,7 @@ function animateWalk(z, dt, speed) {
     l.hip.rotation.x = ph * amp;
     l.knee.rotation.x = Math.max(0, (i ? c : -c)) * (limp[i] ? 0.2 : 0.7);
   });
-  z.hips.position.y = 0.95 - Math.abs(s) * 0.03 - (limp[0] || limp[1] ? Math.max(0, limp[0] ? s : -s) * 0.08 : 0);
+  z.hips.position.y = 0.86 - Math.abs(s) * 0.03 - (limp[0] || limp[1] ? Math.max(0, limp[0] ? s : -s) * 0.08 : 0);
   z.body.rotation.z = (limp[0] ? -0.12 : limp[1] ? 0.12 : 0) + s * 0.05;
   z.arms.forEach((a, i) => { a.shoulder.rotation.x = -1.35 + (i ? s : -s) * 0.12; a.shoulder.rotation.z = (a.side) * -0.08; a.elbow.rotation.x = -0.2; });
   z.head.rotation.z = Math.sin(z.phase * 0.5) * 0.15;
@@ -397,6 +495,7 @@ function animateAttack(z, dt) {
 
 export function updateZombies(dt, head, opts = {}) {
   const player = new THREE.Vector3(head.x, 0, head.z);
+  planBudget = 2;
   for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
     z.hurtT = Math.max(0, z.hurtT - dt);
@@ -480,13 +579,14 @@ export function updateZombies(dt, head, opts = {}) {
           z.attackT = 1.3;
           SFX3D.swing(z.skull.getWorldPosition(tmpV2));
           const armsLeft = z.armLost.filter(x => !x).length;
-          if (!opts.harmless && armsLeft > 0) onPlayerHit((z.crawl ? 6 : 10) * (armsLeft === 2 ? 1 : 0.6), z);
+          if (!opts.harmless && armsLeft > 0) onPlayerHit(z.T.dmg * (z.crawl ? 0.7 : 1) * (armsLeft === 2 ? 1 : 0.6), z);
         }
       } else {
         z.state = 'walk';
         z.attackT = Math.min(z.attackT, 0.5);
         z.pathT -= dt;
-        if (z.pathT <= 0 || !z.path || !z.path.length) { z.path = findPath(z.pos, player); z.pathT = rand(0.5, 0.9); }
+        if ((z.pathT <= 0 || !z.path || !z.path.length) && planBudget > 0) { planBudget--; z.path = findPath(z.pos, player); z.pathT = rand(0.5, 0.9); }
+        if (!z.path) z.path = [player.clone()];
         while (z.path.length > 1 && z.path[0].distanceTo(tmpV.set(z.pos.x, 0, z.pos.z)) < 0.2) z.path.shift();
         const next = z.path[0] || player;
         faceTowards(z, next, dt);
@@ -502,6 +602,9 @@ export function updateZombies(dt, head, opts = {}) {
         if (d > 0.001 && d < 0.5) { const push = (0.5 - d) * 0.5; if (walkable(z.pos.x + dx / d * push, z.pos.z + dz / d * push)) { z.pos.x += dx / d * push; z.pos.z += dz / d * push; } }
       }
     }
+    // Kiefer schnappt auf und zu
+    z.jawT += dt * (z.state === 'attack' ? 9 : 2.5);
+    z.jaw.rotation.x = 0.15 + Math.max(0, Math.sin(z.jawT)) * (z.state === 'attack' ? 0.6 : 0.35);
     // Treffer-Reaktion: kurz nach hinten zucken
     if (z.hurtT > 0) z.torso.rotation.x = -z.hurtT * 1.6; else z.torso.rotation.x *= 0.8;
     z.root.position.x = z.pos.x;

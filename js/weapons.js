@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere } from './util.js';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js';
 
 // Waffen: Daten, Modelle, Munition
 export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'sniper'];
@@ -39,14 +39,13 @@ export function makeCartridge(rifle = false) {
   const g = new THREE.Group();
   const len = rifle ? 0.05 : 0.02, r = rifle ? 0.0045 : 0.0045;
   g.add(cylY(r, r, len, MAT.brass, 0, 0));
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(r * 0.9, rifle ? 0.018 : 0.008, 10), MAT.copper);
+  const tip = new THREE.Mesh(cachedGeo('tip' + rifle, () => new THREE.ConeGeometry(r * 0.9, rifle ? 0.018 : 0.008, 10)), MAT.copper);
   tip.position.y = len / 2 + (rifle ? 0.009 : 0.004);
   g.add(tip);
   return g;
 }
 export function makeCasing(rifle = false) {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, rifle ? 0.05 : 0.02, 10), MAT.brass);
-  return m;
+  return cylY(0.0045, 0.0045, rifle ? 0.05 : 0.02, MAT.brass, 0, 0, 0, 10);
 }
 export function makeShell(spent = false) {
   const g = new THREE.Group();

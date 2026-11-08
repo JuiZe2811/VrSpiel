@@ -22,8 +22,8 @@ Alles geht per **Laser** – du musst nichts berühren. Menü: Zeigestrahl + Abz
 | 📏 Bodenhöhe | Controller auf den Boden legen + Abzug. Danach mit **Stick ▲▼** fein einstellen, bis das türkise Gitter genau auf dem echten Boden liegt (wird gespeichert) |
 | 📡 Quest-Raum | Übernimmt Wände, Türen, Fenster, Tische und Sofas aus deiner Quest-Raumeinrichtung (passiert beim Start automatisch, falls vorhanden) |
 | 🧱 Wand | Laser auf den Boden an einer Ecke der Wand richten, **Abzug halten**, an der Wand entlang zur anderen Ecke fahren, loslassen |
-| 🚪 Tür | Laser auf den Boden an einer Seite der Tür, Abzug halten, zur anderen Seite fahren, loslassen |
-| 🪟 Fenster | Breite unter dem Fenster auf dem Boden aufziehen, dann mit dem Laser auf die **Unterkante** zeigen + Abzug, dann auf die **Oberkante** + Abzug |
+| 🚪 Tür | **Erst Wände markieren.** Dann Laser auf die Wand an eine obere Türecke, Abzug halten, zur anderen Ecke ziehen, loslassen – die Unterkante ist automatisch der Boden |
+| 🪟 Fenster | Laser auf die Wand an eine Fensterecke, Abzug halten, zur gegenüberliegenden Ecke ziehen, loslassen |
 | 🪑 Tisch / 💺 Stuhl | Grundfläche mit dem Laser auf dem Boden aufziehen (Ecke zu Ecke), dann mit dem Laser auf die **Tischkante** zeigen = Höhe, Abzug = fertig. Stick ◀ ▶ dreht, B/Y bricht ab |
 | 🔫 Waffenständer | Laser auf den Boden + Abzug (ziehen = Ausrichtung). Kompakter Ständer (90 × 45 cm): Langwaffen stehen aufrecht, die Pistole liegt davor – zu Beginn **jeder Runde** |
 | ↶ Rückgängig / 🗑 Alles löschen | Letzte Fläche bzw. alles entfernen |
@@ -75,6 +75,13 @@ nur wenn du hinschaust, nie beim Zielen.
 - Hast du keine Türen/Fenster eingerichtet, kommen sie aus dem Boden.
 - Du hörst sie räumlich stöhnen – dreh dich um!
 
+| Typ | Aussehen / Verhalten |
+|---|---|
+| Schlurfer | normaler Zombie, ca. 1,45–1,6 m |
+| Renner | dünn, rote Augen, fast doppelt so schnell, hält weniger aus (ab Welle 2) |
+| Kriecher | ohne Beine, kriecht am Boden (ab Welle 2) |
+| Brocken | breit und massig, langsam, hält mehr als doppelt so viel aus, schlägt hart zu (ab Welle 3) |
+
 | Treffer | Wirkung |
 |---|---|
 | Kopf | 3-facher Schaden – meist sofort tot (Scharfschützengewehr: Kopf weg) |
@@ -83,7 +90,7 @@ nur wenn du hinschaust, nie beim Zielen.
 | Arm | weniger Schaden; nach mehreren Treffern fällt der Arm ab – er schlägt schwächer zu |
 
 Schaden pro Treffer: Pistole 34 · MP 24 · Schrot 15 pro Kugel (9 Kugeln) · Scharfschützengewehr 150 · Messer 90.
-Zombies haben 100 Lebenspunkte (+10 pro Welle).
+Schlurfer haben 100 Lebenspunkte (+10 pro Welle).
 
 Wenn ein Zombie dich erreicht, schlägt er zu: Die Sicht wird rot, der Controller vibriert. Leben regeneriert langsam,
 wenn du eine Weile nicht getroffen wurdest. Bei 0 ist die Runde vorbei.
@@ -100,6 +107,6 @@ R nachladen · V Feuermodus · F Messer werfen · Enter Start · Mausrad Zoom.
 ## Technik
 
 - `index.html` + Module in `js/`: `main.js` (Spielablauf, Hände, Waffen-Mechanik), `weapons.js` (Modelle),
-  `room.js` (Raum), `zombies.js` (Zombies, Bretter, Wegfindung), `physics.js` (cannon-es), `effects.js`, `sfx.js`, `util.js`
+  `room.js` (Raum), `zombies.js` (Zombies, Bretter, Wegfindung mit A*), `physics.js` (cannon-es), `effects.js`, `sfx.js`, `util.js`
 - [three.js](https://threejs.org/) und [cannon-es](https://github.com/pmndrs/cannon-es) über CDN
 - WebXR `immersive-ar` (Passthrough) mit `plane-detection` für die Quest-Raumdaten
