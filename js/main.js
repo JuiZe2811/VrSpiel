@@ -443,7 +443,7 @@ const knifeSlot = (() => {
   knife.rotation.x = -Math.PI / 2;
   knife.position.set(0, 0.055, -0.02);
   mount.add(knife);
-  const slot = { kind: 'knife', mount, obj: knife, available: true, refill: 0, radius: 0.1 };
+  const slot = { kind: 'knife', mount, obj: knife, available: true, refill: 0, radius: 0.13 };
   beltSlots.push(slot);
   return slot;
 })();
@@ -465,7 +465,7 @@ function setBeltWeapon(id) {
       const mag = makeMag(id);
       mag.position.set(0, 0.035, -0.024);
       mount.add(mag);
-      beltSlots.push({ kind: 'mag', mount, obj: mag, available: true, refill: 0, radius: 0.09 });
+      beltSlots.push({ kind: 'mag', mount, obj: mag, available: true, refill: 0, radius: 0.15 });
     } else {
       const strip = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.032, 0.008), leather);
       strip.position.set(0, 0, -0.014);
@@ -474,7 +474,7 @@ function setBeltWeapon(id) {
         const sh = makeShell();
         sh.position.set(-0.036 + k * 0.024, 0.008, -0.027);
         mount.add(sh);
-        beltSlots.push({ kind: 'shell', mount, obj: sh, available: true, refill: 0, radius: 0.045 });
+        beltSlots.push({ kind: 'shell', mount, obj: sh, available: true, refill: 0, radius: 0.12 });
       }
     }
   }
@@ -513,13 +513,29 @@ function holdItem(h, type, obj, extra = {}) {
   SFX.grab();
   pulse(h, 0.5, 40);
 }
-function tryBeltGrab(h) {
+// Welcher Gürtel-Platz würde gegriffen? (großzügig: in Hüfthöhe nahe am Gürtel zählt immer Munition)
+function beltSlotFor(h) {
   let best = null, bd = Infinity;
   for (const s of beltSlots) {
     if (!s.available) continue;
     const d = s.obj.getWorldPosition(tmpV).distanceTo(h.point);
     if (d < s.radius && d < bd) { bd = d; best = s; }
   }
+  if (best) return best;
+  const armed = heldWeapon(otherHand(h));
+  const dy = Math.abs(h.point.y - belt.position.y);
+  const dr = Math.hypot(h.point.x - belt.position.x, h.point.z - belt.position.z);
+  if (armed && dy < 0.22 && dr < BELT_R + 0.25) {
+    for (const s of beltSlots) {
+      if (!s.available || s.kind === 'knife') continue;
+      const d = s.obj.getWorldPosition(tmpV).distanceTo(h.point);
+      if (d < bd) { bd = d; best = s; }
+    }
+  }
+  return best;
+}
+function tryBeltGrab(h) {
+  const best = beltSlotFor(h);
   if (!best) return false;
   best.available = false;
   best.obj.visible = false;
@@ -662,11 +678,18 @@ function tryWeaponGrab(h) {
   if (!w) return false;
   const p = h.point;
   const opts = [];
-  if (w.def.action !== 'pump') opts.push({ type: 'charger', d: p.distanceTo(w.sockets.chargerGrab.getWorldPosition(tmpV)) / 0.07 });
-  if (w.sockets.foregrip) opts.push({ type: 'fore', d: p.distanceTo(w.sockets.foregrip.getWorldPosition(tmpV)) / 0.13 });
-  opts.push({ type: 'swap', d: p.distanceTo(w.root.getWorldPosition(tmpV)) / 0.06 });
+  if (w.def.action !== 'pump') opts.push({ type: 'charger', d: p.distanceTo(w.sockets.chargerGrab.getWorldPosition(tmpV)) / 0.09 });
+  if (w.sockets.foregrip) opts.push({ type: 'fore', d: p.distanceTo(w.sockets.foregrip.getWorldPosition(tmpV)) / 0.2 });
+  opts.push({ type: 'swap', d: p.distanceTo(w.root.getWorldPosition(tmpV)) / 0.05 });
   opts.sort((a, b) => a.d - b.d);
-  if (opts[0].d > 1) return false;
+  if (opts[0].d > 1) {
+    // Hand irgendwo vorne an einer Langwaffe: als Vorderschaft-Griff werten
+    if (!w.sockets.foregrip) return false;
+    const local = w.root.worldToLocal(p.clone());
+    const fl = w.root.worldToLocal(w.sockets.foregrip.getWorldPosition(tmpV));
+    if (!(local.z < 0.02 && local.z > fl.z - 0.25 && Math.hypot(local.x, local.y - fl.y) < 0.15)) return false;
+    opts[0] = { type: 'fore' };
+  }
   if (opts[0].type === 'swap') { takeWeapon(w, h); return true; }
   h.grab = { type: opts[0].type, w, startZ: w.root.worldToLocal(p.clone()).z, back: false };
   SFX.grab();
@@ -718,7 +741,7 @@ function updateHandsXR(dt) {
     const free = isFree(h);
     // Zeigestrahl (im Einrichtungsmodus als Laser bis zum Boden)
     let pt = null;
-    if (free && !(setup.drag && setup.drag.src === h)) pt = pointerTarget(h);
+    if (free && !(setup.drag && setup.drag.src === h) && !(state === 'playing' && heldWeapon(otherHand(h)))) pt = pointerTarget(h);
     let len = pt ? pt.dist : 2;
     let showPtr = free && (pt || state !== 'playing');
     if (state === 'setup' && free && !pt && setup.tool && setup.tool !== 'floor') {
@@ -735,6 +758,14 @@ function updateHandsXR(dt) {
     const hover = pt && pt.kind === 'ui' ? pt.panel.buttonAt(pt.uv) : null;
     if (h.uiHover !== hover) { if (h.uiHover) h.uiHover.panel.setHover(null); h.uiHover = hover; if (hover) { hover.panel.setHover(hover); pulse(h, 0.1, 10); } }
 
+    // Gürtel-Platz in Reichweite hervorheben (größer + kurzes Vibrieren)
+    const near = free ? beltSlotFor(h) : null;
+    if (near !== h.beltHover) {
+      if (h.beltHover && !hands.some(o => o !== h && o.beltHover === h.beltHover)) h.beltHover.obj.scale.setScalar(1);
+      if (near) { near.obj.scale.setScalar(1.3); pulse(h, 0.25, 20); }
+      h.beltHover = near;
+    }
+
     // Griff-Taste: greifen
     if (down(h, 'squeeze') && free) {
       if (tryWeaponGrab(h)) { /* zweite Hand an der Waffe */ }
@@ -742,7 +773,8 @@ function updateHandsXR(dt) {
       else {
         const c = grabCandidates(h)[0];
         if (c) pickCandidate(h, c);
-        else if (pt && pt.kind !== 'ui') h.pull = pt; // aus der Ferne heranziehen
+        // aus der Ferne heranziehen – nicht, wenn die andere Hand eine Waffe hält (dann will man nachladen/greifen)
+        else if (pt && pt.kind !== 'ui' && !heldWeapon(otherHand(h)) && pt.dist > 0.4) h.pull = pt;
       }
     }
     if (h.pull) {
@@ -792,12 +824,12 @@ function updateHeldWeapon(w, main, dt) {
   const item = off.held;
   if (item && (item.type === 'mag' || item.type === 'shell')) {
     const itemPos = item.obj.getWorldPosition(new THREE.Vector3());
-    if (item.type === 'mag' && item.weaponId === w.id && !w.magInserted && itemPos.distanceTo(w.sockets.magwell.getWorldPosition(tmpV)) < 0.07) {
+    if (item.type === 'mag' && item.weaponId === w.id && !w.magInserted && itemPos.distanceTo(w.sockets.magwell.getWorldPosition(tmpV)) < 0.11) {
       off.ray.remove(item.obj);
       off.held = null;
       insertMag(w, item.rounds);
       pulse(off, 0.8, 50); pulse(main, 0.5, 40);
-    } else if (item.type === 'shell' && w.def.feed === 'tube' && w.tube < w.def.capacity && itemPos.distanceTo(w.sockets.loadPort.getWorldPosition(tmpV)) < 0.08) {
+    } else if (item.type === 'shell' && w.def.feed === 'tube' && w.tube < w.def.capacity && itemPos.distanceTo(w.sockets.loadPort.getWorldPosition(tmpV)) < 0.11) {
       off.ray.remove(item.obj);
       off.held = null;
       w.tube++;

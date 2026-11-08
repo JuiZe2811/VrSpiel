@@ -196,7 +196,7 @@ export function setupPlanks() {
       board.userData.plank = true;
       g.add(board);
       for (const sx of [-1, 1]) { const nail = new THREE.Mesh(cachedGeo('nail', () => new THREE.CylinderGeometry(0.006, 0.006, 0.01, 6)), nailMat); nail.rotation.x = Math.PI / 2; nail.position.set(sx * (len / 2 - 0.05), 0, 0.014); g.add(nail); }
-      g.position.copy(o.a).addScaledVector(o.right, o.width / 2).setY(lo + (hi - lo) * (i + 0.5) / n).addScaledVector(o.normal, 0.03);
+      g.position.copy(o.a).addScaledVector(o.right, o.width / 2).setY(lo + (hi - lo) * (i + 0.5) / n).addScaledVector(o.normal, 0.07);
       g.quaternion.copy(q).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rand(-0.12, 0.12)));
       scene.add(g);
       const p = { opening: o, obj: g, board };

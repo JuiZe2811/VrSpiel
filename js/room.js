@@ -69,6 +69,7 @@ function buildSurface(s) {
     g.add(occ);
     s.occluder = occ;
   }
+  if (isOpening(s)) buildBackdrop(s, g);
   s.visual = visual;
   s.edges = edges;
   s.group = g;
@@ -82,18 +83,81 @@ function buildSurface(s) {
   }
   applyMode(s);
 }
+// ---- Hintergrund hinter Türen/Fenstern: dunkler Flur bzw. Nacht draußen ----------------
+function gradientTex(top, bottom, fog) {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 256;
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, top); g.addColorStop(1, bottom);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 256);
+  for (let i = 0; i < 300; i++) { // Schmutz/Struktur
+    ctx.fillStyle = `rgba(${fog},${Math.random() * 0.08})`;
+    ctx.fillRect(Math.random() * 64, Math.random() * 256, 1 + Math.random() * 4, 1 + Math.random() * 6);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const BACKDROP = {
+  door: new THREE.MeshBasicMaterial({ map: gradientTex('#1a1a1c', '#070708', '120,120,130'), side: THREE.BackSide, fog: false }),
+  window: new THREE.MeshBasicMaterial({ map: gradientTex('#0d1626', '#04060a', '150,170,200'), side: THREE.BackSide, fog: false })
+};
+const corridorFloor = new THREE.MeshBasicMaterial({ color: 0x141210 });
+const mistMat = new THREE.MeshBasicMaterial({ color: 0x0a0c10, transparent: true, opacity: 0.55, depthWrite: false });
+const frameMat = new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.8 });
+const DEPTH = 5;
+function buildBackdrop(s, g) {
+  const h = s.top - s.bottom, w = s.width;
+  const back = new THREE.Group();
+  // Tunnel nach hinten (Innenseiten sichtbar)
+  const box = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, h + 0.4, DEPTH), BACKDROP[s.type]);
+  box.position.set(0, 0, -DEPTH / 2 - 0.01);
+  back.add(box);
+  if (s.type === 'door') {
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.6, DEPTH), corridorFloor);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0, -h / 2 + 0.002, -DEPTH / 2);
+    back.add(floor);
+  }
+  // Nebel-Schichten für Tiefe
+  for (let i = 1; i <= 3; i++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.6, h + 0.4), mistMat);
+    m.position.z = -i * DEPTH / 4;
+    back.add(m);
+  }
+  // unsichtbarer Rand: der Hintergrund ist nur durch die Öffnung zu sehen
+  const hw = w / 2, hh = h / 2, M = 1.2;
+  const shape = new THREE.Shape([new THREE.Vector2(-hw - M, -hh - M), new THREE.Vector2(hw + M, -hh - M), new THREE.Vector2(hw + M, hh + M), new THREE.Vector2(-hw - M, hh + M)]);
+  shape.holes.push(new THREE.Path([new THREE.Vector2(-hw, -hh), new THREE.Vector2(-hw, hh), new THREE.Vector2(hw, hh), new THREE.Vector2(hw, -hh)]));
+  const ring = new THREE.Mesh(new THREE.ShapeGeometry(shape), occluderMat);
+  ring.renderOrder = -10;
+  ring.position.z = -0.01; // knapp hinter der Wandebene (kein Flimmern)
+  back.add(ring);
+  // Rahmen (Tür-/Fensterrahmen) und Fensterbank
+  const t = 0.06, d = 0.1;
+  const piece = (bw, bh, x, y) => { const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, d), frameMat); m.position.set(x, y, -d / 2 + 0.03); back.add(m); };
+  piece(t, h + t, -hw - t / 2, t / 2);
+  piece(t, h + t, hw + t / 2, t / 2);
+  piece(w + 2 * t, t, 0, hh + t / 2);
+  if (s.type === 'window') { piece(w + 2 * t + 0.08, t, 0, -hh - t / 2); }
+  g.add(back);
+  s.backdrop = back;
+}
+
 // Wände neu aufbauen (z. B. wenn eine Tür dazukommt, bekommt die Wand ein Loch)
 function rebuildWalls() {
   for (const w of room.surfaces) if (w.type === 'wall') { destroySurface(w); buildSurface(w); }
 }
 export const roomOccluders = () => room.surfaces.filter(s => s.occluder).map(s => s.occluder);
 function applyMode(s) {
-  const show = room.edit || room.desktop || s.type === 'bench';
+  const show = room.edit || (room.desktop && !isOpening(s)) || s.type === 'bench';
   s.visual.visible = show;
   s.edges.visible = room.edit || (room.desktop && s.type !== 'bench');
 }
 function destroySurface(s) {
   room.group.remove(s.group);
+  if (s.backdrop) s.backdrop.traverse(o => { if (o.geometry) o.geometry.dispose(); });
   s.visual.geometry.dispose();
   s.edges.geometry.dispose();
   if (s.body) removeStatic(s.body);

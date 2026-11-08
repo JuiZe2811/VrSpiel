@@ -54,7 +54,7 @@ die du nicht in der Hand hältst, voll geladen zurück in den Ständer.
 | Schießen | Abzug |
 | Zweihändig halten | Zweite Hand an den Vorderschaft + Griff-Taste |
 | Magazin auswerfen | **A / X** |
-| Neues Magazin / Patrone | Nach unten schauen: am **Gürtel** greifen. Ausgeworfene Magazine kann man vom Boden aufheben (mit Restpatronen) |
+| Neues Magazin / Patrone | Nach unten schauen: am **Gürtel** greifen (in Reichweite wird das Magazin größer und der Controller vibriert). Ausgeworfene Magazine kann man vom Boden aufheben (mit Restpatronen) |
 | Magazin einsetzen | Von unten in den Magazinschacht führen |
 | Schrotpatrone laden | An die Ladeöffnung unten am Gehäuse führen |
 | Durchladen | Schlitten / Spannhebel / Kammerstängel mit der zweiten Hand greifen und zurückziehen |
@@ -69,6 +69,8 @@ nur wenn du hinschaust, nie beim Zielen.
 
 ## Zombies
 
+- Hinter jeder Tür liegt ein dunkler Flur, hinter jedem Fenster die Nacht – mit Holzrahmen, damit die Zombies
+  nicht aus dem Nichts kommen.
 - Vor jeder Welle sind Türen und Fenster mit **Brettern** vernagelt. Die Zombies reißen sie nacheinander ab
   (du hörst es krachen) – du kannst sie schon durch die Lücken beschießen.
 - Danach kommen sie durch die Tür bzw. **klettern durchs Fenster** und laufen um Wände, Tische und Stühle herum zu dir.
