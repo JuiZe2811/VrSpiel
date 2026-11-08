@@ -14,22 +14,25 @@ genau dort: an deinen Wänden, auf dem Tisch und auf Stühlen.
 
 ## Spielbereich einrichten
 
-Das Einrichtungs-Menü bedienst du mit dem Zeigestrahl + Abzug.
+Alles geht per **Laser** – du musst nichts berühren. Menü: Zeigestrahl + Abzug.
 
 | Werkzeug | So geht's |
 |---|---|
-| 📡 Quest-Raum übernehmen | Übernimmt Wände, Tische und Sofas aus deiner Quest-Raumeinrichtung (falls vorhanden, passiert beim Start automatisch) |
-| 🧱 Wand ziehen | Gelbe Controller-Spitze an die echte Wand halten, **Abzug gedrückt halten**, an der Wand entlangziehen, loslassen |
-| 🪑 Tisch / 💺 Stuhl | Spitze auf eine Ecke der Platte bzw. Sitzfläche, Abzug halten, zur **gegenüberliegenden Ecke** ziehen, loslassen. Stick ◀ ▶ dreht ihn passend |
-| ↶ Rückgängig / 🗑 Alles löschen | Letzte Fläche bzw. alle entfernen |
-| 💾 Gespeicherten Raum laden | Lädt den zuletzt eingerichteten Raum (passt nur, wenn du am selben Platz und in dieselbe Richtung startest) |
+| 📏 Bodenhöhe | Controller auf den Boden legen + Abzug. Danach mit **Stick ▲▼** fein einstellen, bis das türkise Gitter genau auf dem echten Boden liegt (wird gespeichert) |
+| 📡 Quest-Raum | Übernimmt Wände, Tische und Sofas aus deiner Quest-Raumeinrichtung (passiert beim Start automatisch, falls vorhanden) |
+| 🧱 Wand | Laser auf den Boden an einer Ecke der Wand richten, **Abzug halten**, an der Wand entlang zur anderen Ecke fahren, loslassen |
+| 🪑 Tisch / 💺 Stuhl | Grundfläche mit dem Laser auf dem Boden aufziehen (Ecke zu Ecke), dann mit dem Laser auf die **Tischkante** zeigen = Höhe, Abzug = fertig. Stick ◀ ▶ dreht, B/Y bricht ab |
+| 🔫 Waffentisch | Laser auf den Boden + Abzug (ziehen = Ausrichtung). Dort liegen die Waffen zu Beginn **jeder Runde** |
+| ↶ Rückgängig / 🗑 Alles löschen | Letzte Fläche bzw. alles entfernen |
+| 💾 Laden | Lädt den zuletzt eingerichteten Raum (passt nur, wenn du am selben Platz und in dieselbe Richtung startest) |
 
 Echte Wände und Möbel verdecken virtuelle Dinge dahinter, und Waffen, Magazine und Dosen prallen physikalisch daran ab.
 Schüsse hinterlassen Einschusslöcher an den Wänden, Messer bleiben darin stecken.
 
 ## Waffen
 
-Alle vier Waffen liegen auf dem **Waffentisch** – jede genau einmal.
+Alle vier Waffen liegen auf dem **Waffentisch** – jede genau einmal. Zu Beginn jeder Runde werden alle Waffen,
+die du nicht in der Hand hältst, wieder voll geladen auf den Waffentisch gelegt.
 
 | Waffe | Visier | Magazin | Besonderheit |
 |---|---|---|---|

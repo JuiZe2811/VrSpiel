@@ -201,25 +201,30 @@ function releaseGrab(h) {
 
 // ---- Waffenbank: hier liegen die Waffen bereit ---------------------------------
 let bench = null;
+// Waffentisch: vom Spieler platziert (gespeichert) oder automatisch neben dem Spieler
 function setupBench() {
-  if (bench) { removeSurface(bench); bench = null; }
+  const existing = room.surfaces.find(x => x.type === 'bench');
+  if (existing) { bench = existing; return; }
   const yaw = headYaw();
   const eye = headPos.clone().setY(0.85);
-  // freie Richtung suchen (vorne rechts bevorzugt)
-  let angle = -0.6;
+  let angle = -0.6; // freie Richtung suchen (vorne rechts bevorzugt)
   for (const a of [-0.6, 0.6, -1.3, 1.3, 0]) {
     const dir = new THREE.Vector3(-Math.sin(yaw + a), 0, -Math.cos(yaw + a));
     if (freeDistance(eye, dir, 1.6) >= 1.5) { angle = a; break; }
   }
-  const c = inFront(0.95, angle, 0.8, yaw);
-  const by = yaw + angle; // lange Seite quer zur Blickrichtung
+  placeBench(inFront(0.95, angle, 0, yaw), yaw + angle);
+}
+function placeBench(c, by) {
+  for (const old of room.surfaces.filter(x => x.type === 'bench')) removeSurface(old);
   const X = new THREE.Vector3(Math.cos(by), 0, -Math.sin(by)), Z = new THREE.Vector3(Math.sin(by), 0, Math.cos(by));
   const p1 = c.clone().addScaledVector(X, -0.7).addScaledVector(Z, -0.47), p2 = c.clone().addScaledVector(X, 0.7).addScaledVector(Z, 0.47);
   bench = addBox('bench', p1.setY(0.8), p2.setY(0.8), by);
 }
 function placeOnBench(list) {
-  if (!bench) setupBench();
-  const L = bench.X, S = bench.Z; // Mündung entlang L, Reihen entlang S (S zeigt zum Spieler)
+  if (!bench || !room.surfaces.includes(bench)) setupBench();
+  // Reihen-Richtung S soll zum Spieler zeigen
+  const L = bench.X.clone(), S = bench.Z.clone();
+  if (S.dot(headPos.clone().sub(bench.center)) < 0) { S.negate(); L.negate(); } // Mündung entlang L, Reihen entlang S (S zeigt zum Spieler)
   const yawW = Math.atan2(-L.x, -L.z);
   const order = WEAPON_ORDER;
   let across = 0.38;
@@ -694,14 +699,19 @@ function pointerTarget(h) {
 function updateHandsXR(dt) {
   for (const h of hands) {
     if (!h.src) { h.pointer.visible = false; continue; }
-    h.tipMarker.visible = state === 'setup';
+    h.tipMarker.visible = state === 'setup' && setup.tool === 'floor';
     const free = isFree(h);
-    // Zeigestrahl
+    // Zeigestrahl (im Einrichtungsmodus als Laser bis zum Boden)
     let pt = null;
-    if (free && !(setup.drag && setup.drag.h === h)) pt = pointerTarget(h);
-    const showPtr = free && (pt || state !== 'playing') && !(state === 'setup' && setup.tool && !pt);
+    if (free && !(setup.drag && setup.drag.src === h)) pt = pointerTarget(h);
+    let len = pt ? pt.dist : 2;
+    let showPtr = free && (pt || state !== 'playing');
+    if (state === 'setup' && free && !pt && setup.tool && setup.tool !== 'floor') {
+      const fh = floorHit(rayOf(h));
+      len = fh ? fh.distanceTo(h.tip) : 4;
+    }
     h.pointer.visible = !!showPtr;
-    h.pointer.scale.z = pt ? pt.dist : 2;
+    h.pointer.scale.z = len;
     const hover = pt && pt.kind === 'ui' ? pt.panel.buttonAt(pt.uv) : null;
     if (h.uiHover !== hover) { if (h.uiHover) h.uiHover.panel.setHover(null); h.uiHover = hover; if (hover) { hover.panel.setHover(hover); pulse(h, 0.1, 10); } }
 
@@ -727,9 +737,9 @@ function updateHandsXR(dt) {
     // Abzug: UI klicken bzw. Raum-Werkzeug
     if (free && down(h, 'trigger')) {
       if (hover) { hover.onClick(); SFX.ui(); pulse(h, 0.3, 20); }
-      else if (state === 'setup' && setup.tool) startDrag(h);
+      else if (state === 'setup') setupTriggerDown(h);
     }
-    if (setup.drag && setup.drag.h === h && !h.btn.trigger) finishDrag();
+    if (setup.drag && setup.drag.src === h && !h.btn.trigger) setupTriggerUp();
 
     // Waffe in dieser Hand
     const w = heldWeapon(h);
@@ -874,7 +884,7 @@ function row(y, h, labels, W, pad = 30, gap = 18) {
   return labels.map((b, i) => ({ ...b, x: pad + i * (bw + gap), y, w: bw, h }));
 }
 
-const setupPanel = new UIPanel(1.0, 0.66, 760);
+const setupPanel = new UIPanel(1.0, 0.72, 760);
 setupPanel.border = '#3a8bff';
 const menuPanel = new UIPanel(1.1, 0.74, 720);
 const board = new UIPanel(1.2, 0.5, 640);
@@ -899,99 +909,238 @@ startButton.visible = false;
 scene.add(startButton);
 
 // =============================================================================
-// Raum einrichten: Wände ziehen, Tische und Stühle markieren
+// Raum einrichten – alles per Laser (wie die Begrenzung der Quest):
+// Wände und Möbel auf dem Boden aufziehen, Waffentisch platzieren, Bodenhöhe einstellen
 // =============================================================================
-const setup = { tool: null, drag: null, last: null, msg: '', rotT: 0, planeSupport: false, importReq: false, autoImport: 0 };
+const setup = { tool: null, drag: null, pending: null, last: null, msg: '', rotT: 0, planeSupport: false, importReq: false, autoImport: 0, refT: 0 };
 const previewMat = new THREE.MeshBasicMaterial({ color: 0xffee00, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide });
 const previewWall = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), previewMat);
 const previewBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), previewMat);
-previewWall.visible = previewBox.visible = false;
-scene.add(previewWall, previewBox);
+const previewLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)]), new THREE.LineBasicMaterial({ color: 0xffee00 }));
+previewWall.visible = previewBox.visible = previewLine.visible = false;
+scene.add(previewWall, previewBox, previewLine);
+// Laserpunkt auf dem Boden (pro Hand + Maus)
+const markerGeo = new THREE.RingGeometry(0.035, 0.05, 32).rotateX(-Math.PI / 2);
+const makeMarker = () => { const m = new THREE.Mesh(markerGeo, new THREE.MeshBasicMaterial({ color: 0xffee00, toneMapped: false, depthTest: false, transparent: true })); m.renderOrder = 30; m.visible = false; scene.add(m); return m; };
+for (const h of hands) h.floorMarker = makeMarker();
+const mouseMarker = makeMarker();
+// Gitter zum Einstellen der Bodenhöhe
+const floorGrid = new THREE.GridHelper(4, 16, 0x00ffcc, 0x00ffcc);
+floorGrid.material.transparent = true;
+floorGrid.material.opacity = 0.7;
+floorGrid.visible = false;
+scene.add(floorGrid);
+
+// Bodenhöhe: verschiebt das Koordinatensystem der VR-Sitzung, bis y = 0 auf dem echten Boden liegt
+const FLOOR_KEY = 'vrspiel-boden';
+let floorOffset = (() => { try { return parseFloat(localStorage.getItem(FLOOR_KEY) || '0') || 0; } catch { return 0; } })();
+let baseRefSpace = null;
+function applyFloorOffset() {
+  if (!baseRefSpace || typeof XRRigidTransform === 'undefined') return;
+  renderer.xr.setReferenceSpace(baseRefSpace.getOffsetReferenceSpace(new XRRigidTransform({ x: 0, y: floorOffset, z: 0 })));
+  try { localStorage.setItem(FLOOR_KEY, String(floorOffset)); } catch { /* ignorieren */ }
+}
+
 const TOOL_HELP = {
-  wall: ['WAND: Gelbe Controller-Spitze an die echte Wand halten,', 'Abzug halten, an der Wand entlang ziehen, loslassen.'],
-  table: ['TISCH: Spitze auf eine Ecke der Tischplatte, Abzug halten,', 'zur gegenüberliegenden Ecke ziehen. Stick ◀ ▶ = drehen.'],
-  chair: ['STUHL: Spitze auf eine Ecke der Sitzfläche, Abzug halten,', 'zur gegenüberliegenden Ecke ziehen. Stick ◀ ▶ = drehen.']
+  wall: ['WAND: Laser auf den Boden an einer Ecke der Wand richten,', 'Abzug halten, an der Wand entlang zur anderen Ecke fahren, loslassen.'],
+  table: ['TISCH: Grundfläche mit dem Laser auf dem Boden aufziehen (Ecke zu Ecke),', 'dann mit dem Laser auf die Tischkante zeigen = Höhe, Abzug = fertig.'],
+  chair: ['STUHL: Grundfläche mit dem Laser auf dem Boden aufziehen,', 'dann auf die Sitzfläche zeigen = Höhe, Abzug = fertig.'],
+  bench: ['WAFFENTISCH: Mit dem Laser auf den Boden zeigen und Abzug drücken', '(ziehen = Ausrichtung). Hier liegen die Waffen zu Beginn jeder Runde.'],
+  floor: ['BODENHÖHE: Controller auf den Boden legen und Abzug drücken, dann mit', 'Stick ▲▼ fein einstellen, bis das Gitter genau auf dem echten Boden liegt.']
 };
 function refreshSetupPanel() {
   const count = (t) => surfacesOf(t).length;
+  const pend = setup.pending;
   setupPanel.set((ctx, w) => {
-    text(ctx, '🧱 Spielbereich einrichten', w / 2, 46, 44, '#fff', 'center', true);
-    const help = setup.tool ? TOOL_HELP[setup.tool] : ['Wähle unten ein Werkzeug. Die Zielscheiben erscheinen dann', 'an deinen Wänden, auf Tischen und Stühlen.'];
-    text(ctx, help[0], w / 2, 100, 25, '#cfd8e3');
-    text(ctx, help[1], w / 2, 132, 25, '#cfd8e3');
-    text(ctx, `Wände: ${count('wall')}   ·   Tische: ${count('table')}   ·   Stühle: ${count('chair')}`, w / 2, 178, 28, '#9ad', 'center', true);
-    if (setup.msg) text(ctx, setup.msg, w / 2, 214, 25, '#ffcc33', 'center', true);
+    text(ctx, '🧱 Spielbereich einrichten', w / 2, 44, 42, '#fff', 'center', true);
+    const help = pend ? ['Mit dem Laser auf die Oberkante zeigen = Höhe (' + pend.height.toFixed(2) + ' m),', 'Abzug = übernehmen · Stick ◀ ▶ = drehen · B/Y = abbrechen']
+      : setup.tool ? TOOL_HELP[setup.tool] : ['Wähle unten ein Werkzeug. Die Zielscheiben erscheinen dann an', 'deinen Wänden, auf Tischen und Stühlen. Tipp: zuerst die Bodenhöhe prüfen.'];
+    text(ctx, help[0], w / 2, 94, 21, '#cfd8e3');
+    text(ctx, help[1], w / 2, 124, 21, '#cfd8e3');
+    text(ctx, `Wände: ${count('wall')} · Tische: ${count('table')} · Stühle: ${count('chair')} · Waffentisch: ${count('bench') ? '✔' : '–'} · Boden: ${floorOffset >= 0 ? '+' : ''}${(floorOffset * 100).toFixed(1)} cm`, w / 2, 166, 21, '#9ad', 'center', true);
+    if (setup.msg) text(ctx, setup.msg, w / 2, 200, 24, '#ffcc33', 'center', true);
   }, [
-    ...row(240, 70, [
-      { id: 'wall', label: '🧱 Wand ziehen', active: setup.tool === 'wall', onClick: () => setTool('wall') },
+    ...row(224, 66, [
+      { id: 'wall', label: '🧱 Wand', active: setup.tool === 'wall', onClick: () => setTool('wall') },
       { id: 'table', label: '🪑 Tisch', active: setup.tool === 'table', onClick: () => setTool('table') },
       { id: 'chair', label: '💺 Stuhl', active: setup.tool === 'chair', onClick: () => setTool('chair') }
     ], 760),
-    ...row(326, 64, [
-      { id: 'quest', label: '📡 Quest-Raum übernehmen', font: 26, disabled: !setup.planeSupport, onClick: () => { setup.importReq = true; } },
-      { id: 'load', label: '💾 Gespeicherten Raum laden', font: 26, disabled: !hasSavedRoom(), onClick: () => { const n = loadRoom(); setup.msg = `${n} Flächen geladen (stimmt nur, wenn du am selben Platz gestartet bist)`; refreshSetupPanel(); } }
+    ...row(302, 66, [
+      { id: 'bench', label: '🔫 Waffentisch', font: 28, active: setup.tool === 'bench', onClick: () => setTool('bench') },
+      { id: 'floor', label: '📏 Bodenhöhe', font: 28, active: setup.tool === 'floor', onClick: () => setTool('floor') },
+      { id: 'quest', label: '📡 Quest-Raum', font: 28, disabled: !setup.planeSupport, onClick: () => { setup.importReq = true; } }
     ], 760),
-    ...row(406, 64, [
-      { id: 'undo', label: '↶ Rückgängig', onClick: undoSurface },
-      { id: 'clear', label: '🗑 Alles löschen', onClick: () => { clearRoom(true); setup.last = null; setup.msg = 'Alles gelöscht'; refreshSetupPanel(); } },
-      { id: 'done', label: '✔ Fertig', onClick: finishSetup, font: 36 }
-    ], 760)
+    ...row(380, 60, [
+      { id: 'load', label: '💾 Laden', font: 28, disabled: !hasSavedRoom(), onClick: () => { const n = loadRoom(); bench = null; setup.msg = `${n} Flächen geladen (passt nur, wenn du am selben Platz gestartet bist)`; refreshSetupPanel(); } },
+      { id: 'undo', label: '↶ Rückgängig', font: 28, onClick: undoSurface },
+      { id: 'clear', label: '🗑 Alles löschen', font: 28, onClick: () => { clearRoom(); bench = null; setup.last = null; setup.pending = null; setup.msg = 'Alles gelöscht'; refreshSetupPanel(); } }
+    ], 760),
+    ...row(454, 70, [{ id: 'done', label: '✔ Fertig', font: 38, onClick: finishSetup }], 760, 200)
   ]);
 }
-function setTool(t) { setup.tool = setup.tool === t ? null : t; setup.msg = ''; refreshSetupPanel(); }
+function setTool(t) {
+  setup.tool = setup.tool === t ? null : t;
+  setup.pending = null;
+  setup.drag = null;
+  setup.msg = '';
+  floorGrid.visible = setup.tool === 'floor';
+  refreshSetupPanel();
+}
 function undoSurface() {
+  if (setup.pending) { setup.pending = null; refreshSetupPanel(); return; }
   const list = room.surfaces.filter(s => s.type !== 'bench');
   if (!list.length) return;
   removeSurface(list[list.length - 1]);
   setup.last = null;
   setup.msg = 'Letzte Fläche entfernt';
+  saveRoom();
   refreshSetupPanel();
 }
-function startDrag(h) {
-  setup.drag = { h, start: h.tip.clone(), yaw: suggestYaw(h.tip, headYaw()) };
-  pulse(h, 0.4, 30);
+
+// Strahl einer Hand bzw. der Maus
+function rayOf(src) {
+  if (src === 'mouse') { raycaster.setFromCamera(mouseNdc, camera); return { o: raycaster.ray.origin.clone(), d: raycaster.ray.direction.clone() }; }
+  return { o: src.tip.clone(), d: new THREE.Vector3(0, 0, -1).applyQuaternion(src.quat) };
 }
-function updateDrag() {
-  previewWall.visible = previewBox.visible = false;
-  if (!setup.drag) return;
-  const cur = setup.drag.h.tip;
-  if (setup.tool === 'wall') {
-    const s = makeWall(setup.drag.start, cur, headPos);
-    if (!s) return;
-    previewWall.visible = true;
-    previewWall.scale.set(s.width, s.height, 1);
-    previewWall.position.copy(s.center);
-    previewWall.quaternion.setFromRotationMatrix(tmpM.makeBasis(s.right, UP, s.normal));
-  } else {
-    const s = makeBox(setup.tool, setup.drag.start, cur, setup.drag.yaw);
-    previewBox.visible = true;
-    previewBox.scale.set(s.hx * 2, Math.max(0.02, s.height), s.hz * 2);
-    previewBox.position.set(s.center.x, s.height / 2, s.center.z);
-    previewBox.rotation.set(0, s.yaw, 0);
+// Schnittpunkt mit dem Boden (y = 0)
+function floorHit(r, maxDist = 12) {
+  if (r.d.y > -0.02) return null;
+  const t = -r.o.y / r.d.y;
+  return t > 0 && t < maxDist ? r.o.clone().addScaledVector(r.d, t) : null;
+}
+// Höhe aus dem Laser: Schnitt mit senkrechter Ebene durch die Mitte (zum Spieler gedreht)
+function heightFromRay(r, center) {
+  const n = new THREE.Vector3(headPos.x - center.x, 0, headPos.z - center.z);
+  if (n.lengthSq() < 1e-4) return null;
+  n.normalize();
+  const denom = r.d.dot(n);
+  if (Math.abs(denom) < 1e-3) return null;
+  const t = center.clone().sub(r.o).dot(n) / denom;
+  return t > 0 ? THREE.MathUtils.clamp(r.o.y + r.d.y * t, 0.15, 1.6) : null;
+}
+const boxWithHeight = (p) => makeBox(p.type, p.p1.clone().setY(p.height), p.p2.clone().setY(p.height), p.yaw);
+
+// Abzug gedrückt (mit Laser, nicht auf ein Menü)
+function setupTriggerDown(src) {
+  const tool = setup.tool;
+  if (setup.pending) { // Höhe bestätigen
+    const p = setup.pending;
+    setup.pending = null;
+    const s = addBox(p.type, p.p1.clone().setY(p.height), p.p2.clone().setY(p.height), p.yaw);
+    if (s) { setup.last = s; setup.msg = `${surfaceName(s.type)} hinzugefügt (Höhe ${p.height.toFixed(2)} m)`; SFX.magIn(); saveRoom(); }
+    refreshSetupPanel();
+    return;
   }
+  if (tool === 'floor') {
+    if (src !== 'mouse') {
+      floorOffset += src.tip.y - 0.035; // Controller liegt auf dem Boden: Spitze ca. 3,5 cm darüber
+      applyFloorOffset();
+      setup.msg = 'Bodenhöhe gesetzt – mit Stick ▲▼ fein einstellen';
+      SFX.magIn();
+      refreshSetupPanel();
+    }
+    return;
+  }
+  const hit = floorHit(rayOf(src));
+  if (!tool || !hit) return;
+  setup.drag = { src, start: hit, cur: hit.clone() };
+  if (src !== 'mouse') pulse(src, 0.4, 30);
 }
-function finishDrag() {
+function setupTriggerUp() {
   const d = setup.drag;
   setup.drag = null;
-  previewWall.visible = previewBox.visible = false;
-  const s = setup.tool === 'wall' ? addWall(d.start, d.h.tip, headPos) : addBox(setup.tool, d.start, d.h.tip, d.yaw);
-  if (s) {
-    setup.last = s;
-    setup.msg = `${surfaceName(s.type)} hinzugefügt${s.type !== 'wall' ? ' – Stick ◀ ▶ zum Drehen' : ''}`;
+  previewWall.visible = previewLine.visible = false;
+  if (!d) return;
+  const len = d.start.distanceTo(d.cur);
+  if (setup.tool === 'wall') {
+    const s = addWall(d.start, d.cur, headPos);
+    if (s) { setup.last = s; setup.msg = 'Wand hinzugefügt'; SFX.magIn(); saveRoom(); } else setup.msg = 'Zu kurz – nochmal';
+  } else if (setup.tool === 'bench') {
+    const yaw = len > 0.2 ? Math.atan2(-(d.cur.z - d.start.z), d.cur.x - d.start.x) : headYaw();
+    placeBench(len > 0.2 ? d.start.clone().add(d.cur).multiplyScalar(0.5) : d.start, yaw);
+    resetWeapons();
+    setup.msg = 'Waffentisch platziert';
     SFX.magIn();
-    pulse(d.h, 0.7, 50);
     saveRoom();
-  } else setup.msg = 'Zu klein – nochmal versuchen';
+  } else if (setup.tool === 'table' || setup.tool === 'chair') {
+    if (len < 0.15) setup.msg = 'Zu klein – Grundfläche von Ecke zu Ecke aufziehen';
+    else {
+      setup.pending = { type: setup.tool, p1: d.start, p2: d.cur, yaw: d.yaw, height: setup.tool === 'table' ? 0.75 : 0.45 };
+      setup.msg = '';
+    }
+  }
   refreshSetupPanel();
 }
 function updateSetup(dt) {
-  updateDrag();
-  // zuletzt platzierten Tisch/Stuhl mit dem Stick drehen
-  const st = hands.reduce((a, h) => (Math.abs(h.stickX) > Math.abs(a) ? h.stickX : a), 0);
-  setup.rotT -= dt;
-  if (setup.last && setup.last.type !== 'wall' && Math.abs(st) > 0.4 && setup.rotT <= 0 && room.surfaces.includes(setup.last)) {
-    rotateBox(setup.last, setup.last.yaw - st * 0.1);
-    setup.rotT = 0.05;
+  // Laser-Punkt(e) auf dem Boden
+  const srcs = renderer.xr.isPresenting ? hands.filter(h => h.src) : ['mouse'];
+  for (const h of hands) h.floorMarker.visible = false;
+  mouseMarker.visible = false;
+  const laserTool = setup.tool && setup.tool !== 'floor';
+  for (const src of srcs) {
+    const marker = src === 'mouse' ? mouseMarker : src.floorMarker;
+    if (!laserTool || (src !== 'mouse' && (!isFree(src) || src.uiHover))) continue;
+    const hit = floorHit(rayOf(src));
+    if (hit) { marker.visible = true; marker.position.copy(hit).setY(0.003); }
+  }
+  // Ziehen
+  const d = setup.drag;
+  previewWall.visible = previewBox.visible = previewLine.visible = false;
+  if (d) {
+    const hit = floorHit(rayOf(d.src));
+    if (hit) d.cur = hit;
+    d.yaw = suggestYaw(d.start, headYaw());
+    previewLine.visible = true;
+    previewLine.geometry.setFromPoints([d.start.clone().setY(0.01), d.cur.clone().setY(0.01)]);
+    if (setup.tool === 'wall') {
+      const s = makeWall(d.start, d.cur, headPos);
+      if (s) {
+        previewWall.visible = true;
+        previewWall.scale.set(s.width, s.height, 1);
+        previewWall.position.copy(s.center);
+        previewWall.quaternion.setFromRotationMatrix(tmpM.makeBasis(s.right, UP, s.normal));
+      }
+    } else if (setup.tool === 'table' || setup.tool === 'chair') {
+      const s = makeBox(setup.tool, d.start.clone().setY(0.02), d.cur.clone().setY(0.02), d.yaw);
+      previewBox.visible = true;
+      previewBox.scale.set(s.hx * 2, 0.02, s.hz * 2);
+      previewBox.position.set(s.center.x, 0.01, s.center.z);
+      previewBox.rotation.set(0, s.yaw, 0);
+    }
+  }
+  // Höhe des neuen Tisches/Stuhls mit dem Laser bestimmen
+  const p = setup.pending;
+  const stickX = hands.reduce((a, h) => (Math.abs(h.stickX) > Math.abs(a) ? h.stickX : a), 0);
+  const stickY = hands.reduce((a, h) => (Math.abs(h.stickY) > Math.abs(a) ? h.stickY : a), 0);
+  if (p) {
+    const src = renderer.xr.isPresenting ? (hands.find(h => h.src && isFree(h) && !h.uiHover) || null) : 'mouse';
+    const s0 = boxWithHeight(p);
+    if (src) {
+      const hgt = heightFromRay(rayOf(src), s0.center.clone().setY(0));
+      if (hgt) p.height = THREE.MathUtils.damp(p.height, hgt, 20, dt);
+    }
+    if (Math.abs(stickX) > 0.4) p.yaw -= stickX * dt * 1.2;
+    if (hands.some(h => down(h, 'b'))) { setup.pending = null; setup.msg = 'Abgebrochen'; refreshSetupPanel(); return; }
+    const s = boxWithHeight(p);
+    previewBox.visible = true;
+    previewBox.scale.set(s.hx * 2, s.height, s.hz * 2);
+    previewBox.position.set(s.center.x, s.height / 2, s.center.z);
+    previewBox.rotation.set(0, s.yaw, 0);
+    setup.refT -= dt;
+    if (setup.refT <= 0) { setup.refT = 0.15; refreshSetupPanel(); }
+  } else if (setup.last && setup.last.type !== 'wall' && Math.abs(stickX) > 0.4 && room.surfaces.includes(setup.last)) {
+    // zuletzt platzierten Tisch/Stuhl drehen
+    setup.rotT -= dt;
+    if (setup.rotT <= 0) { rotateBox(setup.last, setup.last.yaw - stickX * 0.1); setup.rotT = 0.05; }
+  }
+  // Bodenhöhe fein einstellen
+  if (setup.tool === 'floor') {
+    floorGrid.position.set(headPos.x, 0.001, headPos.z);
+    if (Math.abs(stickY) > 0.3) {
+      floorOffset -= stickY * dt * 0.08; // Stick hoch = Gitter hoch
+      setup.refT -= dt;
+      if (setup.refT <= 0) { setup.refT = 0.05; applyFloorOffset(); refreshSetupPanel(); }
+    }
   }
   // Raum aus der Quest-Raumeinrichtung übernehmen
   const frame = renderer.xr.getFrame && renderer.xr.getFrame();
@@ -1021,6 +1170,11 @@ function enterSetup() {
 function finishSetup() {
   setup.tool = null;
   setup.drag = null;
+  setup.pending = null;
+  floorGrid.visible = false;
+  previewWall.visible = previewBox.visible = previewLine.visible = false;
+  for (const h of hands) h.floorMarker.visible = false;
+  mouseMarker.visible = false;
   saveRoom();
   setEditMode(false);
   setupPanel.visible = false;
@@ -1092,7 +1246,8 @@ function startCountdown() {
   menuPanel.visible = false;
   startButton.visible = false;
   clearTargets();
-  for (const w of arsenal) refillWeapon(w);
+  for (const w of arsenal) if (w.holder >= 0 || w === deskW) refillWeapon(w);
+  resetWeapons(); // nicht gehaltene Waffen liegen zu Beginn jeder Runde wieder auf dem Waffentisch
   const fd = freeDistance(headPos, inFront(1, 0, headPos.y + 0.6).sub(headPos), 3.2);
   board.place(Math.max(1.2, Math.min(3, fd - 0.2)), 0, 0.6);
   board.mesh.scale.setScalar(1.3);
@@ -1460,10 +1615,14 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   raycaster.setFromCamera(mouseNdc, camera);
   const ui = raycaster.intersectObjects(uiPanels.filter(p => p.visible).map(p => p.mesh), false)[0];
   if (ui) { const b = ui.object.userData.ui.buttonAt(ui.uv); if (b) { b.onClick(); SFX.ui(); } return; }
+  if (state === 'setup') { setupTriggerDown('mouse'); return; }
   leftDown = true;
   if (deskW && deskW.cooldown <= 0 && !deskW.desktopBusy) desktopShoot();
 });
-window.addEventListener('pointerup', (e) => { if (e.button === 2) rightDrag = false; if (e.button === 0) leftDown = false; });
+window.addEventListener('pointerup', (e) => {
+  if (e.button === 2) rightDrag = false;
+  if (e.button === 0) { leftDown = false; if (setup.drag && setup.drag.src === 'mouse') setupTriggerUp(); }
+});
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('wheel', (e) => { if (deskW && deskW.def.sight === 'scope') deskW.zoom = THREE.MathUtils.clamp(deskW.zoom - Math.sign(e.deltaY), 4, 12); });
 window.addEventListener('keydown', (e) => {
@@ -1512,6 +1671,8 @@ renderer.xr.addEventListener('sessionstart', () => {
   ensureAudio();
   if (deskW) { const w = deskW; deskW = null; camera.remove(w.root); scene.add(w.root); }
   room.desktop = false;
+  baseRefSpace = renderer.xr.getReferenceSpace();
+  applyFloorOffset();
   clearRoom();
   bench = null;
   lastResult = null;
@@ -1526,6 +1687,9 @@ renderer.xr.addEventListener('sessionend', () => {
   for (const w of arsenal) w.holder = -1;
   clearRoom();
   bench = null;
+  baseRefSpace = null;
+  setup.tool = null; setup.pending = null; setup.drag = null;
+  floorGrid.visible = false;
   setEditMode(false);
   setupPanel.visible = false;
   buildDemoRoom();
@@ -1564,7 +1728,10 @@ renderer.setAnimationLoop(() => {
     for (const p of [setupPanel, menuPanel]) if (p.visible && headPos.distanceTo(p.anchor) > 1.3) p === menuPanel ? enterMenu() : p.place(0.9, 0.35, -0.2);
     updateHandsXR(dt);
     if (state === 'setup') updateSetup(dt);
-  } else if (deskW) updateWeaponDesktop(deskW, dt);
+  } else {
+    if (deskW) updateWeaponDesktop(deskW, dt);
+    if (state === 'setup') updateSetup(dt);
+  }
   for (const w of arsenal) updateWeaponVisuals(w, dt);
   flashLight.intensity = Math.max(0, flashLight.intensity - dt * 60);
   stepPhysics(dt);
@@ -1587,6 +1754,6 @@ renderer.setAnimationLoop(() => {
 // Für automatisierte Tests
 window.__game = {
   get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, targets, uiPanels,
-  menuPanel, setupPanel, board, startButton, setup, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
+  menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound
 };

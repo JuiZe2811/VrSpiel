@@ -9,7 +9,7 @@ export const WALL_HEIGHT = 2.5;
 export const room = { surfaces: [], group: new THREE.Group(), edit: false, desktop: false };
 
 const COLORS = { wall: 0x3a8bff, table: 0xff9d2e, chair: 0x46d17a, bench: 0x8a6a45 };
-const NAMES = { wall: 'Wand', table: 'Tisch', chair: 'Stuhl', bench: 'Waffenbank' };
+const NAMES = { wall: 'Wand', table: 'Tisch', chair: 'Stuhl', bench: 'Waffentisch' };
 export const surfaceName = (t) => NAMES[t];
 const occluderMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
 const UP = new THREE.Vector3(0, 1, 0);
@@ -194,7 +194,7 @@ export function importDetectedPlanes(frame, refSpace) {
 // Speichern / Laden (Koordinaten relativ zum Startpunkt der VR-Sitzung)
 const KEY = 'vrspiel-raum';
 export function saveRoom() {
-  const data = room.surfaces.filter(s => s.type !== 'bench').map(s => s.type === 'wall'
+  const data = room.surfaces.map(s => s.type === 'wall'
     ? { type: 'wall', a: s.a.toArray(), b: s.a.clone().addScaledVector(s.right, s.width).toArray(), height: s.height, inside: s.mid.clone().add(s.normal).toArray() }
     : { type: s.type, p1: s.p1.toArray(), p2: s.p2.toArray(), yaw: s.yaw });
   try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { /* ignorieren */ }
@@ -205,7 +205,7 @@ export function hasSavedRoom() {
 export function loadRoom() {
   let data;
   try { data = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return 0; }
-  clearRoom(true);
+  clearRoom();
   const v = (a) => new THREE.Vector3().fromArray(a);
   for (const d of data) {
     if (d.type === 'wall') addWall(v(d.a), v(d.b), v(d.inside), d.height);
