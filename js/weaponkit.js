@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=26';
-import { WEAPON_DEFS, WEAPON_ORDER, BUILDERS, scopeKit, makeCartridge } from './weapons.js?v=26';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=27';
+import { WEAPON_DEFS, WEAPON_ORDER, BUILDERS, scopeKit, makeCartridge } from './weapons.js?v=27';
 
 // =============================================================================
 // Waffen-Baukasten: 12 weitere Waffen aus Parametern + Sondermodelle

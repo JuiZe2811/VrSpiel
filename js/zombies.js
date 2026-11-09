@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=26';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=26';
-import { SFX3D } from './sfx.js?v=26';
-import { burst, addDebris, shockwave } from './effects.js?v=26';
-import { cachedGeo } from './util.js?v=26';
+import { room, surfacesOf, isOpening } from './room.js?v=27';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=27';
+import { SFX3D } from './sfx.js?v=27';
+import { burst, addDebris, shockwave } from './effects.js?v=27';
+import { cachedGeo } from './util.js?v=27';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -85,6 +85,41 @@ function faceTex(base, variant) {
 const SKIN_COLORS = ['#5f6e4c', '#6c6d55', '#7a7464', '#55654b', '#7d6c60'];
 const SKINS = SKIN_COLORS.map(c => { const t = skinTex(c); return new THREE.MeshStandardMaterial({ map: t, bumpMap: t, bumpScale: 1.2, roughness: 0.7, envMapIntensity: 0.35 }); });
 const FACES = SKIN_COLORS.map((c, i) => new THREE.MeshStandardMaterial({ map: faceTex(c, i % 3), roughness: 0.75, envMapIntensity: 0.35 }));
+// ---- Gesichter von Freunden (Fotos, nur lokal auf dem Gerät gespeichert) ----------------------
+const FRIEND_FACES = [];
+let friendShare = 0;
+function friendFaceTex(img) {
+  return canvasTex(512, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#6e7058'; ctx.fillRect(0, 0, w, h);
+    grime(ctx, w, h, 60, 0.3);
+    // Foto vorne auf die Kopfkugel (Mitte vorne bei u = 0.25), weich ausgeblendet
+    const cx = w * 0.25, fw = 200, fh = 210, top = h * 0.12;
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(cx, top + fh / 2, fw / 2, fh / 2, 0, 0, Math.PI * 2); ctx.clip();
+    ctx.drawImage(img, cx - fw / 2, top, fw, fh);
+    // zombifizieren: fahl-grünlich, dunkle Augenringe, Schmutz und Blut
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = '#b7c9a0'; ctx.fillRect(cx - fw / 2, top, fw, fh);
+    ctx.globalCompositeOperation = 'source-over';
+    const g = ctx.createRadialGradient(cx, top + fh / 2, fw * 0.25, cx, top + fh / 2, fw * 0.6);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(40,45,30,0.85)');
+    ctx.fillStyle = g; ctx.fillRect(cx - fw / 2, top, fw, fh);
+    ctx.restore();
+    grime(ctx, w, h, 25, 0.5);
+    ctx.strokeStyle = 'rgba(120,0,0,0.85)'; ctx.lineWidth = 3;
+    for (let i = 0; i < 4; i++) { const x = cx + (Math.random() - 0.5) * 60; ctx.beginPath(); ctx.moveTo(x, top + fh * 0.78); ctx.lineTo(x + (Math.random() - 0.5) * 6, top + fh * 0.78 + 15 + Math.random() * 25); ctx.stroke(); }
+  });
+}
+// urls: Bild-Daten (data:…); share: Anteil der Zombies mit Freundes-Gesicht (0…1)
+export function setFriendFaces(urls, share) {
+  friendShare = share;
+  for (const m of FRIEND_FACES.splice(0)) { m.map.dispose(); m.dispose(); }
+  for (const u of urls) {
+    const img = new Image();
+    img.onload = () => FRIEND_FACES.push(new THREE.MeshStandardMaterial({ map: friendFaceTex(img), roughness: 0.75, envMapIntensity: 0.35 }));
+    img.src = u;
+  }
+}
 const SHIRTS = ['#5b5145', '#3f4d5c', '#6b3b33', '#4c5b3c', '#7a7262', '#2b2b2b', '#8a8a80'].map(c => new THREE.MeshStandardMaterial({ map: clothTex(c), roughness: 0.95, envMapIntensity: 0.3 }));
 const PANTS = ['#2c3340', '#3d3226', '#28302a', '#45403a'].map(c => new THREE.MeshStandardMaterial({ map: clothTex(c), roughness: 0.95, envMapIntensity: 0.3 }));
 const EYES = [0xffe14a, 0xff2a1a, 0xe8f4ff].map(c => new THREE.MeshBasicMaterial({ color: c, toneMapped: false }));
@@ -134,7 +169,8 @@ function buildZombie(type) {
   const T = TYPES[type];
   const si = Math.floor(Math.random() * SKINS.length);
   const toxic = type === 'bloater' || type === 'spitter';
-  const skin = toxic ? TOXIC_SKIN : SKINS[si], face = FACES[si], shirt = pick(SHIRTS), pants = pick(PANTS);
+  const friend = FRIEND_FACES.length > 0 && type !== 'giant' && Math.random() < friendShare;
+  const skin = toxic ? TOXIC_SKIN : SKINS[si], face = friend ? pick(FRIEND_FACES) : FACES[si], shirt = pick(SHIRTS), pants = pick(PANTS);
   const sleeves = Math.random() < 0.5 ? shirt : skin; // zerrissene Ärmel
   const root = new THREE.Group();   // steht auf dem Boden, schaut nach +Z
   const body = new THREE.Group();   // für Umfallen / Kriechen
@@ -165,10 +201,10 @@ function buildZombie(type) {
   const skull = mesh(sphGeo(0.1), face, 0, 0.1, 0, 'head', 0.92, 1.12, 1);
   skull.rotation.y = 0; // Gesicht zeigt nach +Z
   head.add(skull);
-  if (Math.random() < 0.6) head.add(mesh(hairGeo, hairMat, 0, 0.115, -0.005, null, 0.95, 1.1, 1.02));
+  if (!friend && Math.random() < 0.6) head.add(mesh(hairGeo, hairMat, 0, 0.115, -0.005, null, 0.95, 1.1, 1.02));
   const eyeMat = type === 'runner' || type === 'giant' ? EYES[1] : pick(EYES);
   const glowMat = toxic ? EYE_GLOW[3] : EYE_GLOW[EYES.indexOf(eyeMat)];
-  for (const sx of [-1, 1]) if (Math.random() > 0.12) {
+  for (const sx of [-1, 1]) if (!friend && Math.random() > 0.12) {
     head.add(mesh(sphGeo(0.014), toxic ? acidMat : eyeMat, sx * 0.034, 0.118, 0.077));
     const gl = new THREE.Sprite(glowMat);
     gl.position.set(sx * 0.034, 0.118, 0.085);
@@ -178,8 +214,10 @@ function buildZombie(type) {
   const jaw = new THREE.Group();
   jaw.position.set(0, 0.06, 0.02);
   head.add(jaw);
-  jaw.add(mesh(sphGeo(0.06), skin, 0, -0.02, 0.025, 'head', 1.05, 0.55, 1));
-  jaw.add(mesh(sphGeo(0.04), mouthMat, 0, 0.0, 0.05, null, 1.1, 0.5, 0.5));
+  if (!friend) { // bei Fotos ist der Mund schon im Gesicht
+    jaw.add(mesh(sphGeo(0.06), skin, 0, -0.02, 0.025, 'head', 1.05, 0.55, 1));
+    jaw.add(mesh(sphGeo(0.04), mouthMat, 0, 0.0, 0.05, null, 1.1, 0.5, 0.5));
+  }
   const arms = [], legs = [];
   for (const side of [-1, 1]) {
     const name = side < 0 ? 'armL' : 'armR';
@@ -405,7 +443,7 @@ export const hpScale = (w) => (w <= 10 ? 1 + 0.12 * Math.max(0, w - 1) : 2.08 * 
 export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
   const T = TYPES[type];
   const z = buildZombie(type);
-  z.root.traverse(m => { if (m.isMesh && !m.material.transparent) m.castShadow = true; });
+  z.root.traverse(m => { if (m.isMesh && !m.material.transparent && m.userData.part) m.castShadow = true; }); // nur große Körperteile werfen Schatten (Leistung)
   const scale = rand(T.scale[0], T.scale[1]);
   z.root.scale.setScalar(scale);
   const zombie = {
@@ -539,7 +577,7 @@ export function damageZombie(mesh, point, dir, dmg, quiet = false) {
 }
 // Einschussloch + Blutspur bleiben am getroffenen Körperteil
 function addWound(z, mesh, point) {
-  if ((z.wounds || 0) >= 10 || !mesh.geometry) return;
+  if ((z.wounds || 0) >= 6 || !mesh.geometry) return;
   z.wounds = (z.wounds || 0) + 1;
   mesh.updateWorldMatrix(true, false);
   const local = mesh.worldToLocal(point.clone());

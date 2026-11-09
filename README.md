@@ -5,6 +5,22 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 27 – Gesichter von Freunden & flüssiger
+
+**🧟 Zombies mit den Gesichtern deiner Freunde**
+- Auf der Startseite (vor „START AR“) unten links: **„🧟 Gesichter“**.
+- **📷 Foto hinzufügen** → Foto auswählen → den gelben Rahmen aufs Gesicht schieben (ziehen), mit dem Regler die Größe anpassen (Augen etwa auf der gestrichelten Linie) → **Übernehmen**. Bis zu 6 Gesichter.
+- **Anteil** wählen: Aus / Manche / Viele / Alle Zombies tragen ein Freundes-Gesicht. Die Gesichter werden fahl-grünlich eingefärbt, mit dunklen Rändern, Schmutz und Blut. Haare, Augen-Leuchten und Kiefer werden bei diesen Zombies weggelassen, damit das Foto gut zu sehen ist.
+- **Datenschutz:** Die Fotos werden nur im Browser dieses Geräts gespeichert (nicht hochgeladen, nicht im Repository). Auf der Quest: Fotos z. B. per Meta-Horizon-App oder Browser-Download auf die Brille bringen und dann im Quest-Browser auswählen.
+
+**Flüssiger**
+- Neue Einstellung **Grafik → Leistung**: *Schön* / *Ausgewogen* (Standard) / *Flüssig*.
+  - Ausgewogen: 90 % Auflösung, Foveated Rendering, Schatten nur jedes 2. Bild, höchstens 14 Zombies gleichzeitig.
+  - Flüssig: 75 % Auflösung, Schatten jedes 3. Bild mit kleinerer Schattenkarte, höchstens 12 Zombies.
+  - Die Auflösung gilt ab dem nächsten Start von „START AR“.
+- Nur noch die großen Körperteile der Zombies werfen Schatten (viel weniger Zeichenaufrufe), weniger Einschusslöcher pro Zombie, die Rundenwechsel-Anzeige wird seltener neu gezeichnet.
+- „Punkte-Anzeigen“ ist in den Reiter Bedienung umgezogen.
+
 ## Neu in Version 26 – Pistole im Holster, kompletter Reset, Karte einfach ausrichten
 
 **Kein Waffenständer mehr – du startest mit der Pistole in der Hand**

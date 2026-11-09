@@ -1,15 +1,16 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=26';
+import { VERSION } from './version.js?v=27';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=26';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=26';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=26';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=26';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=26';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=26';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=26';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime } from './zombies.js?v=26';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=27';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=27';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=27';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=27';
+import { facesButtonVisible, setFaces } from './faces.js?v=27';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=27';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=27';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=27';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime } from './zombies.js?v=27';
 
 // =============================================================================
 // Grundgerüst
@@ -40,6 +41,7 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(1, 3, 2);
 scene.add(sun, sun.target);
 // Echte Schatten: Zombies & Waffen werfen Schatten auf den echten Boden (unsichtbarer "Schattenfänger")
+let shadowFrame = 0;
 let shadowsOn = (() => { try { return localStorage.getItem('vrspiel-schatten') !== 'false'; } catch { return true; } })();
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -986,7 +988,21 @@ function updateDust(dt) {
   dustGeo.attributes.position.needsUpdate = true;
 }
 // ---- Leistung: höchstens so viele Zombies gleichzeitig; bei Rucklern automatisch Details reduzieren ----
-const MAX_ALIVE = 16;
+// Leistungsprofile: Auflösung, Foveated Rendering, Schatten-Takt, Zombie-Obergrenze
+const QUALITY = {
+  quality: { scale: 1.0, fov: 0.5, shadowEvery: 1, maxAlive: 16, shadowMap: 1024 },
+  balanced: { scale: 0.9, fov: 1, shadowEvery: 2, maxAlive: 14, shadowMap: 1024 },
+  fast: { scale: 0.75, fov: 1, shadowEvery: 3, maxAlive: 12, shadowMap: 512 }
+};
+const Q = () => QUALITY[settings.quality] || QUALITY.balanced;
+let MAX_ALIVE = 16;
+function applyQuality() {
+  const q = Q();
+  MAX_ALIVE = q.maxAlive;
+  if (sun.shadow.mapSize.x !== q.shadowMap) { sun.shadow.mapSize.set(q.shadowMap, q.shadowMap); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+  if (!renderer.xr.isPresenting) renderer.xr.setFramebufferScaleFactor(q.scale); // wirkt beim nächsten VR-Start
+  try { renderer.xr.setFoveation(q.fov); } catch { /* nicht unterstützt */ }
+}
 const perf = { ema: 0, slowT: 0, level: 0, okT: 0 };
 function autoPerf(raw) {
   if (!settings.autoPerf || !renderer.xr.isPresenting || raw <= 0 || raw > 0.5) return;
@@ -1093,7 +1109,7 @@ function updateRoundFx(dt) {
     speak(f.to % 5 === 0 && gameMode !== 'training' ? `Welle ${f.to}. Ein Riese kommt!` : `Welle ${f.to}`);
   }
   placeRoundFx(false);
-  drawRoundFx();
+  if ((roundFx.frame = (roundFx.frame || 0) + 1) % 2 === 0 || !f.slammed) drawRoundFx();
   if (f.t >= ROUND_DUR) { f.active = false; f.p.mesh.visible = false; }
 }
 // Blickrichtung einer Hand (um die Hochachse)
@@ -2463,13 +2479,14 @@ const SETTINGS_TABS = {
     { key: 'assist', label: 'Zielhilfe', opts: onOff },
     { key: 'haptics', label: 'Vibration', opts: [[0, 'Aus'], [0.5, 'Schwach'], [1, 'Normal'], [1.5, 'Stark']] },
     { key: 'wristHud', label: 'Anzeige am Handgelenk', opts: onOff },
-    { key: 'snapBelt', label: 'Gürtel-Abstand', opts: [[0.85, 'Eng'], [1, 'Normal'], [1.2, 'Weit']] }
+    { key: 'snapBelt', label: 'Gürtel-Abstand', opts: [[0.85, 'Eng'], [1, 'Normal'], [1.2, 'Weit']] },
+    { key: 'popups', label: 'Punkte-Anzeigen', opts: onOff }
   ] },
   grafik: { label: '✨ Grafik', items: [
+    { key: 'quality', label: 'Leistung', opts: [['quality', 'Schön'], ['balanced', 'Ausgewogen'], ['fast', 'Flüssig']] },
     { key: 'shadows', label: 'Echte Schatten', opts: onOff },
     { key: 'particles', label: 'Partikel', opts: [[0.5, 'Wenig'], [1, 'Normal'], [1.6, 'Viel']] },
     { key: 'dust', label: 'Staub in der Luft', opts: onOff },
-    { key: 'popups', label: 'Punkte-Anzeigen', opts: onOff },
     { key: 'eyeGlow', label: 'Leuchtende Zombie-Augen', opts: onOff },
     { key: 'autoPerf', label: 'Automatisch flüssig halten', opts: onOff },
     { key: 'corpseTime', label: 'Tote Zombies liegen', opts: [[0.4, 'Sehr kurz'], [1.2, 'Kurz'], [3, 'Normal'], [8, 'Lang']] }
@@ -2480,7 +2497,7 @@ const SETTINGS_DEFAULT = {
   startPoints: 500, amount: 1, blood: 1, killcam: true, ambient: true, hitmarker: true,
   grip: 'hold', reload: 'real', assist: true, haptics: 1, wristHud: true, snapBelt: 1,
   shadows: true, particles: 1, dust: true, popups: true, eyeGlow: true, autoPerf: true,
-  autoPlace: 'weapons', corpseTime: 1.2, priceWeapons: 1, priceBox: 950, pricePerks: 1, priceUpgrade: 1, priceTrap: 1000, pointsMul: 1
+  autoPlace: 'weapons', corpseTime: 1.2, quality: 'balanced', priceWeapons: 1, priceBox: 950, pricePerks: 1, priceUpgrade: 1, priceTrap: 1000, pointsMul: 1
 };
 // Preise laut Einstellungen (auf schöne Zahlen gerundet)
 const price = {
@@ -2507,6 +2524,7 @@ function applySettings() {
   if (typeof dust !== 'undefined') dust.visible = settings.dust;
   setEyeGlow(settings.eyeGlow);
   setCorpseTime(settings.corpseTime);
+  applyQuality();
 }
 function setSetting(k, v) {
   settings[k] = v;
@@ -4335,6 +4353,7 @@ function buildDemoRoom() {
 // VR-Sitzung
 // =============================================================================
 renderer.xr.addEventListener('sessionstart', () => {
+  facesButtonVisible(false);
   scene.background = null;
   desktopFloor.visible = false;
   crosshairEl.style.display = 'none';
@@ -4350,6 +4369,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   setTimeout(() => { enterSetup(); resetWeapons(false, false); }, 400);
 });
 renderer.xr.addEventListener('sessionend', () => {
+  facesButtonVisible(true);
   scene.background = desktopBackground;
   desktopFloor.visible = true;
   camera.position.set(0, 1.6, 0);
@@ -4419,7 +4439,8 @@ function frame() {
     sun.target.position.set(headPos.x, 0, headPos.z);
     sun.position.set(headPos.x + 1.6, 5, headPos.z + 2.2);
     sun.target.updateMatrixWorld();
-    renderer.shadowMap.needsUpdate = true;
+    shadowFrame = (shadowFrame + 1) % Q().shadowEvery;
+    if (shadowFrame === 0) renderer.shadowMap.needsUpdate = true;
   }
   for (let i = timers.length - 1; i >= 0; i--) {
     timers[i].t -= dt;
@@ -4489,5 +4510,5 @@ window.__game = {
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,
-  get monkeyCount() { return monkeyCount; }, lure, traps, pullTrap, roundFx, upgradeWeapon, set wave(v) { wave = v; }, set toSpawn(v) { toSpawn = v; }, spawnWeapon, resetWeapons, settings, tryFire, arrows, machines, upg, perks, useMachine, get points() { return points; }, set points(v) { points = v; }, wallbuys, mbox, useBox, tryBuy, giveWeapon, get holster() { return holster; }, plasmas, setTool, setupTriggerDown, setupTriggerUp, alignToLine, loadSlot, saveSlot, serializeRoom, setupWallbuys, setupMysteryBox, surfaceAt, updateSetup
+  setFaces, get monkeyCount() { return monkeyCount; }, lure, traps, pullTrap, roundFx, upgradeWeapon, set wave(v) { wave = v; }, set toSpawn(v) { toSpawn = v; }, spawnWeapon, resetWeapons, settings, tryFire, arrows, machines, upg, perks, useMachine, get points() { return points; }, set points(v) { points = v; }, wallbuys, mbox, useBox, tryBuy, giveWeapon, get holster() { return holster; }, plasmas, setTool, setupTriggerDown, setupTriggerUp, alignToLine, loadSlot, saveSlot, serializeRoom, setupWallbuys, setupMysteryBox, surfaceAt, updateSetup
 };
