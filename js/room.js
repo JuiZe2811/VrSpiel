@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addStaticBox, removeStatic } from './physics.js?v=24';
+import { addStaticBox, removeStatic } from './physics.js?v=25';
 
 // Raum-Modell: echte Wände, Tische und Stühle des Spielers.
 // Jede Fläche bekommt eine sichtbare Vorschau (im Einrichtungsmodus), einen unsichtbaren
@@ -12,7 +12,7 @@ const COLORS = { wall: 0x3a8bff, table: 0xff9d2e, chair: 0x46d17a, bench: 0x8a6a
 const NAMES = { wall: 'Wand', table: 'Tisch', chair: 'Stuhl', bench: 'Waffenständer', door: 'Tür', window: 'Fenster', wallbuy: 'Wandkauf', mbox: 'Glückskiste', perk: 'Automat', upgrade: 'Aufrüster', trap: 'Falle' };
 // an der Wand angebrachte Plätze (Position + Wandrichtung)
 export const isWallMount = (s) => s.type === 'wallbuy' || s.type === 'perk' || s.type === 'upgrade' || s.type === 'trap';
-const MARKER_SIZE = { wallbuy: [0.8, 0.35, 1.35], perk: [0.62, 1.75, 0.875], upgrade: [0.9, 1.2, 0.6], trap: [1.4, 1.4, 0.01] };
+const MARKER_SIZE = { wallbuy: [0.8, 0.35, 1.35], perk: [0.44, 1.23, 0.62], upgrade: [0.63, 0.84, 0.42], trap: [1.4, 1.4, 0.01] };
 export const isOpening = (s) => s.type === 'door' || s.type === 'window';
 export const surfaceName = (t) => NAMES[t];
 const occluderMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });

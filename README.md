@@ -5,6 +5,31 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 25 – Todesanimationen, Automaten selbst aufstellen, Preis-Einstellungen
+
+**Bessere Todesanimationen, Zombies verschwinden schnell**
+- Getroffene Zombies **taumeln zurück und kippen wie ein Brett um** (nach hinten oder vorne, je nach Schussrichtung), **sacken auf die Knie** und fallen dann nach vorn, oder **drehen sich beim Fallen**. Kriechende brechen einfach zusammen.
+- Beim Aufschlag: kleiner Rückprall, Staub, dumpfer Schlag, letztes Zucken.
+- Danach **versinken sie im Boden** (mit dunklem Rauch) – standardmäßig nach etwa 3 Sekunden komplett weg. Einstellbar unter Grafik → „Tote Zombies liegen“ (Sehr kurz / Kurz / Normal / Lang).
+
+**Automaten und Aufrüster selbst aufstellen**
+- Im Raumbau: **🥤 Automat** wählen, dann **den Knopf nochmal drücken, um die Sorte zu wechseln** (♥ Eisenhaut, ⚡ Flinkhand, » Schnellfeuer, ✚ Zweites Leben). Laser auf eine Wand **oder frei auf den Boden** (er schaut dann zu dir) + Abzug. Jede Sorte gibt es einmal – neu setzen verschiebt sie.
+- **⚙ Aufrüster** genauso, auch frei im Raum.
+- **Es wird nichts mehr automatisch aufgestellt, was du nicht willst**: Einstellungen → Spiel → „Automatisch aufstellen“: *Nichts* / *Waffen+Kiste* (Standard) / *Alles*.
+- Automaten und Aufrüster sind jetzt **30 % kleiner**.
+- Behoben: Die Kaufstelle der Automaten lag manchmal an der falschen Stelle.
+
+**💰 Neuer Einstellungs-Reiter „Preise“**
+| Einstellung | Auswahl |
+|---|---|
+| Wandkauf-Waffen | 50 % – 200 % |
+| Glückskiste | 500 / 950 / 1500 / 2500 |
+| Getränke-Automaten | 50 % – 200 % |
+| Aufrüster | 25 % – 150 % |
+| Fallen | 250 / 500 / 1000 / 2000 |
+| Punkte für Treffer & Kills | ×0,5 – ×3 |
+Die Preisschilder an Wänden, Automaten und Aufrüster zeigen immer die eingestellten Preise.
+
 ## Neu in Version 24 – Wände schließen sich automatisch
 
 - **Anheften beim Zeichnen**: Jede neue Wand verbindet sich mit den vorhandenen. Ecken werden bis zum Schnittpunkt verlängert oder gekürzt, Wände, die kurz vor einer anderen enden, rasten dort ein (T-Stoß), kleine Lücken werden geschlossen. Start- und Endpunkt rasten schon ab 40 cm an vorhandenen Ecken ein.

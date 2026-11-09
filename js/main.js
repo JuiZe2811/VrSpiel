@@ -1,15 +1,15 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=24';
+import { VERSION } from './version.js?v=25';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=24';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=24';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=24';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=24';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=24';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=24';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx } from './effects.js?v=24';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure } from './zombies.js?v=24';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=25';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=25';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=25';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=25';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=25';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=25';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx } from './effects.js?v=25';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime } from './zombies.js?v=25';
 
 // =============================================================================
 // Grundgerüst
@@ -1418,7 +1418,7 @@ function teslaStrike(from, hit, dir, dmg, jumps) {
 const START_POINTS = 500;
 let points = 0;
 const free = () => gameMode === 'training';
-function award(n) { score += n; points += n; boardDirty = true; }
+function award(n) { score += n; points += Math.round(n * settings.pointsMul); boardDirty = true; }
 function spend(price, where) {
   if (free() || points >= price) {
     if (!free()) points -= price;
@@ -1488,7 +1488,7 @@ function freeWallSpots(n, y, avoid = [], minSep = 1.2, angles = [Math.PI * 0.5, 
 // Wandkauf-Plätze: selbst gesetzte – sonst automatisch
 function autoWallbuySpots() {
   const own = surfacesOf('wallbuy');
-  return own.length ? own : freeWallSpots(3, 1.35);
+  return own.length || settings.autoPlace === 'none' ? own : freeWallSpots(3, 1.35);
 }
 function setupWallbuys() {
   clearWallbuys();
@@ -1522,7 +1522,7 @@ function setupWallbuys() {
     label.draw((ctx, w, h) => {
       ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, w, h);
       text(ctx, def.name, 14, h * 0.32, 30, '#ffe7a8', 'left', true);
-      text(ctx, `💰 ${def.price}  ·  Munition ${Math.round(def.price / 2)}`, 14, h * 0.75, 26, '#ffd21f', 'left', true);
+      text(ctx, `💰 ${price.weapon(def)}  ·  Munition ${price.ammo(def)}`, 14, h * 0.75, 26, '#ffd21f', 'left', true);
     });
     label.mesh.position.set(0, -0.2, 0.01);
     g.add(label.mesh);
@@ -1547,7 +1547,7 @@ const wbGlowTex = (() => {
 function updateWallbuys() {
   for (const wb of wallbuys) {
     const own = ownedWeapon(wb.id);
-    const afford = free() || points >= (own ? Math.round(wb.def.price / 2) : wb.def.price);
+    const afford = free() || points >= (own ? price.ammo(wb.def) : price.weapon(wb.def));
     wb.glow.material.color.setHex(afford ? 0xffc23a : 0xff3a2a);
     wb.glow.material.opacity = (afford ? 0.55 : 0.25) + Math.sin(elapsed * 3 + wb.phase) * 0.12;
     wb.holder.rotation.y = Math.sin(elapsed * 0.8 + wb.phase) * 0.12;
@@ -1565,12 +1565,12 @@ function tryBuy(wb, h) {
   const where = wb.group.position.clone().addScaledVector(wb.s.normal, 0.2);
   const own = ownedWeapon(wb.id);
   if (own) {
-    if (!spend(Math.round(wb.def.price / 2), where)) return false;
+    if (!spend(price.ammo(wb.def), where)) return false;
     refillWeapon(own);
     floatingText('Munition aufgefüllt', where, '#9fe8ff');
     return true;
   }
-  if (!spend(wb.def.price, where)) return false;
+  if (!spend(price.weapon(wb.def), where)) return false;
   giveWeapon(wb.id, h);
   floatingText(wb.def.name, where, '#ffe7a8');
   speak(wb.def.name);
@@ -1609,9 +1609,10 @@ function panelTex(w, h, draw) {
 }
 const perkTex = {};
 function perkTexture(kind) {
-  if (perkTex[kind]) return perkTex[kind];
+  const key = kind + price.perk(PERKS[kind]);
+  if (perkTex[key]) return perkTex[key];
   const P = PERKS[kind];
-  perkTex[kind] = panelTex(256, 512, (ctx, w, h) => {
+  perkTex[key] = panelTex(256, 512, (ctx, w, h) => {
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, '#0b0b10'); g.addColorStop(0.5, P.color + '55'); g.addColorStop(1, '#0b0b10');
     ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
@@ -1622,17 +1623,22 @@ function perkTexture(kind) {
     ctx.shadowBlur = 12; ctx.fillStyle = '#fff'; ctx.font = 'bold 34px system-ui, sans-serif';
     ctx.fillText(P.name.toUpperCase(), w / 2, 300);
     ctx.font = '22px system-ui, sans-serif'; ctx.fillStyle = '#ddd'; ctx.fillText(P.desc, w / 2, 340);
-    ctx.font = 'bold 40px system-ui, sans-serif'; ctx.fillStyle = '#ffd21f'; ctx.fillText('💰 ' + P.price, w / 2, 420);
+    ctx.font = 'bold 40px system-ui, sans-serif'; ctx.fillStyle = '#ffd21f'; ctx.fillText('💰 ' + price.perk(P), w / 2, 420);
   });
-  return perkTex[kind];
+  return perkTex[key];
 }
-const upgTex = panelTex(256, 128, (ctx, w, h) => {
-  ctx.fillStyle = '#0d0716'; ctx.fillRect(0, 0, w, h);
-  ctx.shadowColor = '#b26bff'; ctx.shadowBlur = 20;
-  ctx.fillStyle = '#d9b8ff'; ctx.font = 'bold 34px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('⚙ AUFRÜSTER', w / 2, 45);
-  ctx.fillStyle = '#ffd21f'; ctx.font = 'bold 22px system-ui, sans-serif'; ctx.fillText('★ 5000 · ★★ 15000 · ★★★ 30000', w / 2, 95);
-});
+const upgTexCache = {};
+function upgTexture() {
+  const label = UPGRADE_TIERS.map(t => t.stars + ' ' + price.upgrade(t)).join(' · ');
+  if (upgTexCache[label]) return upgTexCache[label];
+  return (upgTexCache[label] = panelTex(256, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#0d0716'; ctx.fillRect(0, 0, w, h);
+    ctx.shadowColor = '#b26bff'; ctx.shadowBlur = 20;
+    ctx.fillStyle = '#d9b8ff'; ctx.font = 'bold 34px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('⚙ AUFRÜSTER', w / 2, 45);
+    ctx.fillStyle = '#ffd21f'; ctx.font = 'bold 21px system-ui, sans-serif'; ctx.fillText(label, w / 2, 95);
+  }));
+}
 // Leucht-Tarnung je Stufe (wandert langsam über die Waffe)
 function makeCamo(base, colors) {
   const c = document.createElement('canvas');
@@ -1693,8 +1699,9 @@ function buildPerkMachine(spot, kind) {
   const P = PERKS[kind];
   const col = new THREE.Color(P.color);
   const g = new THREE.Group();
-  g.position.copy(spot.pos).setY(0).addScaledVector(spot.normal, 0.2);
+  g.position.copy(spot.pos).setY(0).addScaledVector(spot.normal, 0.2 * MACHINE_SCALE);
   g.lookAt(g.position.clone().add(spot.normal));
+  g.scale.setScalar(MACHINE_SCALE);
   const bodyMat = new THREE.MeshStandardMaterial({ color: col.clone().multiplyScalar(0.55), roughness: 0.45, metalness: 0.3 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.75, 0.38), bodyMat);
   body.position.y = 0.875;
@@ -1719,12 +1726,14 @@ function buildPerkMachine(spot, kind) {
   g.add(glow);
   castShadows(g);
   scene.add(g);
+  g.updateMatrixWorld(true);
   machines.push({ type: 'perk', kind, group: g, normal: spot.normal.clone(), front: g.localToWorld(new THREE.Vector3(0, 1.0, 0.25)), btn, glow, phase: Math.random() * 6 });
 }
 function buildUpgrader(spot) {
   const g = new THREE.Group();
-  g.position.copy(spot.pos).setY(0).addScaledVector(spot.normal, 0.26);
+  g.position.copy(spot.pos).setY(0).addScaledVector(spot.normal, 0.26 * MACHINE_SCALE);
   g.lookAt(g.position.clone().add(spot.normal));
+  g.scale.setScalar(MACHINE_SCALE);
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.5), machineDark);
   body.position.y = 0.55;
   g.add(body);
@@ -1735,7 +1744,7 @@ function buildUpgrader(spot) {
   const slot = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.1, 0.02), slotMat);
   slot.position.set(0, 0.92, 0.252);
   g.add(slot);
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.25), new THREE.MeshStandardMaterial({ map: upgTex, emissive: 0xffffff, emissiveMap: upgTex, emissiveIntensity: 0.9 }));
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.25), new THREE.MeshStandardMaterial({ map: upgTexture(), emissive: 0xffffff, emissiveMap: upgTexture(), emissiveIntensity: 0.9 }));
   sign.position.set(0, 0.55, 0.252);
   g.add(sign);
   const gears = [];
@@ -1752,17 +1761,20 @@ function buildUpgrader(spot) {
   g.add(glow);
   castShadows(g);
   scene.add(g);
+  g.updateMatrixWorld(true);
   const m = { type: 'upgrade', group: g, normal: spot.normal.clone(), front: g.localToWorld(new THREE.Vector3(0, 0.92, 0.32)), slotPos: g.localToWorld(new THREE.Vector3(0, 0.92, 0.0)), gears, glow, slotMat, phase: 0 };
   machines.push(m);
   upg.m = m;
 }
+const MACHINE_SCALE = 0.7; // kleiner, damit sie nicht so viel Platz wegnehmen
 function setupMachines() {
   clearMachines();
   const avoid = wallbuys.map(wb => wb.s.pos);
   const ownP = surfacesOf('perk'), ownU = surfacesOf('upgrade');
-  const perkSpots = ownP.length ? ownP.map(s0 => ({ pos: s0.pos, normal: s0.normal, kind: s0.kind })) : freeWallSpots(4, 0, avoid, 0.9, [2.3, -2.3, 2.75, -2.75], 2.4).map((sp, i) => ({ ...sp, kind: PERK_ORDER[i] }));
+  const auto = settings.autoPlace === 'all';
+  const perkSpots = ownP.length || !auto ? ownP.map(s0 => ({ pos: s0.pos, normal: s0.normal, kind: s0.kind })) : freeWallSpots(4, 0, avoid, 0.9, [2.3, -2.3, 2.75, -2.75], 2.4).map((sp, i) => ({ ...sp, kind: PERK_ORDER[i] }));
   for (const sp of perkSpots) if (PERKS[sp.kind]) buildPerkMachine(sp, sp.kind);
-  const upSpot = ownU[0] || freeWallSpots(1, 0, [...avoid, ...perkSpots.map(p0 => p0.pos)], 1.0, [0.9], 2.4)[0];
+  const upSpot = ownU[0] || (auto ? freeWallSpots(1, 0, [...avoid, ...perkSpots.map(p0 => p0.pos)], 1.0, [0.9], 2.4)[0] : null);
   if (upSpot) buildUpgrader(upSpot);
 }
 function machineNear(p) {
@@ -1784,7 +1796,7 @@ function useMachine(m, h) {
   if (m.type === 'perk') {
     const P = PERKS[m.kind];
     if (perks.has(m.kind)) { floatingText('Schon getrunken', where, '#cccccc'); return false; }
-    if (!spend(P.price, where)) return false;
+    if (!spend(price.perk(P), where)) return false;
     applyPerk(m.kind);
     floatingText(P.name + '!', where, P.color);
     speak(P.name);
@@ -1807,7 +1819,7 @@ function useMachine(m, h) {
   if (nextUp > UPGRADE_TIERS.length) { floatingText('Maximal aufgerüstet ★★★', where, '#ffe14a'); return false; }
   const tier = UPGRADE_TIERS[nextUp - 1];
   if (!free() && wave < tier.wave) { floatingText(`Stufe ${tier.stars} ab Welle ${tier.wave}`, where, '#cccccc'); return false; }
-  if (!spend(tier.price, where)) return false;
+  if (!spend(price.upgrade(tier), where)) return false;
   // Waffe wandert in die Maschine
   if (h) {
     const o = otherHand(h);
@@ -1961,6 +1973,7 @@ function setupTraps() {
   const own = surfacesOf('trap');
   if (own.length) { for (const s0 of own) buildTrap(s0.pos, s0.normal, s0.kind || 'electric'); return; }
   // automatisch: vor den ersten zwei Türen/Fenstern (innen)
+  if (settings.autoPlace !== 'all') return;
   openings().slice(0, 2).forEach((o, i) => buildTrap(o.mid.clone().addScaledVector(o.normal, 1.15).setY(0), o.normal.clone(), i % 2 ? 'fire' : 'electric'));
 }
 function knobPos(t) { return t.knob.getWorldPosition(new THREE.Vector3()); }
@@ -1969,7 +1982,7 @@ function pullTrap(t, h) {
   const where = knobPos(t).add(new THREE.Vector3(0, 0.3, 0));
   if (t.state === 'active') return false;
   if (t.state === 'cool') { floatingText(`Lädt noch ${Math.ceil(t.t)} s`, where, '#cccccc'); return false; }
-  if (!spend(t.T.price, where)) return false;
+  if (!spend(price.trap(), where)) return false;
   t.state = 'active';
   t.t = t.T.dur;
   SFX.clang();
@@ -2051,6 +2064,7 @@ function clearMysteryBox() {
 function setupMysteryBox() {
   clearMysteryBox();
   let s = surfacesOf('mbox')[0];
+  if (!s && settings.autoPlace === 'none') return;
   if (!s) { // nicht platziert: automatisch an eine freie Stelle neben dem Spieler
     let best = 2.2, ang = 2.4;
     for (const a of [2.4, -2.4, 1.6, -1.6, Math.PI]) {
@@ -2131,7 +2145,7 @@ function useBox(h) {
     return true;
   }
   if (mbox.state !== 'idle') return false;
-  if (boxPool().ids.length === 0 || !spend(BOX_PRICE, where)) return false;
+  if (boxPool().ids.length === 0 || !spend(price.box(), where)) return false;
   mbox.state = 'spin';
   mbox.t = 0;
   mbox.step = 0;
@@ -2454,7 +2468,16 @@ const SETTINGS_TABS = {
     { key: 'blood', label: 'Blut', opts: [[0, 'Aus'], [1, 'Normal'], [2, 'Extra']] },
     { key: 'killcam', label: 'Zeitlupe beim letzten Kill', opts: onOff },
     { key: 'ambient', label: 'Gruselgeräusche', opts: onOff },
-    { key: 'hitmarker', label: 'Treffer-Ton', opts: onOff }
+    { key: 'hitmarker', label: 'Treffer-Ton', opts: onOff },
+    { key: 'autoPlace', label: 'Automatisch aufstellen', opts: [['none', 'Nichts'], ['weapons', 'Waffen+Kiste'], ['all', 'Alles']] }
+  ] },
+  preise: { label: '💰 Preise', items: [
+    { key: 'priceWeapons', label: 'Wandkauf-Waffen', opts: [[0.5, '50 %'], [0.75, '75 %'], [1, '100 %'], [1.5, '150 %'], [2, '200 %']] },
+    { key: 'priceBox', label: 'Glückskiste', opts: [[500, '500'], [950, '950'], [1500, '1500'], [2500, '2500']] },
+    { key: 'pricePerks', label: 'Getränke-Automaten', opts: [[0.5, '50 %'], [0.75, '75 %'], [1, '100 %'], [1.5, '150 %'], [2, '200 %']] },
+    { key: 'priceUpgrade', label: 'Aufrüster', opts: [[0.25, '25 %'], [0.5, '50 %'], [0.75, '75 %'], [1, '100 %'], [1.5, '150 %']] },
+    { key: 'priceTrap', label: 'Fallen', opts: [[250, '250'], [500, '500'], [1000, '1000'], [2000, '2000']] },
+    { key: 'pointsMul', label: 'Punkte für Treffer & Kills', opts: [[0.5, '×0,5'], [0.75, '×0,75'], [1, '×1'], [1.5, '×1,5'], [2, '×2'], [3, '×3']] }
   ] },
   bedienung: { label: '✊ Bedienung', items: [
     { key: 'grip', label: 'Griff-Taste', opts: [['hold', 'Halten'], ['toggle', 'Tippen']] },
@@ -2470,14 +2493,25 @@ const SETTINGS_TABS = {
     { key: 'dust', label: 'Staub in der Luft', opts: onOff },
     { key: 'popups', label: 'Punkte-Anzeigen', opts: onOff },
     { key: 'eyeGlow', label: 'Leuchtende Zombie-Augen', opts: onOff },
-    { key: 'autoPerf', label: 'Automatisch flüssig halten', opts: onOff }
+    { key: 'autoPerf', label: 'Automatisch flüssig halten', opts: onOff },
+    { key: 'corpseTime', label: 'Tote Zombies liegen', opts: [[0.4, 'Sehr kurz'], [1.2, 'Kurz'], [3, 'Normal'], [8, 'Lang']] }
   ] }
 };
 const SETTINGS_DEFAULT = {
   master: 9, sfx: 10, music: 6, voices: 10, announcer: 10, announcerVoice: 'deep',
   startPoints: 500, amount: 1, blood: 1, killcam: true, ambient: true, hitmarker: true,
   grip: 'hold', reload: 'real', assist: true, haptics: 1, wristHud: true, snapBelt: 1,
-  shadows: true, particles: 1, dust: true, popups: true, eyeGlow: true, autoPerf: true
+  shadows: true, particles: 1, dust: true, popups: true, eyeGlow: true, autoPerf: true,
+  autoPlace: 'weapons', corpseTime: 1.2, priceWeapons: 1, priceBox: 950, pricePerks: 1, priceUpgrade: 1, priceTrap: 1000, pointsMul: 1
+};
+// Preise laut Einstellungen (auf schöne Zahlen gerundet)
+const price = {
+  weapon: (def) => Math.round(def.price * settings.priceWeapons / 50) * 50,
+  ammo: (def) => Math.round(def.price * settings.priceWeapons / 100) * 50,
+  box: () => settings.priceBox,
+  perk: (P) => Math.round(P.price * settings.pricePerks / 50) * 50,
+  upgrade: (t) => Math.round(t.price * settings.priceUpgrade / 250) * 250,
+  trap: () => settings.priceTrap
 };
 const settings = Object.assign({}, SETTINGS_DEFAULT, {
   // ältere Einzel-Einstellungen übernehmen
@@ -2494,6 +2528,7 @@ function applySettings() {
   if (shadowsOn !== settings.shadows) setShadows(settings.shadows);
   if (typeof dust !== 'undefined') dust.visible = settings.dust;
   setEyeGlow(settings.eyeGlow);
+  setCorpseTime(settings.corpseTime);
 }
 function setSetting(k, v) {
   settings[k] = v;
@@ -2898,7 +2933,7 @@ scene.add(startButton);
 // Raum einrichten – alles per Laser (wie die Begrenzung der Quest):
 // Wände und Möbel auf dem Boden aufziehen, Waffentisch platzieren, Bodenhöhe einstellen
 // =============================================================================
-const setup = { view: 'main', align: null, hoverS: null, confirm: -1, tool: null, drag: null, pending: null, last: null, msg: '', rotT: 0, planeSupport: false, importReq: false, autoImport: 0, refT: 0 };
+const setup = { perkKind: 'eisen', view: 'main', align: null, hoverS: null, confirm: -1, tool: null, drag: null, pending: null, last: null, msg: '', rotT: 0, planeSupport: false, importReq: false, autoImport: 0, refT: 0 };
 const previewMat = new THREE.MeshBasicMaterial({ color: 0xffee00, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide });
 const previewWall = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), previewMat);
 const previewBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), previewMat);
@@ -2935,8 +2970,8 @@ const TOOL_HELP = {
   door: ['TÜR: Laser oben an eine Türecke auf der Wand, Abzug halten,', 'zur anderen Ecke ziehen, loslassen. Unten = automatisch Boden.'],
   window: ['FENSTER: Laser an eine Fensterecke auf der Wand, Abzug halten,', 'zur gegenüberliegenden Ecke ziehen, loslassen.'],
   trap: ['FALLE: Laser auf den Boden + Abzug (z. B. vor eine Tür). Der Hebel steht seitlich.', 'Abwechselnd Elektro- und Feuerfalle. Im Spiel: Hebel greifen = 1000 Punkte, 15 s aktiv.'],
-  perk: ['AUTOMAT: Laser auf eine Wand + Abzug. Jeder neue Automat ist eine andere Sorte', '(Eisenhaut, Flinkhand, Schnellfeuer, Zweites Leben).'],
-  upgrade: ['AUFRÜSTER: Laser auf eine Wand + Abzug. Dort werden Waffen für 5000 Punkte', 'aufgerüstet (doppelter Schaden, mehr Munition, Leucht-Tarnung).'],
+  perk: ['AUTOMAT: Sorte wählen = Knopf nochmal drücken (♥ ⚡ » ✚). Dann Laser auf eine', 'Wand oder den Boden + Abzug. Jede Sorte gibt es einmal – neu setzen = umstellen.'],
+  upgrade: ['AUFRÜSTER: Laser auf eine Wand oder den Boden + Abzug. Dort werden Waffen in 3 Stufen', 'aufgerüstet (Preise unter Einstellungen → Preise).'],
   wallbuy: ['WANDKAUF: Mit dem Laser auf eine markierte Wand zeigen und Abzug drücken.', 'Dort hängt jede Runde eine zufällige Waffe zum Kaufen.'],
   mbox: ['GLÜCKSKISTE: Laser auf den Boden, Abzug drücken (ziehen = Ausrichtung).', 'Für 950 Punkte gibt es eine zufällige Waffe – auch die Wunderwaffe.'],
   erase: ['LÖSCHEN: Mit dem Laser auf eine Fläche zeigen (wird rot),', 'Abzug = diese Fläche entfernen.'],
@@ -2972,7 +3007,7 @@ function refreshSetupPanel() {
     ...row(354, 56, [
       { id: 'wallbuy', label: '💰 Wandkauf', font: 23, active: setup.tool === 'wallbuy', onClick: () => setTool('wallbuy') },
       { id: 'mbox', label: '❓ Kiste', font: 23, active: setup.tool === 'mbox', onClick: () => setTool('mbox') },
-      { id: 'perk', label: '🥤 Automat', font: 23, active: setup.tool === 'perk', onClick: () => setTool('perk') },
+      { id: 'perk', label: setup.tool === 'perk' ? `${PERKS[setup.perkKind].icon} ${PERKS[setup.perkKind].name}` : '🥤 Automat', font: setup.tool === 'perk' ? 19 : 23, active: setup.tool === 'perk', onClick: () => { if (setup.tool === 'perk') { setup.perkKind = PERK_ORDER[(PERK_ORDER.indexOf(setup.perkKind) + 1) % PERK_ORDER.length]; refreshSetupPanel(); } else setTool('perk'); } },
       { id: 'upgrade', label: '⚙ Aufrüster', font: 23, active: setup.tool === 'upgrade', onClick: () => setTool('upgrade') }
     ], 760, 30, 12),
     ...row(418, 56, [
@@ -3295,18 +3330,26 @@ function setupTriggerDown(src) {
     return;
   }
   if (tool === 'wallbuy' || tool === 'perk' || tool === 'upgrade') {
-    const wh = wallHit(rayOf(src));
-    if (!wh) { setup.msg = surfacesOf('wall').length ? 'Zeige mit dem Laser auf eine markierte (blaue) Wand' : 'Zuerst Wände markieren'; refreshSetupPanel(); return; }
-    const half = tool === 'upgrade' ? 0.5 : tool === 'perk' ? 0.36 : 0.45;
-    const u = THREE.MathUtils.clamp(wh.u, half, Math.max(half, wh.wall.width - half));
-    const pos = wh.wall.a.clone().addScaledVector(wh.wall.right, u).setY(tool === 'wallbuy' ? THREE.MathUtils.clamp(wh.v, 1.0, 1.6) : 1.0);
-    if (surfacesOf('wallbuy', 'perk', 'upgrade').some(o => Math.hypot(o.pos.x - pos.x, o.pos.z - pos.z) < (o.type === 'wallbuy' && tool === 'wallbuy' ? 0.9 : 0.8))) { setup.msg = 'Zu nah an einem anderen Platz'; refreshSetupPanel(); return; }
-    if (tool === 'upgrade') for (const o of surfacesOf('upgrade')) removeSurface(o);
+    const r = rayOf(src);
+    const wh = wallHit(r);
+    let pos, normal;
+    if (wh) {
+      const half = tool === 'upgrade' ? 0.35 : tool === 'perk' ? 0.25 : 0.45;
+      const u = THREE.MathUtils.clamp(wh.u, half, Math.max(half, wh.wall.width - half));
+      pos = wh.wall.a.clone().addScaledVector(wh.wall.right, u).setY(tool === 'wallbuy' ? THREE.MathUtils.clamp(wh.v, 1.0, 1.6) : 1.0);
+      normal = wh.wall.normal;
+    } else if (tool !== 'wallbuy' && floorHit(r)) { // Automat/Aufrüster auch frei im Raum (schaut zu dir)
+      pos = floorHit(r).setY(1.0);
+      normal = headPos.clone().sub(pos).setY(0).normalize();
+    } else { setup.msg = tool === 'wallbuy' ? 'Zeige mit dem Laser auf eine markierte (blaue) Wand' : 'Laser auf eine Wand oder den Boden richten'; refreshSetupPanel(); return; }
     let kind = null;
-    if (tool === 'perk') { const used = surfacesOf('perk').map(o => o.kind); kind = PERK_ORDER.find(k => !used.includes(k)) || PERK_ORDER[surfacesOf('perk').length % PERK_ORDER.length]; }
-    const x = addWallbuy(pos, wh.wall.normal, tool, kind);
+    if (tool === 'perk') { kind = setup.perkKind; for (const o of surfacesOf('perk').filter(o => o.kind === kind)) removeSurface(o); } // jede Sorte nur einmal
+    if (tool === 'upgrade') for (const o of surfacesOf('upgrade')) removeSurface(o);
+    if (surfacesOf('wallbuy', 'perk', 'upgrade').some(o => Math.hypot(o.pos.x - pos.x, o.pos.z - pos.z) < (tool === 'wallbuy' ? 0.9 : 0.55))) { setup.msg = 'Zu nah an einem anderen Platz'; refreshSetupPanel(); return; }
+    const x = addWallbuy(pos, normal, tool, kind);
     setup.last = x;
-    setup.msg = tool === 'wallbuy' ? `Wandkauf ${surfacesOf('wallbuy').length} platziert – jede Runde eine zufällige Waffe` : tool === 'perk' ? `Automat „${PERKS[kind].name}“ platziert` : 'Aufrüster platziert';
+    if (tool === 'perk') { const used = surfacesOf('perk').map(o => o.kind); setup.perkKind = PERK_ORDER.find(k => !used.includes(k)) || kind; }
+    setup.msg = tool === 'wallbuy' ? `Wandkauf ${surfacesOf('wallbuy').length} platziert – jede Runde eine zufällige Waffe` : tool === 'perk' ? `Automat „${PERKS[kind].name}“ platziert${setup.perkKind !== kind ? ` – als Nächstes: ${PERKS[setup.perkKind].name}` : ''}` : 'Aufrüster platziert';
     SFX.magIn();
     saveRoom();
     refreshSetupPanel();
@@ -3651,13 +3694,13 @@ function refreshMenu() {
 let menuView = 'main', settingsTab = 'ton';
 function refreshSettings() {
   const tab = SETTINGS_TABS[settingsTab];
-  const btns = [...row(80, 52, Object.entries(SETTINGS_TABS).map(([id, t]) => ({ id: 't_' + id, label: t.label, font: 24, active: settingsTab === id, onClick: () => { settingsTab = id; refreshMenu(); } })), 792, 24, 10)];
+  const btns = [...row(80, 52, Object.entries(SETTINGS_TABS).map(([id, t]) => ({ id: 't_' + id, label: t.label, font: 21, active: settingsTab === id, onClick: () => { settingsTab = id; refreshMenu(); } })), 792, 20, 8)];
   tab.items.forEach((it, i) => {
-    const y = 156 + i * 72;
+    const y = 150 + i * 63;
     const idx = Math.max(0, it.opts.findIndex(o => o[0] === settings[it.key]));
     const step = (d) => () => { const n = it.opts.length; setSetting(it.key, it.opts[(idx + d + n) % n][0]); if (it.key === 'announcer' || it.key === 'announcerVoice') speak('Welle eins'); else SFX.ui(); };
-    btns.push({ id: 'l_' + it.key, label: '◀', font: 30, x: 470, y, w: 64, h: 56, onClick: step(-1) });
-    btns.push({ id: 'r_' + it.key, label: '▶', font: 30, x: 704, y, w: 64, h: 56, onClick: step(1) });
+    btns.push({ id: 'l_' + it.key, label: '◀', font: 30, x: 470, y, w: 64, h: 54, onClick: step(-1) });
+    btns.push({ id: 'r_' + it.key, label: '▶', font: 30, x: 704, y, w: 64, h: 54, onClick: step(1) });
   });
   btns.push(...row(600, 60, [
     { id: 'reset', label: '↺ Standard', font: 26, onClick: () => { for (const it of tab.items) settings[it.key] = SETTINGS_DEFAULT[it.key]; setSetting(tab.items[0].key, settings[tab.items[0].key]); } },
@@ -3666,7 +3709,7 @@ function refreshSettings() {
   menuPanel.set((ctx, w) => {
     text(ctx, '⚙ Einstellungen', w / 2, 40, 38, '#fff', 'center', true);
     tab.items.forEach((it, i) => {
-      const y = 156 + i * 72;
+      const y = 150 + i * 63;
       const o = it.opts.find(q => q[0] === settings[it.key]) || it.opts[0];
       text(ctx, it.label, 40, y + 28, 25, '#e6edf5', 'left', true);
       roundRect(ctx, 542, y + 4, 154, 48, 12);

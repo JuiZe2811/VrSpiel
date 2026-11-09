@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { makePanel } from './util.js?v=24';
-import { heightAt } from './room.js?v=24';
-import { SFX } from './sfx.js?v=24';
+import { makePanel } from './util.js?v=25';
+import { heightAt } from './room.js?v=25';
+import { SFX } from './sfx.js?v=25';
 
 // Kurzlebige Effekte: Leuchtspuren, Partikel, Punkte-Text, Einschusslöcher, Hülsen
 let scene;
@@ -88,6 +88,8 @@ export function floatingText(text, point, color) {
   const panel = makePanel(0.6, 0.16, 600);
   panel.draw((ctx, w, h) => {
     ctx.font = 'bold 76px system-ui, sans-serif';
+    const fit = Math.min(76, Math.floor(76 * (w * 0.94) / Math.max(1, ctx.measureText(text).width)));
+    ctx.font = `bold ${fit}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 10;

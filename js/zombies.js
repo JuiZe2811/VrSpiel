@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=24';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=24';
-import { SFX3D } from './sfx.js?v=24';
-import { burst, addDebris, shockwave } from './effects.js?v=24';
-import { cachedGeo } from './util.js?v=24';
+import { room, surfacesOf, isOpening } from './room.js?v=25';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=25';
+import { SFX3D } from './sfx.js?v=25';
+import { burst, addDebris, shockwave } from './effects.js?v=25';
+import { cachedGeo } from './util.js?v=25';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -667,6 +667,65 @@ function kill(z, dir) {
   z.fallVec = dir ? new THREE.Vector3(dir.x, 0, dir.z).normalize() : fwd;
   if (!isFinite(z.fallVec.x) || z.fallVec.lengthSq() < 0.5) z.fallVec = fwd;
   if (z.kin) { removeBody(z.kin); z.kin = null; }
+  // Art des Sterbens
+  z.deathStyle = z.crawl || Math.abs(z.body.rotation.x) > 0.8 ? 'crawl' : z.headless ? 'knees' : ['fall', 'fall', 'knees', 'spin'][Math.floor(Math.random() * 4)];
+  z.d0 = { rx: z.body.rotation.x, y: z.body.position.y, ry: z.root.rotation.y };
+  z.landed = false;
+}
+// ---- Todesanimation: taumeln → zusammenbrechen/umfallen → liegen → im Boden versinken (mit Rauch) ----
+let corpseHold = 1.2;
+export function setCorpseTime(s) { corpseHold = s; }
+const ease = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+function animateDeath(z, dt) {
+  const t = z.deadT, st = z.deathStyle, fd = z.fallDir || -1, d0 = z.d0 || { rx: 0, y: 0 };
+  const lerp = THREE.MathUtils.lerp;
+  let fallK = 0;
+  if (st === 'crawl') {
+    fallK = ease(t / 0.4);
+    z.body.rotation.x = lerp(d0.rx, 1.5, fallK);
+    z.body.position.y = lerp(d0.y, 0.03, fallK);
+  } else if (st === 'knees') {
+    // auf die Knie sacken, dann nach vorne kippen
+    const kneel = ease(t / 0.45), tip = ease((t - 0.45) / 0.55);
+    z.legs.forEach(l => { l.hip.rotation.x = -1.3 * kneel * (1 - tip * 0.6); l.knee.rotation.x = 2.1 * kneel * (1 - tip * 0.5); });
+    z.body.position.y = lerp(d0.y, -0.36 * z.scale, kneel) * (1 - tip) + 0.03 * tip;
+    z.body.rotation.x = lerp(d0.rx, 1.45, tip * tip);
+    z.arms.forEach(a => { a.shoulder.rotation.x = lerp(-0.4, -0.2, tip); a.elbow.rotation.x = -0.6; });
+    fallK = tip;
+  } else {
+    // getroffen zurücktaumeln, dann wie ein Brett umfallen (beschleunigt)
+    const stag = ease(t / 0.22), k = Math.max(0, (t - 0.18) / 0.62), kk = Math.min(1, k * k);
+    z.torso.rotation.x = -0.35 * fd * stag * (1 - kk);
+    z.body.rotation.x = lerp(d0.rx, fd * 1.5, kk);
+    z.body.position.y = lerp(d0.y, 0.04, kk);
+    z.legs.forEach((l, j) => { l.knee.rotation.x = 0.5 * kk + j * 0.15; l.hip.rotation.x = (fd > 0 ? -0.3 : 0.4) * kk; });
+    z.arms.forEach((a, j) => { a.shoulder.rotation.x = fd < 0 ? lerp(-0.6, -2.7, kk) + Math.sin(t * 14 + j) * 0.2 * (1 - kk) : lerp(-0.6, -1.4, kk); a.shoulder.rotation.z = (j ? -1 : 1) * 0.5 * kk; a.elbow.rotation.x = 0.2; });
+    if (st === 'spin') z.root.rotation.y = d0.ry + 1.8 * ease(t / 0.8) * (z.spinDir || (z.spinDir = Math.random() < 0.5 ? -1 : 1));
+    fallK = kk;
+  }
+  z.neck.rotation.x = THREE.MathUtils.damp(z.neck.rotation.x, 0.9, 4, dt);
+  z.jaw.rotation.x = 0.45;
+  // Aufschlag: kleiner Rückprall, Staub, dumpfer Schlag
+  if (!z.landed && fallK >= 1) {
+    z.landed = true;
+    z.landT = t;
+    SFX3D.step(z.root.position.clone(), 0.9);
+    burst(z.root.position.clone().setY(0.1), 0x5a5048, 8);
+  }
+  if (z.landed) {
+    const b = t - z.landT;
+    z.body.rotation.x += Math.sin(b * 22) * Math.exp(-b * 9) * 0.06 * Math.sign(z.body.rotation.x || 1);
+    // letztes Zucken
+    if (b > 0.3 && b < 0.9) z.arms[0].elbow.rotation.x = 0.2 + Math.max(0, Math.sin(b * 30)) * 0.3 * (0.9 - b);
+  }
+  // nach kurzer Zeit im Boden versinken (mit dunklem Rauch)
+  const sinkStart = (z.landed ? z.landT : 1.2) + corpseHold;
+  if (t > sinkStart) {
+    z.root.position.y -= dt * 0.55;
+    z.smokeT = (z.smokeT || 0) - dt;
+    if (z.smokeT <= 0) { z.smokeT = 0.12; burst(z.root.position.clone().setY(0.05), 0x2a221c, 2); }
+  }
+  return z.root.position.y < -0.7 || t > sinkStart + 2;
 }
 
 // ---- Bewegung & Animation ------------------------------------------------------------
@@ -781,10 +840,7 @@ export function updateZombies(dt, head, opts = {}) {
       z.neck.rotation.x = THREE.MathUtils.damp(z.neck.rotation.x, 0.9, 4, dt);
       z.jaw.rotation.x = 0.45;
       if (z.gibbed) { if (z.deadT > 0.5) { scene.remove(z.root); zombies.splice(i, 1); } continue; } // zerplatzt: keine Leiche
-      if (!z.phys && z.deadT > 0.08 && z.deadT < 6) makeCorpse(z);
-      if (z.deadT > 6 && z.phys) { removeDynamic(z.phys); z.phys = null; }
-      if (z.deadT > 6) z.root.position.y -= dt * 0.25; // versinkt im Boden
-      if (z.deadT > 9.5) { const ci = corpses.indexOf(z); if (ci >= 0) corpses.splice(ci, 1); scene.remove(z.root); zombies.splice(i, 1); }
+      if (animateDeath(z, dt)) { scene.remove(z.root); zombies.splice(i, 1); }
       continue;
     }
     if (z.frozenT > 0) { // erstarrt
