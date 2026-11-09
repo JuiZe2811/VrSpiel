@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=22';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=22';
-import { SFX3D } from './sfx.js?v=22';
-import { burst, addDebris, shockwave } from './effects.js?v=22';
-import { cachedGeo } from './util.js?v=22';
+import { room, surfacesOf, isOpening } from './room.js?v=23';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=23';
+import { SFX3D } from './sfx.js?v=23';
+import { burst, addDebris, shockwave } from './effects.js?v=23';
+import { cachedGeo } from './util.js?v=23';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -385,15 +385,22 @@ function findPath(from, to) {
 let planBudget = 0; // höchstens 2 Wegberechnungen pro Bild
 
 // ---- Zombies erzeugen ------------------------------------------------------------
+// Balance: Spezial-Zombies werden mit jeder Welle häufiger (mit Obergrenzen)
 export function pickType(wave) {
-  const r = Math.random();
-  if (wave >= 3 && r < 0.1) return 'brute';
-  if (wave >= 4 && r < 0.18) return 'bloater';
-  if (wave >= 5 && r < 0.27) return 'spitter';
-  if (wave >= 2 && r < 0.43) return 'runner';
-  if (wave >= 2 && r < 0.55) return 'crawler';
+  const w = wave;
+  const table = [
+    ['brute', w >= 3 ? Math.min(0.15, 0.05 + w * 0.005) : 0],
+    ['bloater', w >= 4 ? Math.min(0.11, 0.04 + w * 0.004) : 0],
+    ['spitter', w >= 5 ? Math.min(0.11, 0.04 + w * 0.004) : 0],
+    ['runner', w >= 2 ? Math.min(0.28, 0.1 + w * 0.012) : 0],
+    ['crawler', w >= 2 ? 0.09 : 0]
+  ];
+  let r = Math.random();
+  for (const [t, p] of table) { if (r < p) return t; r -= p; }
   return 'walker';
 }
+// Lebenspunkte-Faktor: bis Welle 10 linear (+12 % pro Welle), danach +8 % pro Welle exponentiell
+export const hpScale = (w) => (w <= 10 ? 1 + 0.12 * Math.max(0, w - 1) : 2.08 * Math.pow(1.08, w - 10));
 // opts.hp / opts.speed: Faktoren für den Schwierigkeitsgrad
 export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
   const T = TYPES[type];
@@ -402,8 +409,8 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
   const scale = rand(T.scale[0], T.scale[1]);
   z.root.scale.setScalar(scale);
   const zombie = {
-    ...z, type, T, scale, hp: (T.hp + wave * 10) * (opts.hp || 1), maxHp: (T.hp + wave * 10) * (opts.hp || 1), legHp: [60, 60].map(v => v * T.hp / 100), armHp: [45, 45].map(v => v * T.hp / 100), legLost: [false, false], armLost: [false, false],
-    state: 'outside', pos: new THREE.Vector3(), yaw: 0, speed: Math.min(1.8, (rand(0.42, 0.58) + wave * 0.04) * T.speed * (opts.speed || 1)), phase: Math.random() * 6, jawT: Math.random() * 6,
+    ...z, type, T, scale, hp: T.hp * hpScale(wave) * (opts.hp || 1), maxHp: T.hp * hpScale(wave) * (opts.hp || 1), dmgK: Math.min(1.6, 1 + wave * 0.025), legHp: [60, 60].map(v => v * T.hp / 100), armHp: [45, 45].map(v => v * T.hp / 100), legLost: [false, false], armLost: [false, false],
+    state: 'outside', pos: new THREE.Vector3(), yaw: 0, speed: Math.min(1.8, (rand(0.42, 0.58) + Math.min(wave, 16) * 0.035) * T.speed * (opts.speed || 1) * (type === 'walker' && wave >= 6 && Math.random() < Math.min(0.45, (wave - 5) * 0.05) ? 1.6 : 1)), phase: Math.random() * 6, jawT: Math.random() * 6,
     path: null, pathT: 0, attackT: 1, actionT: 0, deadT: 0, hurtT: 0, groanT: rand(1, 4), opening: null, enterT: 0, crawl: false, fallDir: 1, headless: false
   };
   const ops = openings();
@@ -892,7 +899,7 @@ export function updateZombies(dt, head, opts = {}) {
           SFX3D.swing(z.skull.getWorldPosition(tmpV2));
           if (Math.random() < 0.6) SFX3D.growl(z.skull.getWorldPosition(tmpV2), z.type);
           const armsLeft = z.armLost.filter(x => !x).length;
-          if (!opts.harmless && armsLeft > 0 && !lured) onPlayerHit(z.T.dmg * (z.crawl ? 0.7 : 1) * (armsLeft === 2 ? 1 : 0.6), z);
+          if (!opts.harmless && armsLeft > 0 && !lured) onPlayerHit(z.T.dmg * (z.dmgK || 1) * (z.crawl ? 0.7 : 1) * (armsLeft === 2 ? 1 : 0.6), z);
         }
       } else {
         z.state = 'walk';

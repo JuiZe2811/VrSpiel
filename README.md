@@ -5,6 +5,30 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 23 – Aufrüst-Stufen, Balance & Rundenwechsel
+
+**Aufrüsten in drei Stufen**
+| Stufe | Preis | ab Welle | Schaden | Munition | Tarnung |
+|---|---|---|---|---|---|
+| ★ | 5000 | 1 | ×2 | ×1,5 | Lila/Türkis |
+| ★★ | 15000 | 8 | ×3,2 | ×1,9 | Rot/Orange |
+| ★★★ | 30000 | 15 | ×4,8 | ×2,3 | Gold, schimmert in allen Farben |
+Jede Stufe macht die Waffe auch etwas schneller und genauer. Einfach dieselbe Waffe erneut in den Aufrüster geben.
+
+**Neue Balance – jede Welle etwas schwerer**
+- Zombie-Leben: bis Welle 10 +12 % pro Welle, danach **+8 % pro Welle exponentiell**. Ein Schlurfer hat in Welle 1 100 Leben, in Welle 10 ~210, in Welle 20 ~450, in Welle 30 ~970.
+  So reicht am Anfang jede Waffe, ab etwa Welle 13 braucht man Aufrüstungen, ab Welle 25 die höchste Stufe.
+- Zombies werden schneller; ab Welle 6 sprinten manche Schlurfer. Ihr Schaden steigt langsam (bis +60 %).
+- Mehr Zombies pro Welle (4 + 2,4 × Welle, höchstens 70), aber höchstens 16 gleichzeitig.
+- Spezial-Zombies (Brocken, Platzer, Spucker, Renner) werden mit jeder Welle häufiger.
+- Verbandskästen fallen seltener (5 %, bei wenig Leben 12 %).
+
+**Rundenwechsel-Animation**
+- Nach jeder Welle erscheint vor dir die große **blutrote Wellennummer**: „WELLE X ÜBERSTANDEN“ mit Bonus, die Zahl beginnt zu zittern, bekommt **Risse**, **Blut läuft herunter** …
+- … dann zerspringt sie, die **neue Zahl knallt herein** – mit Druckwelle am Boden, rotem Aufblitzen, Vibration, Stinger-Sound und Ansager.
+- Darunter steht, was neu ist: „Neu: Platzer“, „☠ Ein Riese kommt ☠“, „Aufrüster: Stufe ★★ freigeschaltet“ …
+- Die Pause zwischen den Wellen ist jetzt 9 Sekunden lang (Zeit zum Nachladen, Kaufen, Bretter annageln).
+
 ## Neu in Version 22 – Trommel-Affe, Fallen & flüssiges Spielen
 
 **🐒 Trommel-Affe (Lockvogel)**
