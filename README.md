@@ -5,6 +5,37 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 21 – Sound, Stimmen, Einstellungen & 6 neue Waffen
+
+**Komplett neuer Sound** (alles live erzeugt, keine Audiodateien)
+- **Raumhall**: Schüsse, Explosionen und Zombies klingen nach echtem Raum, mit Echo.
+- **Waffen klingen unterschiedlich**: Pistole, MP, Gewehr, Schrot, schwere Waffen, Energiewaffen, Armbrust, Granatwerfer und Flammenwerfer haben eigene Klangschichten (Knall, Körper, Druck, Mechanik). Aufgerüstete Waffen bekommen einen Laser-Schimmer.
+- **Zombie-Stimmen** mit echten Vokal-Klängen: Schlurfer stöhnen, Renner kreischen beim Losrennen, Brocken und Riesen brüllen tief, Platzer gurgeln, Spucker zischen. Dazu Knurren beim Angriff, Schmerzlaute bei Treffern, Todesröcheln und schlurfende Schritte – alles räumlich (3D).
+- **Dynamische Horror-Musik**: tiefes Dröhnen, das mit der Gefahr lauter und heller wird, ein Herzschlag-Puls, der schneller wird, wenn Zombies nah sind, und dissonante Klangflächen. Stinger zu Beginn und am Ende jeder Welle.
+- **Gruselgeräusche** aus der Umgebung hinter Türen und Fenstern: knarrende Türen, ferne Schreie, Wind, Tropfen, Ketten.
+- Neue Klänge für Münzen beim Kaufen, Trinken am Automaten, Power-ups, Kopfschuss-„Ping“, Eis, Splittern, Feuer; schweres Atmen bei wenig Leben.
+- **Ansager** mit wählbarer Stimme (Dämon, Tief, Normal, Hoch) und eigener Lautstärke.
+
+**⚙ Einstellungen** (Menü → Einstellungen, vier Reiter, alles wird gespeichert)
+| Reiter | Einstellungen |
+|---|---|
+| 🔊 Ton | Gesamt, Effekte, Musik, Zombie-Stimmen, Ansager (je 0–100 %), Ansager-Stimme |
+| 🧟 Spiel | Startpunkte (500–20000), Zombie-Menge (Weniger/Normal/Mehr/Horde), Blut (Aus/Normal/Extra), Zeitlupe beim letzten Kill, Gruselgeräusche, Treffer-Ton |
+| ✊ Bedienung | Griff (Halten/Tippen), Nachladen (Echt/Einfach), Zielhilfe, Vibration (Aus–Stark), Anzeige am Handgelenk, Gürtel-Abstand |
+| ✨ Grafik | Echte Schatten, Partikel (Wenig/Normal/Viel), Staub, Punkte-Anzeigen, leuchtende Zombie-Augen |
+
+**Spielgefühl**
+- **Zeitlupe beim letzten Kill** einer Welle: Leichen und Trümmer fallen in Zeitlupe.
+- Kopfschüsse haben einen eigenen Treffer-Ton. Feuer-Schaden zählt nicht mehr als Treffer-Punkte (kein Punkte-Trick).
+
+**6 neue Waffen** (jetzt 30)
+- **Abgesägte** – einhändige Schrotflinte, zwei Schuss
+- **Maschinenkarabiner MK-44** – Holzschaft, kräftiges Dauerfeuer
+- **Jagdgewehr J-7** – Zielfernrohr, Kammerverschluss
+- **Granatwerfer GL-6** – Trommel mit 6 Granaten, die beim Aufprall explodieren (Granaten am Gürtel)
+- **Flammenwerfer** – Feuerkegel, Zombies **brennen** weiter
+- **Frostwerfer** (Wunderwaffe, nur Glückskiste) – friert Zombies ein, der nächste Treffer **zerschmettert** sie in Eissplitter
+
 ## Neu in Version 20 – Perks, Aufrüster, 8 neue Waffen & neue Zombies
 
 **8 neue Waffen** (jetzt 24)

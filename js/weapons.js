@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=20';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=21';
 
 // Waffen: Daten, Modelle, Munition
 export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'sniper'];

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=20';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=20';
-import { SFX3D } from './sfx.js?v=20';
-import { burst, addDebris, shockwave } from './effects.js?v=20';
-import { cachedGeo } from './util.js?v=20';
+import { room, surfacesOf, isOpening } from './room.js?v=21';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=21';
+import { SFX3D } from './sfx.js?v=21';
+import { burst, addDebris, shockwave } from './effects.js?v=21';
+import { cachedGeo } from './util.js?v=21';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -20,7 +20,7 @@ const rand = THREE.MathUtils.randFloat;
 const UP = new THREE.Vector3(0, 1, 0);
 const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
 
-let hooks = { explode: null, spitHit: null };
+let hooks = { explode: null, spitHit: null, shatter: null };
 export function setZombieHooks(h) { Object.assign(hooks, h); }
 export function initZombies(s, hitCallback, bumpCallback, stompCallback) { scene = s; onPlayerHit = hitCallback; if (bumpCallback) onBump = bumpCallback; if (stompCallback) onStomp = stompCallback; }
 
@@ -88,6 +88,7 @@ const EYES = [0xffe14a, 0xff2a1a, 0xe8f4ff].map(c => new THREE.MeshBasicMaterial
 // Leuchten um die Augen (sieht man vor allem im dunklen Flur)
 const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d'); const gr = g.createRadialGradient(16, 16, 1, 16, 16, 15); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 32, 32); return new THREE.CanvasTexture(c); })();
 const EYE_GLOW = [0xffe14a, 0xff2a1a, 0xbfe0ff, 0x7dff4a].map(c => new THREE.SpriteMaterial({ map: glowTex, color: c, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+export function setEyeGlow(on) { EYE_GLOW.slice(0, 3).forEach(m => { m.opacity = on ? 0.55 : 0; }); }
 // Gift-Zombies: grünliche Haut, leuchtende Beulen
 const TOXIC_SKIN = (() => { const t = skinTex('#6d7a3a'); return new THREE.MeshStandardMaterial({ map: t, bumpMap: t, bumpScale: 1.5, roughness: 0.55, envMapIntensity: 0.4 }); })();
 const pustuleMat = new THREE.MeshStandardMaterial({ color: 0x9cff3a, emissive: 0x5aff1a, emissiveIntensity: 0.9, roughness: 0.3 });
@@ -474,13 +475,16 @@ function detach(z, group, kind, sideIndex) {
   else z.legLost[sideIndex] = true;
 }
 // Trifft ein Projektil ein Körperteil: Ergebnis für Punkte/Anzeige
-export function damageZombie(mesh, point, dir, dmg) {
+export function damageZombie(mesh, point, dir, dmg, quiet = false) {
   const z = mesh.userData.zombie;
   const partName = mesh.userData.part;
   if (!z || !partName || z.state === 'dead') return null;
-  burst(point, 0x6a0000, 10);
-  SFX3D.splat(point);
-  addWound(z, mesh, point);
+  if (!quiet) {
+    burst(point, 0x6a0000, 10);
+    SFX3D.splat(point);
+    addWound(z, mesh, point);
+  }
+  if (!quiet && (z.hurtT || 0) <= 0 && z.hp > dmg * 1.2 && Math.random() < 0.6) SFX3D.hurt(point, z.type);
   z.hurtT = Math.max(z.hurtT, 0.25);
   z.hurtDir = dir.clone();
   // Treffer von der Seite drehen den Oberkörper mit, Kopftreffer reißen den Kopf zurück
@@ -501,6 +505,7 @@ export function damageZombie(mesh, point, dir, dmg) {
     if (dmg >= 30) z.stagger = Math.max(z.stagger || 0, Math.min(0.6, dmg * 0.006));
   }
   let headshot = false;
+  if (z.frozenT > 0) dmg *= 25; // gefroren: zerspringt
   if (partName === 'head') { z.hp -= dmg * 3; headshot = true; }
   else if (partName === 'torso') z.hp -= dmg;
   else if (partName.startsWith('arm')) {
@@ -514,7 +519,7 @@ export function damageZombie(mesh, point, dir, dmg) {
     z.legHp[k] -= dmg;
     if (z.legHp[k] <= 0 && !z.legLost[k]) { detach(z, z.legs[k].hip, 'leg', k); z.crawl = true; }
   }
-  const res = { part: partName, headshot, kill: false, limp: z.legHp.some(h => h < 30) && !z.crawl, pos: z.pos.clone(), type: z.type, zombie: z };
+  const res = { part: partName, headshot, kill: false, limp: z.legHp.some(h => h < 30) && !z.crawl, pos: z.pos.clone(), type: z.type, zombie: z, dot: quiet };
   if (z.hp <= 0) {
     res.kill = true;
     if (headshot && dmg * 3 >= 150) { z.head.visible = false; z.headless = true; burst(point, 0x7a0000, 30); }
@@ -634,6 +639,17 @@ function removeCorpse(z) {
 function kill(z, dir) {
   z.state = 'dead';
   z.deadT = 0;
+  if (z.frozenT > 0) { // in Eissplitter zerspringen
+    const at = z.root.position.clone().setY(1);
+    z.gibbed = true;
+    z.root.visible = false;
+    burst(at, 0xbfe8ff, 40);
+    burst(at, 0xffffff, 16);
+    if (hooks.shatter) hooks.shatter(at);
+    if (z.kin) { removeBody(z.kin); z.kin = null; }
+    return;
+  }
+  if (!z.T.explode) SFX3D.death(z.skull.getWorldPosition(new THREE.Vector3()), z.type);
   if (z.T.explode && !z.exploded) { z.exploded = true; pendingBlasts.push(z); }
   // nach hinten (vom Schuss weg) umfallen
   const fwd = new THREE.Vector3(Math.sin(z.yaw), 0, Math.cos(z.yaw));
@@ -761,8 +777,13 @@ export function updateZombies(dt, head, opts = {}) {
       if (z.deadT > 9.5) { const ci = corpses.indexOf(z); if (ci >= 0) corpses.splice(ci, 1); scene.remove(z.root); zombies.splice(i, 1); }
       continue;
     }
+    if (z.frozenT > 0) { // erstarrt
+      z.frozenT -= dt;
+      if (z.frozenT <= 0 && z.ice) z.ice.visible = false;
+      continue;
+    }
     z.groanT -= dt;
-    if (z.groanT <= 0) { z.groanT = rand(2.5, 6); SFX3D.groan(z.skull.getWorldPosition(tmpV2), 1 / z.scale); }
+    if (z.groanT <= 0) { z.groanT = rand(2.5, 6); SFX3D.groan(z.skull.getWorldPosition(tmpV2), 1 / z.scale, z.type); }
     let speed = z.speed * (z.crawl ? 0.35 : z.legHp.some(h => h < 30) ? 0.55 : 1);
     if (z.stagger > 0 && (z.state === 'walk' || z.state === 'attack')) speed = 0; // taumelt
     const o = z.opening;
@@ -819,7 +840,7 @@ export function updateZombies(dt, head, opts = {}) {
         z.arms.forEach((a, k) => { a.shoulder.rotation.x = -2.2 + Math.sin(t * 12 + k) * 0.4; });
         z.legs.forEach((l, k) => { l.hip.rotation.x = -Math.sin(t * Math.PI) * 1.2 + k * 0.3; l.knee.rotation.x = 1.0; });
       } else animateWalk(z, dt, speed);
-      if (t >= 1) { z.state = 'walk'; z.root.position.y = 0; z.pathT = 0; }
+      if (t >= 1) { z.state = 'walk'; z.root.position.y = 0; z.pathT = 0; if (z.type === 'runner') SFX3D.scream(z.skull.getWorldPosition(tmpV2)); }
     } else if ((z.state === 'walk' || z.state === 'attack') && z.knockT > 0) {
       // umgeworfen: fällt hin, bleibt kurz liegen, steht wieder auf
       z.knockT -= dt;
@@ -862,6 +883,7 @@ export function updateZombies(dt, head, opts = {}) {
           z.attackT = 1.3;
           z.attackVariant = Math.random() < 0.4 ? 1 : 0;
           SFX3D.swing(z.skull.getWorldPosition(tmpV2));
+          if (Math.random() < 0.6) SFX3D.growl(z.skull.getWorldPosition(tmpV2), z.type);
           const armsLeft = z.armLost.filter(x => !x).length;
           if (!opts.harmless && armsLeft > 0) onPlayerHit(z.T.dmg * (z.crawl ? 0.7 : 1) * (armsLeft === 2 ? 1 : 0.6), z);
         }
@@ -890,6 +912,10 @@ export function updateZombies(dt, head, opts = {}) {
     if ((z.type === 'brute' || z.type === 'giant') && (z.state === 'walk' || z.state === 'outside' || z.state === 'enter') && !z.crawl) {
       const stepPhase = Math.floor(z.phase / Math.PI);
       if (stepPhase !== z.lastStep) { z.lastStep = stepPhase; SFX3D.step(z.root.position.clone(), z.type === 'giant' ? 1.8 : 1.2); if (z.type === 'giant' && onStomp) onStomp(z, false); }
+    }
+    else if (z.state === 'walk' && !z.crawl) { // schlurfende Schritte
+      const stepPhase = Math.floor(z.phase / Math.PI);
+      if (stepPhase !== z.lastStep) { z.lastStep = stepPhase; if (Math.random() < 0.35) SFX3D.shuffle(z.root.position.clone()); }
     }
     if (z.type === 'giant' && (z.state === 'walk' || z.state === 'attack')) {
       z.roarT = (z.roarT ?? 2) - dt;
@@ -973,5 +999,18 @@ function updateSpits(dt, head, opts) {
       if (hitPlayer && !opts.harmless) { onPlayerHit(14, sp.z); if (hooks.spitHit) hooks.spitHit(); }
     }
   }
+}
+// Frostwerfer: Zombie erstarrt zu Eis (ein Treffer zerschmettert ihn dann)
+const iceMat = new THREE.MeshStandardMaterial({ color: 0xbfe8ff, emissive: 0x3a7aa0, emissiveIntensity: 0.6, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.55, depthWrite: false });
+export function freezeZombie(z, t = 5) {
+  if (z.state === 'dead') return;
+  z.frozenT = Math.max(z.frozenT || 0, t);
+  if (!z.ice) {
+    z.ice = new THREE.Group();
+    z.ice.add(mesh(capGeo(0.2, 0.9), iceMat, 0, 0.9, 0, null, z.T.width, 1, 0.8));
+    z.ice.add(mesh(sphGeo(0.16), iceMat, 0, 1.55, 0.03));
+    z.root.add(z.ice);
+  }
+  z.ice.visible = true;
 }
 export function clearSpits() { for (const sp of spits.splice(0)) scene.remove(sp.obj); pendingBlasts.length = 0; }

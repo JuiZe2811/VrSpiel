@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=20';
-import { WEAPON_DEFS, WEAPON_ORDER, BUILDERS, scopeKit, makeCartridge } from './weapons.js?v=20';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=21';
+import { WEAPON_DEFS, WEAPON_ORDER, BUILDERS, scopeKit, makeCartridge } from './weapons.js?v=21';
 
 // =============================================================================
 // Waffen-Baukasten: 12 weitere Waffen aus Parametern + Sondermodelle
@@ -481,4 +481,121 @@ Object.assign(BUILDERS, {
   antimatMag: () => straightMag(0.03, 0.1, 0.075),
   crossbow, tesla, minigun,
   bullpup: lg({ recLen: 0.12, hgLen: 0.16, barrel: 0.1, stock: 'fixed', hg: 'rail', sight: 'reddot', furniture: M.od, magS: -0.2, magTilt: 0.05 })
+});
+
+// =============================================================================
+// Version 21: sechs weitere Waffen
+// =============================================================================
+M.ice = new THREE.MeshStandardMaterial({ color: 0xa8e6ff, emissive: 0x4ac8ff, emissiveIntensity: 1.5, roughness: 0.2, toneMapped: false });
+M.tank = new THREE.MeshStandardMaterial({ color: 0xb02a1a, roughness: 0.45, metalness: 0.5 });
+M.flameGlow = new THREE.MeshBasicMaterial({ color: 0x4aa8ff, toneMapped: false });
+// 40-mm-Granate (Munition des Granatwerfers)
+export function makeGlRound() {
+  const g = new THREE.Group();
+  g.add(cylY(0.02, 0.02, 0.03, MAT.brass, 0, -0.01, 0, 14));
+  const head = new THREE.Mesh(cachedGeo('glhead', () => new THREE.SphereGeometry(0.02, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2)), M.od);
+  head.position.y = 0.005;
+  g.add(head);
+  g.add(cylY(0.0205, 0.0205, 0.005, MAT.dotOrange, 0, 0.004, 0, 14));
+  return g;
+}
+// Granatwerfer: Trommel mit sechs Kammern, kurzer dicker Lauf, Klappschaft
+function grenadeLauncher(m, P, sock) {
+  m.add(prof([[-0.06, 0.03], [0.06, 0.03], [0.06, 0.1], [-0.05, 0.1]], 0.05, M.gray, 0.004));
+  const drum = new THREE.Group();
+  drum.position.set(0, 0.065, -0.11);
+  drum.add(cylZ(0.065, 0.065, 0.11, MAT.black, 0, 0, 0, 24));
+  for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; drum.add(cylZ(0.016, 0.016, 0.112, M.od, 0, Math.cos(a) * 0.04, Math.sin(a) * 0.04, 10)); }
+  m.add(drum);
+  P.spin = drum;
+  m.add(cylZ(0.024, 0.024, 0.26, MAT.steel, 0.29, 0.065, 0, 18));
+  m.add(cylZ(0.0205, 0.0205, 0.262, MAT.black, 0.29, 0.065));
+  m.add(prof([[0.18, 0.02], [0.34, 0.02], [0.34, 0.04], [0.18, 0.04]], 0.06, M.od, 0.005));
+  m.add(cylY(0.016, 0.018, 0.08, MAT.grip, 0.27, -0.02)); // Vordergriff
+  m.add(prof([[-0.032, 0.03], [0.012, 0.03], [0.0, -0.075], [-0.048, -0.07], [-0.046, -0.01]], 0.03, MAT.grip, 0.003));
+  m.add(box(0.012, 0.004, 0.06, MAT.polymer, 0.028, -0.004));
+  m.add(box(0.006, 0.018, 0.005, MAT.steel, 0.03, 0.01));
+  for (const x of [0.016, -0.016]) m.add(cylZ(0.005, 0.005, 0.24, MAT.steel, -0.17, 0.06, x, 8)); // Schaft
+  m.add(prof([[-0.3, 0.09], [-0.28, 0.09], [-0.28, 0.0], [-0.3, 0.0]], 0.05, MAT.rubber, 0.004));
+  // Leiterkimme + Korn
+  m.add(box(0.02, 0.03, 0.006, MAT.black, 0.0, 0.12));
+  m.add(box(0.004, 0.03, 0.006, MAT.black, 0.4, 0.1));
+  m.add(sphere(0.003, MAT.dotGreen, 0.4, 0.117));
+  const ch = new THREE.Group(); m.add(ch); P.charger = ch;
+  sock('sightRear', 0.0, 0.132);
+  sock('sightFront', 0.4, 0.117);
+  sock('muzzle', 0.43, 0.065);
+  sock('eject', 0.05, 0.08, 0.03);
+  sock('chargerGrab', -0.05, 0.1);
+  sock('foregrip', 0.27, -0.03);
+  sock('loadPort', -0.03, 0.065, 0.04);
+}
+// Flammenwerfer: Tank unten, langes Rohr mit Zündflamme
+function flamer(m, P, sock) {
+  m.add(prof([[-0.12, 0.03], [0.16, 0.03], [0.16, 0.08], [-0.1, 0.08]], 0.05, M.gray, 0.004));
+  m.add(cylZ(0.02, 0.026, 0.34, MAT.steel, 0.33, 0.055, 0, 16));
+  for (let i = 0; i < 6; i++) m.add(cylZ(0.029, 0.029, 0.012, MAT.black, 0.2 + i * 0.045, 0.055, 0, 16)); // Kühlrippen
+  m.add(cylZ(0.03, 0.022, 0.05, MAT.black, 0.52, 0.055, 0, 16));
+  const pilot = sphere(0.008, M.flameGlow, 0.53, 0.025); m.add(pilot); P.pilot = pilot;
+  m.add(prof([[-0.032, 0.03], [0.012, 0.03], [0.0, -0.075], [-0.048, -0.07], [-0.046, -0.01]], 0.03, MAT.grip, 0.003));
+  m.add(box(0.012, 0.004, 0.06, MAT.polymer, 0.028, -0.004));
+  m.add(box(0.006, 0.018, 0.005, MAT.steel, 0.03, 0.01));
+  m.add(cylY(0.016, 0.018, 0.08, MAT.grip, 0.24, 0.0));
+  m.add(prof([[-0.12, 0.08], [-0.12, 0.03], [-0.3, 0.0], [-0.32, 0.0], [-0.32, 0.08]], 0.042, M.gray, 0.006));
+  m.add(box(0.004, 0.02, 0.006, MAT.black, 0.45, 0.09));
+  m.add(box(0.016, 0.016, 0.006, MAT.black, -0.06, 0.095));
+  const ch = new THREE.Group(); m.add(ch); P.charger = ch;
+  sock('sightRear', -0.06, 0.105);
+  sock('sightFront', 0.45, 0.102);
+  sock('muzzle', 0.56, 0.055);
+  sock('eject', 0.05, 0.06, 0.03);
+  sock('chargerGrab', -0.1, 0.08);
+  sock('foregrip', 0.24, -0.01);
+  const seat = sock('magSeat', 0.06, 0.03);
+  seat.rotation.x = 0;
+  sock('magwell', 0.06, -0.02);
+}
+function flamerMag() {
+  const g = new THREE.Group();
+  g.add(cylY(0.012, 0.012, 0.03, MAT.steel, 0, -0.015, 0, 10));
+  const tank = cylZ(0.045, 0.045, 0.2, M.tank, -0.02, -0.07, 0, 18);
+  g.add(tank);
+  g.add(cylZ(0.046, 0.046, 0.01, MAT.steel, 0.07, -0.07, 0, 18));
+  g.add(cylZ(0.046, 0.046, 0.01, MAT.steel, -0.11, -0.07, 0, 18));
+  return g;
+}
+// Frostwerfer: Plasma-Gehäuse mit Eis-Leuchten und Kristallen
+function frost(m, P, sock) {
+  plasma(m, P, sock);
+  m.traverse(o => { if (o.isMesh && o.material === M.glow) o.material = M.ice; if (o.isMesh && o.material === M.white) o.material = M.chromeIce || (M.chromeIce = new THREE.MeshStandardMaterial({ color: 0xdbe9f2, roughness: 0.25, metalness: 0.6 })); });
+  for (let i = 0; i < 5; i++) {
+    const c = new THREE.Mesh(cachedGeo('icecrys', () => new THREE.OctahedronGeometry(0.018)), M.ice);
+    c.position.set((Math.random() - 0.5) * 0.04, 0.09 + Math.random() * 0.02, -(0.0 + i * 0.05));
+    c.scale.y = 1.8;
+    m.add(c);
+  }
+  sock('muzzle', 0.385, 0.052);
+}
+
+const NEW3 = {
+  sawed: base({ name: 'Abgesägte', desc: '2 Schuss · einhändig · Schrot aus nächster Nähe', builder: 'dbl', scale: 0.72, twoHand: false, feed: 'tube', ammo: 'shell', action: 'none', capacity: 1, holdOpen: false, noEject: true,
+    modes: ['semi'], startMode: 0, rpm: 300, pellets: 9, spread: 0.075, sight: 'bead', recoil: { back: 0.09, rise: 0.7, jitter: 0.04 }, travel: 0.005, grip: [-0.062, -0.028],
+    snd: { cut: 1900, thump: 80, vol: 1.1 }, dmg: 15, price: 800, tier: 1, mass: 2.0 }),
+  mk44: base({ name: 'Maschinenkarabiner MK-44', desc: '30 Schuss · Holzschaft · kräftig', builder: 'mk44', magBuilder: 'carbine', capacity: 30, rpm: 600, startMode: 2, recoil: { back: 0.025, rise: 0.16, jitter: 0.05 },
+    snd: { cut: 2900, thump: 95, vol: 1.0 }, dmg: 46, price: 1500, tier: 2, mass: 4.1 }),
+  hunter: base({ name: 'Jagdgewehr J-7', desc: '5 Schuss · Zielfernrohr · Kammerverschluss', builder: 'hunter', magBuilder: 'dmr', action: 'bolt', autoCycle: false, capacity: 5, holdOpen: false, modes: ['safe', 'semi'], startMode: 1,
+    rpm: 60, spread: 0.0004, sight: 'scope', recoil: { back: 0.05, rise: 0.24, jitter: 0.01 }, travel: 0.085, snd: { cut: 3000, thump: 70, vol: 1.0 }, dmg: 190, price: 1400, tier: 2, mass: 4.2, range: [7, 15], grip: [-0.04, -0.045] }),
+  gl: base({ name: 'Granatwerfer GL-6', desc: '6 Granaten · explodieren beim Aufprall', builder: 'gl', feed: 'tube', ammo: 'gl', action: 'none', capacity: 6, holdOpen: false, noEject: true, autoCycle: true, modes: ['safe', 'semi'], startMode: 1,
+    rpm: 90, projectile: 'grenade', recoil: { back: 0.06, rise: 0.35, jitter: 0.02 }, travel: 0.005, snd: { cut: 1400, thump: 95, vol: 1.0 }, dmg: 280, price: 2400, tier: 3, mass: 5.5 }),
+  flamer: base({ name: 'Flammenwerfer', desc: 'Tank mit 120 Stößen · Zombies brennen', builder: 'flamer', magBuilder: 'flamer', capacity: 120, modes: ['safe', 'auto'], startMode: 1, rpm: 900, holdOpen: false, flame: true, noEject: true,
+    recoil: { back: 0.004, rise: 0.01, jitter: 0.01 }, snd: { cut: 900, thump: 60, vol: 0.6 }, dmg: 6, price: 2000, tier: 3, mass: 6 }),
+  frost: base({ name: 'Frostwerfer', desc: 'Wunderwaffe · friert Zombies ein – dann zerspringen sie', builder: 'frost', magBuilder: 'plasma', capacity: 15, action: 'none', modes: ['semi'], startMode: 0, holdOpen: false, noEject: true,
+    rpm: 160, sight: 'reddot', freeze: true, recoil: { back: 0.02, rise: 0.12, jitter: 0.02 }, travel: 0.005, snd: { cut: 6000, thump: 200, vol: 0.9 }, dmg: 30, price: 0, tier: 4, mass: 4.2, boxOnly: true })
+};
+Object.assign(WEAPON_DEFS, NEW3);
+WEAPON_ORDER.push(...Object.keys(NEW3));
+Object.assign(BUILDERS, {
+  mk44: lg({ recLen: 0.22, hgLen: 0.2, barrel: 0.16, stock: 'wood', hg: 'wood', furniture: MAT.wood, body: MAT.blued, rail: false }),
+  hunter: lg({ recLen: 0.2, hgLen: 0.24, barrel: 0.3, stock: 'wood', hg: 'wood', furniture: MAT.wood, body: MAT.blued, sight: 'scope', action: 'bolt', rail: false }),
+  gl: grenadeLauncher, flamer, flamerMag, frost
 });

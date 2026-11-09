@@ -1,15 +1,15 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=20';
+import { VERSION } from './version.js?v=21';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=20';
-import { SFX, ensureAudio, setListener, SFX_PLAYER } from './sfx.js?v=20';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=20';
-import { makeArrow } from './weaponkit.js?v=20';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=20';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere } from './room.js?v=20';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal } from './effects.js?v=20';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks } from './zombies.js?v=20';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=21';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=21';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=21';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=21';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=21';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere } from './room.js?v=21';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx } from './effects.js?v=21';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie } from './zombies.js?v=21';
 
 // =============================================================================
 // Grundgerüst
@@ -164,7 +164,7 @@ const up = (h, k) => !h.btn[k] && h.prev[k];
 const btnName = (h, k) => k === 'a' ? (h.handedness === 'left' ? 'X' : 'A') : (h.handedness === 'left' ? 'Y' : 'B');
 function pulse(h, intensity, ms) {
   const act = h && h.src && h.src.gamepad && h.src.gamepad.hapticActuators && h.src.gamepad.hapticActuators[0];
-  if (act && act.pulse) act.pulse(intensity, ms);
+  if (act && act.pulse && settings.haptics > 0) act.pulse(Math.min(1, intensity * settings.haptics), ms);
 }
 const heldWeapon = (h) => (h && h.held && h.held.type === 'weapon' ? h.held.w : null);
 const otherHand = (h) => hands[1 - h.i];
@@ -491,8 +491,16 @@ function tryFire(w, desktopRay) {
   if (w.parts.spin) w.parts.spin.rotation.z += Math.PI / 3; // Revolvertrommel dreht weiter
   if (w.def.projectile) { // Plasmakugel bzw. Armbrustbolzen statt Sofort-Treffer
     if (w.def.projectile === 'bolt') { if (settings.assist && !desktopRay) shotAssist(origin, dir); launchArrow(muzzlePos, dir.clone(), weaponDmg(w)); }
+    else if (w.def.projectile === 'grenade') launchArrow(muzzlePos, dir.clone().add(new THREE.Vector3(0, 0.06, 0)).normalize(), weaponDmg(w), 'grenade');
     else launchPlasma(muzzlePos, dir.clone(), weaponDmg(w));
     if (w.def.autoCycle) { ejectChamber(w); if (!feed(w)) w.actionOpen = w.def.holdOpen; w.cycleAnim = 1; }
+    if (inRound()) stats.shots++;
+    boardDirty = true;
+    return true;
+  }
+  if (w.def.flame || w.def.freeze) { // Flammen- bzw. Froststrahl (Kegel statt einzelner Kugel)
+    if (w.def.flame) flameShot(muzzlePos, dir, weaponDmg(w), w.def.upgraded); else frostShot(muzzlePos, dir, weaponDmg(w), w.def.upgraded);
+    if (w.def.autoCycle) { ejectChamber(w); if (!feed(w)) w.actionOpen = w.def.holdOpen; }
     if (inRound()) stats.shots++;
     boardDirty = true;
     return true;
@@ -623,6 +631,7 @@ function refillGrenades() { for (const s of grenadeSlots) { s.available = true; 
 // einzelne Munition: Schrotpatrone, Revolverpatrone oder Armbrustbolzen
 function beltAmmoObj(def) {
   if (def.ammo === 'round') { const o = makeCartridge(true); o.scale.setScalar(1.4); return o; }
+  if (def.ammo === 'gl') { const o = makeGlRound(); o.scale.setScalar(0.9); return o; }
   if (def.ammo === 'bolt') { const o = makeArrow(); o.rotation.x = Math.PI / 2; o.scale.setScalar(0.7); const g = new THREE.Group(); g.add(o); return g; }
   return makeShell();
 }
@@ -638,7 +647,7 @@ function setBeltWeapon(id, def = null) {
   }
   def = wdef;
   for (const side of [-1, 1]) {
-    const mount = beltMount(side * 0.55);
+    const mount = beltMount(side * 0.55 * settings.snapBelt);
     if (def.feed === 'mag') {
       const pouch = new THREE.Mesh(cachedGeo('pouch', () => new THREE.BoxGeometry(0.05, 0.075, 0.042)), pouchMat);
       pouch.position.set(0, -0.022, -0.024);
@@ -651,7 +660,7 @@ function setBeltWeapon(id, def = null) {
       const strip = new THREE.Mesh(cachedGeo('shellstrip', () => new THREE.BoxGeometry(0.105, 0.032, 0.008)), leather);
       strip.position.set(0, 0, -0.014);
       mount.add(strip);
-      const round = def.ammo === 'round', bolt = def.ammo === 'bolt';
+      const round = def.ammo === 'round', bolt = def.ammo === 'bolt' || def.ammo === 'gl';
       for (let k = 0; k < (round ? 5 : bolt ? 2 : 4); k++) {
         const sh = beltAmmoObj(def);
         sh.position.set(round ? -0.04 + k * 0.02 : bolt ? -0.02 + k * 0.04 : -0.036 + k * 0.024, 0.008, -0.027);
@@ -880,7 +889,7 @@ function collectPowerup(pu) {
   powerups.splice(powerups.indexOf(pu), 1);
   const P = POWERUPS[pu.type];
   speak(P.name);
-  SFX.jingle([659, 880, 1175]);
+  SFX.powerup();
   for (const h of hands) pulse(h, 0.8, 120);
   floatingText(P.name + '!', pu.obj.position.clone(), P.color);
   if (pu.type === 'double') active.double = 20;
@@ -934,8 +943,27 @@ function updateDust(dt) {
   }
   dustGeo.attributes.position.needsUpdate = true;
 }
+// Klangkulisse: Musik-Spannung und zufällige Gruselgeräusche aus der Umgebung
+function updateSoundscape(dt) {
+  if (state === 'playing') {
+    let near = 0;
+    for (const z of zombies) if (z.state !== 'dead' && z.state !== 'outside') near += Math.max(0, 1 - Math.hypot(z.pos.x - headPos.x, z.pos.z - headPos.z) / 5);
+    const k = THREE.MathUtils.clamp(0.15 + near * 0.3 + (playerHp < 40 ? 0.35 : 0) + (waveBreak > 0 ? -0.2 : 0), 0, 1);
+    musicUpdate(dt, k);
+  }
+  if (!settings.ambient || state === 'setup') return;
+  ambientT -= dt;
+  if (ambientT > 0) return;
+  ambientT = THREE.MathUtils.randFloat(7, 18);
+  const ops = openings();
+  let pos;
+  if (ops.length) { const o = ops[Math.floor(Math.random() * ops.length)]; pos = o.mid.clone().addScaledVector(o.normal, -THREE.MathUtils.randFloat(2, 6)).setY(THREE.MathUtils.randFloat(0.5, 2)); }
+  else pos = headPos.clone().add(new THREE.Vector3().randomDirection().setY(0).normalize().multiplyScalar(5));
+  const kinds = ops.some(o => o.type === 'window') ? ['creak', 'scream', 'wind', 'drip', 'chain'] : ['creak', 'scream', 'drip', 'chain'];
+  SFX3D.ambient(pos, kinds[Math.floor(Math.random() * kinds.length)]);
+}
 // Platzer-Explosion und Säure-Treffer der Spucker
-let acidFlash = 0;
+let acidFlash = 0, killcamT = 0, ambientT = 6;
 const warnedTypes = new Set();
 setZombieHooks({
   explode(at, results) {
@@ -946,7 +974,8 @@ setZombieHooks({
     for (const h of hands) pulse(h, Math.max(0.2, 1 - pd / 5), 200);
     if (pd < 2.3 && gameMode !== 'training') { playerHit(28 * (1 - pd / 2.3)); acidFlash = 1; }
   },
-  spitHit() { acidFlash = 1; SFX_PLAYER.hurt(); }
+  spitHit() { acidFlash = 1; SFX_PLAYER.hurt(); },
+  shatter(at) { SFX.shatter(); floatingText('Zersplittert!', at.clone().setY(1.9), '#bfe8ff'); }
 });
 // Riese stampft: Controller vibrieren je nach Entfernung
 function onGiantStomp(z, big) {
@@ -1016,13 +1045,15 @@ function updatePlasmas(dt) {
 // Armbrust: Sprengbolzen fliegen mit leichter Schwerkraft, bleiben stecken und explodieren
 // =============================================================================
 const arrows = [];
-function launchArrow(pos, dir, dmg) {
-  const a = makeArrow();
+function launchArrow(pos, dir, dmg, kind = 'bolt') {
+  const gl = kind === 'grenade';
+  let a;
+  if (gl) { a = new THREE.Group(); const r = makeGlRound(); r.rotation.x = -Math.PI / 2; a.add(r); } else a = makeArrow();
   a.position.copy(pos);
   a.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), dir);
   scene.add(a);
-  arrows.push({ obj: a, vel: dir.clone().multiplyScalar(42), life: 3, dmg, stuck: false, fuse: 1.1 });
-  SFX.click(260, 0.5, 0.12);
+  arrows.push({ obj: a, vel: dir.clone().multiplyScalar(gl ? 24 : 42), grav: gl ? 9.8 : 4, life: 4, dmg, stuck: false, fuse: gl ? 0 : 1.1, radius: gl ? 3.2 : 2.8 });
+  if (!gl) SFX.click(260, 0.5, 0.12);
 }
 function updateArrows(dt) {
   for (let i = arrows.length - 1; i >= 0; i--) {
@@ -1030,7 +1061,7 @@ function updateArrows(dt) {
     if (a.stuck) {
       a.fuse -= dt;
       a.beepT = (a.beepT ?? 0) - dt;
-      if (a.beepT <= 0) { a.beepT = 0.22; SFX.tick(); }
+      if (a.beepT <= 0 && a.fuse > 0) { a.beepT = 0.22; SFX.tick(); }
       if (a.fuse > 0) continue;
       const at = a.obj.getWorldPosition(new THREE.Vector3());
       if (a.obj.parent) a.obj.parent.remove(a.obj);
@@ -1041,14 +1072,14 @@ function updateArrows(dt) {
       shockwave(at);
       flashLight.position.copy(at); flashLight.distance = 7; flashLight.intensity = 30;
       if (at.y < 0.5) floorDecal(at.clone().setY(0), 'scorch', 1.0);
-      for (const r of explosionDamage(at, 2.8, a.dmg)) handleZombieHit(r, r.zombie.skull.getWorldPosition(new THREE.Vector3()), '💥 ');
+      for (const r of explosionDamage(at, a.radius, a.dmg)) handleZombieHit(r, r.zombie.skull.getWorldPosition(new THREE.Vector3()), '💥 ');
       const pd = headPos.distanceTo(at);
       if (pd < 1.6 && gameMode !== 'training') playerHit(30 * (1 - pd / 1.6));
       for (const h of hands) pulse(h, Math.max(0.2, 1 - pd / 5), 200);
       continue;
     }
     a.life -= dt;
-    a.vel.y -= 4 * dt;
+    a.vel.y -= a.grav * dt;
     const step = a.vel.clone().multiplyScalar(dt);
     raycaster.set(a.obj.position, step.clone().normalize());
     raycaster.far = step.length() + 0.05;
@@ -1058,7 +1089,7 @@ function updateArrows(dt) {
       SFX.thud(0.4);
       if (hit) {
         a.obj.position.copy(hit.point).addScaledVector(step.clone().normalize(), -0.08);
-        if (hit.object.userData.zombie) { hit.object.attach(a.obj); handleZombieHit(damageZombie(hit.object, hit.point, step.clone().normalize(), 40), hit.point); }
+        if (hit.object.userData.zombie) { hit.object.attach(a.obj); handleZombieHit(damageZombie(hit.object, hit.point, step.clone().normalize(), 40), hit.point); if (!a.obj.parent) scene.add(a.obj); }
       } else a.obj.position.y = Math.max(0.02, a.obj.position.y);
       continue;
     }
@@ -1068,11 +1099,92 @@ function updateArrows(dt) {
 }
 
 // =============================================================================
+// Flammenwerfer & Frostwerfer: Kegel-Treffer, Feuer-/Eispartikel, brennende Zombies
+// =============================================================================
+const flameTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 2, 32, 32, 30); gr.addColorStop(0, 'rgba(255,255,220,1)'); gr.addColorStop(0.35, 'rgba(255,170,40,0.9)'); gr.addColorStop(0.7, 'rgba(200,40,0,0.5)'); gr.addColorStop(1, 'rgba(60,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+const flameMat = new THREE.SpriteMaterial({ map: flameTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+const frostMat = new THREE.SpriteMaterial({ map: flameTex, color: 0x6fd0ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+const flameParts = [];
+function spawnFlamePart(pos, vel, mat, life = 0.55, size = 0.12) {
+  if (flameParts.length > 160) return;
+  const sp = new THREE.Sprite(mat);
+  sp.position.copy(pos);
+  sp.scale.setScalar(size);
+  scene.add(sp);
+  flameParts.push({ obj: sp, vel, life, max: life, size });
+}
+// Zombies im Kegel vor der Mündung (freie Sicht vorausgesetzt)
+function zombiesInCone(from, dir, range, angle) {
+  const out = [];
+  for (const z of zombies) {
+    if (z.state === 'dead') continue;
+    const c = z.root.position.clone().setY(1.0 * z.scale);
+    const to = c.clone().sub(from);
+    const d = to.length();
+    if (d > range || to.normalize().angleTo(dir) > angle) continue;
+    raycaster.set(from, to);
+    raycaster.far = d - 0.2;
+    if (raycaster.intersectObjects([...roomOccluders(), ...plankMeshes()], false).length) continue;
+    out.push({ z, c, d });
+  }
+  return out;
+}
+const burning = new Set();
+function flameShot(from, dir, dmg, up) {
+  for (let i = 0; i < 3; i++) spawnFlamePart(from.clone(), dir.clone().add(new THREE.Vector3().randomDirection().multiplyScalar(0.12)).normalize().multiplyScalar(THREE.MathUtils.randFloat(6, 8)), flameMat, 0.6, 0.08);
+  flashLight.position.copy(from).addScaledVector(dir, 1); flashLight.distance = 4; flashLight.intensity = 6;
+  for (const { z, c } of zombiesInCone(from, dir, 5, 0.3)) {
+    if (!z.burnT) burning.add(z);
+    z.burnT = up ? 6 : 4;
+    z.burnUp = up;
+    handleZombieHit(damageZombie(z.torso.children[1], c, dir, dmg, true), c, '🔥 ');
+  }
+}
+function frostShot(from, dir, dmg, up) {
+  SFX.freeze();
+  for (let i = 0; i < 24; i++) spawnFlamePart(from.clone(), dir.clone().add(new THREE.Vector3().randomDirection().multiplyScalar(0.15)).normalize().multiplyScalar(THREE.MathUtils.randFloat(7, 11)), frostMat, 0.5, 0.1);
+  lightningLine(from, from.clone().addScaledVector(dir, 6), frostLineMat);
+  for (const { z, c } of zombiesInCone(from, dir, up ? 9 : 7, up ? 0.3 : 0.22)) {
+    const was = z.frozenT > 0;
+    if (!was) { handleZombieHit(damageZombie(z.torso.children[1], c, dir, dmg), c, '❄ '); if (z.state !== 'dead') { freezeZombie(z, up ? 7 : 5); floatingText('Eingefroren!', c.clone().setY(2), '#bfe8ff'); } }
+    else handleZombieHit(damageZombie(z.torso.children[1], c, dir, dmg), c, '❄ ');
+  }
+}
+function updateFlames(dt) {
+  for (let i = flameParts.length - 1; i >= 0; i--) {
+    const f = flameParts[i];
+    f.life -= dt;
+    if (f.life <= 0) { scene.remove(f.obj); flameParts.splice(i, 1); continue; }
+    const k = 1 - f.life / f.max;
+    f.vel.multiplyScalar(1 - dt * 2.5);
+    f.vel.y += dt * 1.5;
+    f.obj.position.addScaledVector(f.vel, dt);
+    f.obj.scale.setScalar(f.size * (1 + k * 5));
+    f.obj.material.rotation += dt;
+  }
+  // brennende Zombies: Schaden über Zeit + Flammen am Körper
+  for (const z of burning) {
+    if (z.state === 'dead' || !zombies.includes(z)) { burning.delete(z); z.burnT = 0; continue; }
+    z.burnT -= dt;
+    z.burnTick = (z.burnTick || 0) - dt;
+    if (Math.random() < dt * 22) spawnFlamePart(z.root.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.4 + Math.random() * 1.1, (Math.random() - 0.5) * 0.3)), new THREE.Vector3(0, 0.6, 0), flameMat, 0.45, 0.07);
+    if (z.burnTick <= 0) {
+      z.burnTick = 0.5;
+      const c = z.root.position.clone().setY(1);
+      handleZombieHit(damageZombie(z.torso.children[1], c, new THREE.Vector3(0, -1, 0), z.burnUp ? 16 : 9, true), c, '🔥 ');
+      if (Math.random() < 0.3) SFX.fire();
+    }
+    if (z.burnT <= 0) { burning.delete(z); z.burnT = 0; }
+  }
+}
+
+// =============================================================================
 // Blitzwerfer: Blitz springt vom getroffenen Zombie zu den nächsten
 // =============================================================================
 const bolts = [];
 const boltMat = new THREE.LineBasicMaterial({ color: 0x9fe6ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-function lightningLine(a, b) {
+const frostLineMat = new THREE.LineBasicMaterial({ color: 0xbfe8ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+function lightningLine(a, b, mat = boltMat) {
   const pts = [];
   const n = Math.max(4, Math.round(a.distanceTo(b) * 8));
   for (let i = 0; i <= n; i++) {
@@ -1081,7 +1193,7 @@ function lightningLine(a, b) {
     pts.push(p);
   }
   for (let k = 0; k < 2; k++) { // zwei Stränge für mehr Volumen
-    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.map(p => p.clone().add(new THREE.Vector3().randomDirection().multiplyScalar(0.015)))), boltMat);
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.map(p => p.clone().add(new THREE.Vector3().randomDirection().multiplyScalar(0.015)))), mat);
     line.renderOrder = 15;
     scene.add(line);
     bolts.push({ obj: line, t: 0.18 });
@@ -1132,7 +1244,7 @@ function spend(price, where) {
   if (free() || points >= price) {
     if (!free()) points -= price;
     boardDirty = true;
-    if (audioCtxOk()) { SFX.jingle([988, 1319], 0.12); SFX.click(3000, 0.3, 0.05); }
+    if (audioCtxOk()) SFX.coins();
     return true;
   }
   SFX.buzz();
@@ -1563,7 +1675,7 @@ function updateMachines(dt) {
     if (h.point.distanceTo(headPos) < 0.22 || h.held.t > 8) {
       h.ray.remove(h.held.obj);
       h.held = null;
-      for (let i = 0; i < 3; i++) later(i * 0.18, () => SFX.click(180, 0.35, 0.09));
+      SFX.gulp();
       pulse(h, 0.4, 200);
     }
   }
@@ -1894,16 +2006,79 @@ function collectMedkit(m) {
 // =============================================================================
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } };
 const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignorieren */ } };
-let voiceOn = load('vrspiel-ansager', true);
-// Bedienung: Griff halten/umschalten, Nachladen realistisch/einfach, Zielhilfe
-const settings = { grip: load('vrspiel-griff', 'hold'), reload: load('vrspiel-nachladen', 'real'), assist: load('vrspiel-zielhilfe', true) };
-function setSetting(k, v, key) { settings[k] = v; store(key, v); refreshMenu(); }
+// ---- Einstellungen: alle an einem Ort, gespeichert als ein Eintrag --------------------------
+const ten = (lbl = (v) => (v === 0 ? 'Aus' : v * 10 + ' %')) => Array.from({ length: 11 }, (_, i) => [i, lbl(i)]);
+const onOff = [[true, 'An'], [false, 'Aus']];
+const SETTINGS_TABS = {
+  ton: { label: '🔊 Ton', items: [
+    { key: 'master', label: 'Gesamtlautstärke', opts: ten() },
+    { key: 'sfx', label: 'Effekte (Waffen, Treffer)', opts: ten() },
+    { key: 'music', label: 'Musik', opts: ten() },
+    { key: 'voices', label: 'Zombie-Stimmen', opts: ten() },
+    { key: 'announcer', label: 'Ansager', opts: ten() },
+    { key: 'announcerVoice', label: 'Ansager-Stimme', opts: [['demon', 'Dämon'], ['deep', 'Tief'], ['normal', 'Normal'], ['high', 'Hoch']] }
+  ] },
+  spiel: { label: '🧟 Spiel', items: [
+    { key: 'startPoints', label: 'Startpunkte', opts: [[500, '500'], [1500, '1500'], [5000, '5000'], [20000, '20000']] },
+    { key: 'amount', label: 'Zombie-Menge', opts: [[0.7, 'Weniger'], [1, 'Normal'], [1.4, 'Mehr'], [1.8, 'Horde']] },
+    { key: 'blood', label: 'Blut', opts: [[0, 'Aus'], [1, 'Normal'], [2, 'Extra']] },
+    { key: 'killcam', label: 'Zeitlupe beim letzten Kill', opts: onOff },
+    { key: 'ambient', label: 'Gruselgeräusche', opts: onOff },
+    { key: 'hitmarker', label: 'Treffer-Ton', opts: onOff }
+  ] },
+  bedienung: { label: '✊ Bedienung', items: [
+    { key: 'grip', label: 'Griff-Taste', opts: [['hold', 'Halten'], ['toggle', 'Tippen']] },
+    { key: 'reload', label: 'Nachladen', opts: [['real', 'Echt'], ['simple', 'Einfach']] },
+    { key: 'assist', label: 'Zielhilfe', opts: onOff },
+    { key: 'haptics', label: 'Vibration', opts: [[0, 'Aus'], [0.5, 'Schwach'], [1, 'Normal'], [1.5, 'Stark']] },
+    { key: 'wristHud', label: 'Anzeige am Handgelenk', opts: onOff },
+    { key: 'snapBelt', label: 'Gürtel-Abstand', opts: [[0.85, 'Eng'], [1, 'Normal'], [1.2, 'Weit']] }
+  ] },
+  grafik: { label: '✨ Grafik', items: [
+    { key: 'shadows', label: 'Echte Schatten', opts: onOff },
+    { key: 'particles', label: 'Partikel', opts: [[0.5, 'Wenig'], [1, 'Normal'], [1.6, 'Viel']] },
+    { key: 'dust', label: 'Staub in der Luft', opts: onOff },
+    { key: 'popups', label: 'Punkte-Anzeigen', opts: onOff },
+    { key: 'eyeGlow', label: 'Leuchtende Zombie-Augen', opts: onOff }
+  ] }
+};
+const SETTINGS_DEFAULT = {
+  master: 9, sfx: 10, music: 6, voices: 10, announcer: 10, announcerVoice: 'deep',
+  startPoints: 500, amount: 1, blood: 1, killcam: true, ambient: true, hitmarker: true,
+  grip: 'hold', reload: 'real', assist: true, haptics: 1, wristHud: true, snapBelt: 1,
+  shadows: true, particles: 1, dust: true, popups: true, eyeGlow: true
+};
+const settings = Object.assign({}, SETTINGS_DEFAULT, {
+  // ältere Einzel-Einstellungen übernehmen
+  grip: load('vrspiel-griff', 'hold'), reload: load('vrspiel-nachladen', 'real'), assist: load('vrspiel-zielhilfe', true),
+  announcer: load('vrspiel-ansager', true) ? 10 : 0, shadows: shadowsOn
+}, load('vrspiel-einstellungen', {}));
+let voiceOn = settings.announcer > 0;
+function applySettings() {
+  setVolumes({ master: settings.master / 10, sfx: settings.sfx / 10, music: settings.music / 10, voices: settings.voices / 10 });
+  voiceOn = settings.announcer > 0;
+  fx.blood = settings.blood;
+  fx.particles = settings.particles;
+  fx.popups = settings.popups;
+  if (shadowsOn !== settings.shadows) setShadows(settings.shadows);
+  if (typeof dust !== 'undefined') dust.visible = settings.dust;
+  setEyeGlow(settings.eyeGlow);
+}
+function setSetting(k, v) {
+  settings[k] = v;
+  store('vrspiel-einstellungen', settings);
+  applySettings();
+  refreshMenu();
+}
 function speak(textStr) {
   if (!voiceOn || !window.speechSynthesis) return;
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(textStr);
-    u.lang = 'de-DE'; u.rate = 0.95; u.pitch = 0.6;
+    u.lang = 'de-DE';
+    u.pitch = { demon: 0.05, deep: 0.55, normal: 1, high: 1.45 }[settings.announcerVoice] ?? 0.55;
+    u.rate = settings.announcerVoice === 'demon' ? 0.82 : 0.95;
+    u.volume = settings.announcer / 10;
     const v = speechSynthesis.getVoices().find(x => x.lang && x.lang.startsWith('de'));
     if (v) u.voice = v;
     speechSynthesis.speak(u);
@@ -2984,6 +3159,7 @@ function enterMenu() {
   refreshMenu();
 }
 function refreshMenu() {
+  if (menuView === 'settings') { refreshSettings(); return; }
   const r = lastResult;
   const nOpen = openings().length;
   const top = topList(gameMode);
@@ -3006,20 +3182,47 @@ function refreshMenu() {
     ...row(184, 56, Object.entries(MODES).map(([id, m]) => ({ id, label: `${m.icon} ${m.label}`, active: gameMode === id, onClick: () => { gameMode = id; refreshMenu(); } })), 792),
     ...row(250, 50, [
       ...Object.entries(DIFFS).map(([id, d]) => ({ id: 'd_' + id, label: d.label, font: 28, active: diffKey === id, onClick: () => { diffKey = id; store('vrspiel-schwierigkeit', id); refreshMenu(); } })),
-      { id: 'voice', label: voiceOn ? '🔊 Ansager' : '🔇 Ansager', font: 26, active: voiceOn, onClick: () => { voiceOn = !voiceOn; store('vrspiel-ansager', voiceOn); if (voiceOn) speak('Ansager an'); refreshMenu(); } }
+      { id: 'settings', label: '⚙ Einstellungen', font: 24, onClick: () => { menuView = 'settings'; refreshMenu(); } }
     ], 792),
     ...row(312, 66, [{ id: 'start', label: '▶ START', font: 40, onClick: startPressed }], 792, 220),
     ...row(428, 58, [
       { id: 'room', label: '🧱 Raum bearbeiten', onClick: enterSetup },
       { id: 'reset', label: '🔫 Waffen zurücklegen', onClick: resetWeapons }
     ], 792),
-    ...row(522, 56, [
-      { id: 'grip', label: settings.grip === 'toggle' ? '✊ Griff: Tippen' : '✊ Griff: Halten', font: 21, onClick: () => setSetting('grip', settings.grip === 'toggle' ? 'hold' : 'toggle', 'vrspiel-griff') },
-      { id: 'reload', label: settings.reload === 'simple' ? '🔄 Laden: Einfach' : '🔄 Laden: Echt', font: 21, active: settings.reload === 'simple', onClick: () => setSetting('reload', settings.reload === 'simple' ? 'real' : 'simple', 'vrspiel-nachladen') },
-      { id: 'assist', label: settings.assist ? '🎯 Zielhilfe: An' : '🎯 Zielhilfe: Aus', font: 21, active: settings.assist, onClick: () => setSetting('assist', !settings.assist, 'vrspiel-zielhilfe') },
-      { id: 'shadow', label: shadowsOn ? '🌗 Schatten: An' : '🌗 Schatten: Aus', font: 21, active: shadowsOn, onClick: () => { setShadows(!shadowsOn); refreshMenu(); } }
-    ], 792)
+    ...row(510, 56, [
+      { id: 'settings2', label: '⚙ Einstellungen: Ton · Spiel · Bedienung · Grafik', font: 24, onClick: () => { menuView = 'settings'; refreshMenu(); } }
+    ], 792, 60)
   ]);
+}
+// Einstellungs-Ansicht mit Reitern
+let menuView = 'main', settingsTab = 'ton';
+function refreshSettings() {
+  const tab = SETTINGS_TABS[settingsTab];
+  const btns = [...row(80, 52, Object.entries(SETTINGS_TABS).map(([id, t]) => ({ id: 't_' + id, label: t.label, font: 24, active: settingsTab === id, onClick: () => { settingsTab = id; refreshMenu(); } })), 792, 24, 10)];
+  tab.items.forEach((it, i) => {
+    const y = 156 + i * 72;
+    const idx = Math.max(0, it.opts.findIndex(o => o[0] === settings[it.key]));
+    const step = (d) => () => { const n = it.opts.length; setSetting(it.key, it.opts[(idx + d + n) % n][0]); if (it.key === 'announcer' || it.key === 'announcerVoice') speak('Welle eins'); else SFX.ui(); };
+    btns.push({ id: 'l_' + it.key, label: '◀', font: 30, x: 470, y, w: 64, h: 56, onClick: step(-1) });
+    btns.push({ id: 'r_' + it.key, label: '▶', font: 30, x: 704, y, w: 64, h: 56, onClick: step(1) });
+  });
+  btns.push(...row(600, 60, [
+    { id: 'reset', label: '↺ Standard', font: 26, onClick: () => { for (const it of tab.items) settings[it.key] = SETTINGS_DEFAULT[it.key]; setSetting(tab.items[0].key, settings[tab.items[0].key]); } },
+    { id: 'back', label: '◀ Zurück', font: 30, onClick: () => { menuView = 'main'; refreshMenu(); } }
+  ], 792));
+  menuPanel.set((ctx, w) => {
+    text(ctx, '⚙ Einstellungen', w / 2, 40, 38, '#fff', 'center', true);
+    tab.items.forEach((it, i) => {
+      const y = 156 + i * 72;
+      const o = it.opts.find(q => q[0] === settings[it.key]) || it.opts[0];
+      text(ctx, it.label, 40, y + 28, 25, '#e6edf5', 'left', true);
+      roundRect(ctx, 542, y + 4, 154, 48, 12);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill();
+      text(ctx, o[1], 619, y + 30, 25, '#ffd36a', 'center', true);
+      if (it.opts.length === 11 && typeof o[0] === 'number') { ctx.fillStyle = '#ffd36a'; ctx.fillRect(546, y + 46, 146 * o[0] / 10, 4); }
+    });
+    text(ctx, `Version ${VERSION}`, w - 24, 664, 18, '#6b7a90', 'right');
+  }, btns);
 }
 function startPressed() {
   if (state === 'menu' || state === 'over') startCountdown();
@@ -3060,21 +3263,22 @@ function startCountdown() {
 function beginRound() {
   state = 'playing';
   score = 0; roundClock = 0; wave = 0;
-  points = free() ? 0 : START_POINTS;
+  points = free() ? 0 : settings.startPoints;
   stats.shots = stats.hits = stats.kills = stats.headshots = 0;
   stats.bestStreak = 0;
   streak = 0;
   streakMsg = null;
   nextWave();
-  SFX.jingle([392, 330, 262]);
+  musicStart();
 }
 function nextWave() {
   wave++;
-  toSpawn = Math.max(2, Math.round((gameMode === 'training' ? 2 + wave : 3 + wave * 2) * DIFFS[diffKey].count));
+  toSpawn = Math.max(2, Math.round((gameMode === 'training' ? 2 + wave : 3 + wave * 2) * DIFFS[diffKey].count * settings.amount));
   refillGrenades();
   bruteWarned = false;
   bossPending = gameMode !== 'training' && wave % 5 === 0;
   speak(bossPending ? `Welle ${wave}. Ein Riese kommt!` : `Welle ${wave}`);
+  SFX.waveStart();
   spawnT = 1.5;
   waveBreak = 0;
   setupPlanks(); // Bretter werden vor jeder Welle wieder angenagelt
@@ -3083,6 +3287,8 @@ function nextWave() {
 }
 function endRound(died = false) {
   state = 'over';
+  musicStop();
+  killcamT = 0;
   clearZombies();
   hurtFlash = 0;
   const acc = stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0;
@@ -3167,7 +3373,7 @@ function updateGame(dt) {
   // Leben regeneriert langsam, wenn man eine Weile nicht getroffen wurde
   regenT -= dt;
   if (regenT <= 0 && playerHp < maxHp()) { playerHp = Math.min(maxHp(), playerHp + dt * 3); if (Math.random() < dt * 2) boardDirty = true; }
-  if (playerHp < 35) { heartT -= dt; if (heartT <= 0) { heartT = 0.9; SFX_PLAYER.heartbeat(); } }
+  if (playerHp < 35) { heartT -= dt; if (heartT <= 0) { heartT = 0.9; SFX_PLAYER.heartbeat(); if (Math.random() < 0.35) SFX_PLAYER.breath(); } }
   if (streakMsg) { streakMsg.t -= dt; if (streakMsg.t <= 0) streakMsg = null; boardDirty = true; }
   if (waveBreak > 0) {
     if (Math.ceil(waveBreak) !== lastBreakSec) { lastBreakSec = Math.ceil(waveBreak); boardDirty = true; }
@@ -3178,7 +3384,7 @@ function updateGame(dt) {
   // Zombies nach und nach erscheinen lassen
   if (toSpawn > 0) {
     spawnT -= dt;
-    if (spawnT <= 0 && aliveCount() < 3 + wave) {
+    if (spawnT <= 0 && aliveCount() < Math.round((3 + wave) * Math.min(1.5, settings.amount))) {
       const D = DIFFS[diffKey];
       const zn = spawnZombie(gameMode === 'training' ? 0 : wave, headPos, bossPending ? 'giant' : undefined, { hp: D.hp, speed: gameMode === 'training' ? 0.8 : D.speed });
       bossPending = false;
@@ -3192,7 +3398,7 @@ function updateGame(dt) {
     const bonus = 50 * wave;
     award(bonus);
     floatingText(`Welle ${wave} überlebt! +${bonus}`, board.mesh.position.clone().add(new THREE.Vector3(0, -0.5, 0)), '#7dffa8');
-    SFX.jingle([523, 659, 784, 1046]);
+    SFX.waveEnd();
     speak(`Welle ${wave} überlebt`);
     waveBreak = 5;
     boardDirty = true;
@@ -3206,11 +3412,11 @@ function handleZombieHit(res, point, prefix = '') {
     else if (inRound() && Math.random() < (playerHp < 60 ? 0.18 : 0.1)) spawnMedkit(res.pos);
     else if (inRound() && !res.nuke && powerups.length < 2 && Math.random() < 0.045) spawnPowerup(res.pos);
   }
-  SFX.marker(res.kill);
+  if (settings.hitmarker && (!res.dot || res.kill)) SFX.marker(res.kill, res.headshot);
   if (inRound()) {
-    if (!res.explosion) stats.hits++;
+    if (!res.explosion && !res.dot) stats.hits++;
     const mult = active.double > 0 ? 2 : 1;
-    award(10 * mult);
+    if (!res.dot) award(10 * mult);
     if (res.kill) {
       stats.kills++;
       // Killserie: mehrere Kills kurz hintereinander
@@ -3227,6 +3433,8 @@ function handleZombieHit(res, point, prefix = '') {
       }
       award((res.headshot ? 150 : 100) * mult);
       if (res.headshot) stats.headshots++;
+      // letzter Zombie der Welle: kurze Zeitlupe
+      if (settings.killcam && toSpawn === 0 && aliveCount() === 0 && wave > 0) { killcamT = 1.6; SFX.slowmo(); }
     }
   }
   if (res.kill) floatingText(prefix + (res.headshot ? 'KOPFSCHUSS! +160' : 'Erledigt +110'), point, res.headshot ? '#ffd21f' : '#ffffff');
@@ -3295,7 +3503,7 @@ function updateHud(dt) {
   statusEl.style.display = 'none';
   const wh = hands.find(h => heldWeapon(h) && h.src && !heldWeapon(otherHand(h)));
   const off = wh ? otherHand(wh) : null;
-  if (!wh || !off.src) { hud.mesh.visible = false; hudAlpha = 0; return; }
+  if (!wh || !off.src || !settings.wristHud) { hud.mesh.visible = false; hudAlpha = 0; return; }
   const w = heldWeapon(wh);
   const s = statusLines(w, wh);
   hud.mesh.position.copy(off.point).add(tmpV.set(0, 0.035, 0.1).applyQuaternion(off.quat));
@@ -3703,7 +3911,10 @@ function frame() {
   }
   for (const w of arsenal) updateWeaponVisuals(w, dt);
   flashLight.intensity = Math.max(0, flashLight.intensity - dt * 60);
-  stepPhysics(dt);
+  // Zeitlupe nach dem letzten Kill: Leichen und Trümmer fallen langsam
+  killcamT = Math.max(0, killcamT - dt);
+  const worldDt = killcamT > 0 ? dt * 0.25 : dt;
+  stepPhysics(worldDt);
   updateKnives(dt);
   updateGrenades(dt);
   updatePlasmas(dt);
@@ -3712,11 +3923,13 @@ function frame() {
   updateMachines(dt);
   updateDust(dt);
   updateBolts(dt);
+  updateFlames(worldDt);
   updateWallbuys();
   updateWeaponExpiry();
   updatePlankGhost();
   updateMedkits(dt);
-  updateZombies(active.slowmo > 0 ? dt * 0.35 : dt, headPos, { harmless: gameMode === 'training' });
+  updateZombies(active.slowmo > 0 ? dt * 0.35 : worldDt, headPos, { harmless: gameMode === 'training' });
+  updateSoundscape(dt);
   updatePowerups(dt);
   updateAtmosphere(dt);
   if (dirIndicator.visible) { dirIndicator.material.opacity -= dt * 0.9; if (dirIndicator.material.opacity <= 0) dirIndicator.visible = false; }
@@ -3728,8 +3941,8 @@ function frame() {
   setListener(headPos, tmpV, UP.clone().applyQuaternion(getViewCamera().getWorldQuaternion(tmpQ)));
   updateGame(dt);
   if (startButton.visible) startButton.scale.setScalar(1 + Math.sin(elapsed * 4) * 0.05);
-  updateEffects(dt);
-  updateDebris(dt);
+  updateEffects(worldDt);
+  updateDebris(worldDt);
   updateHud(dt);
   if (boardDirty && board.visible) { refreshBoard(); boardDirty = false; }
   scene.updateMatrixWorld();
@@ -3741,6 +3954,7 @@ function frame() {
 }
 
 // Für automatisierte Tests
+applySettings();
 window.__game = {
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,

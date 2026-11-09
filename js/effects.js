@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { makePanel } from './util.js?v=20';
-import { heightAt } from './room.js?v=20';
-import { SFX } from './sfx.js?v=20';
+import { makePanel } from './util.js?v=21';
+import { heightAt } from './room.js?v=21';
+import { SFX } from './sfx.js?v=21';
 
 // Kurzlebige Effekte: Leuchtspuren, Partikel, Punkte-Text, Einschusslöcher, Hülsen
 let scene;
@@ -58,7 +58,12 @@ export function sparks(pos, normal, count = 8) {
 }
 
 const particleGeo = new THREE.BoxGeometry(0.02, 0.02, 0.02);
+// Einstellungen: Blut (0 aus, 1 normal, 2 extra), Partikelmenge, Punkte-Anzeigen
+export const fx = { blood: 1, particles: 1, popups: true };
+const isBlood = (c) => { const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255; return r > 60 && g < 25 && b < 25; };
 export function burst(point, color, count) {
+  count = Math.round(count * fx.particles * (isBlood(color) ? fx.blood : 1));
+  if (count <= 0) return;
   const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
   for (let i = 0; i < count; i++) {
     const p = new THREE.Mesh(particleGeo, mat);
@@ -79,6 +84,7 @@ export function burst(point, color, count) {
 }
 
 export function floatingText(text, point, color) {
+  if (!fx.popups && /^[+]/.test(text)) return;
   const panel = makePanel(0.6, 0.16, 600);
   panel.draw((ctx, w, h) => {
     ctx.font = 'bold 76px system-ui, sans-serif';
@@ -196,6 +202,7 @@ const DECAL_MATS = {
 const decalGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const decals = [];
 export function floorDecal(pos, kind = 'blood', size = 0.7) {
+  if (kind === 'blood') { if (!fx.blood) return; size *= fx.blood === 2 ? 1.5 : 1; }
   const m = new THREE.Mesh(decalGeo, DECAL_MATS[kind]);
   m.position.set(pos.x, heightAt(pos.x, pos.z) + 0.004, pos.z);
   m.rotation.y = Math.random() * Math.PI * 2;
@@ -208,6 +215,7 @@ export function floorDecal(pos, kind = 'blood', size = 0.7) {
 // Fleck an Wand/Tisch (z. B. Blut hinter einem getroffenen Zombie)
 const wallDecalGeo = new THREE.PlaneGeometry(1, 1);
 export function surfaceDecal(point, normal, kind = 'blood', size = 0.4) {
+  if (kind === 'blood') { if (!fx.blood) return; size *= fx.blood === 2 ? 1.5 : 1; }
   const m = new THREE.Mesh(wallDecalGeo, DECAL_MATS[kind]);
   m.position.copy(point).addScaledVector(normal, 0.003);
   m.lookAt(m.position.clone().add(normal));
