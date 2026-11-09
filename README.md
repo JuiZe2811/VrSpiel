@@ -5,6 +5,41 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 20 – Perks, Aufrüster, 8 neue Waffen & neue Zombies
+
+**8 neue Waffen** (jetzt 24)
+- **Salvengewehr S-3** – Drei-Schuss-Salve (neuer Feuermodus „SALVE“), Rotpunkt
+- **MP Vektor** – 1200 Schuss/min, kaum Rückstoß
+- **Unterhebel .44** – Patronen einzeln laden, mit dem Hebel repetieren
+- **Panzerbüchse .50** – Zielfernrohr + Zweibein, **durchschlägt bis zu 4 Zombies** hintereinander
+- **Armbrust** – Sprengbolzen bleiben stecken, piepen und **explodieren** (Bolzen am Gürtel)
+- **Bullpup B-9** – kompakt, Magazin hinter dem Griff
+- **Minigun M-6** (nur Glückskiste) – sechs Läufe, die erst **hochdrehen**, dann 200 Schuss Dauerfeuer
+- **Blitzwerfer** (Wunderwaffe, nur Glückskiste) – **Kettenblitz** springt von Zombie zu Zombie
+
+**Perk-Automaten** (an der Wand, eigenes Werkzeug 🥤 im Raumbau): Griff-Taste am Automaten = Getränk kaufen,
+Flasche an den Mund führen = trinken. Gilt bis zum Rundenende.
+| Automat | Preis | Wirkung |
+|---|---|---|
+| ♥ Eisenhaut | 2500 | 200 statt 100 Lebenspunkte |
+| ⚡ Flinkhand | 2000 | doppelt so schnell nachladen, Magazine rasten früher ein |
+| » Schnellfeuer | 2000 | +33 % Feuerrate |
+| ✚ Zweites Leben | 1500 | statt zu sterben stehst du mit 60 ❤ wieder auf – eine Druckwelle wirft die Zombies um |
+
+**Aufrüster** (⚙, 5000 Punkte): Waffe in einer Hand halten, mit der anderen Hand die Maschine greifen – die Waffe wandert hinein,
+die Zahnräder drehen sich, und sie kommt **aufgerüstet** wieder heraus (★ im Namen): doppelter Schaden, 50 % mehr Munition,
+höhere Feuerrate und eine **animierte Leucht-Tarnung**. Greifen = abholen.
+Ohne gesetzte Plätze werden Automaten und Aufrüster automatisch an freie Wandstellen gestellt.
+
+**Neue Zombies**
+- **Platzer** (ab Welle 4): aufgebläht, leuchtende Beulen. Kommt er nah, bläht er sich auf und **explodiert** – auch wenn man ihn erschießt. Die Explosion erwischt andere Zombies. Tipp: aus der Ferne abschießen, wenn Zombies um ihn stehen!
+- **Spucker** (ab Welle 5): langer Hals, leuchtender Mund. Bleibt auf Abstand stehen und **spuckt Säure im Bogen** – mit dem Kopf ausweichen! Treffer färben die Sicht grün.
+
+**Grafik & Effekte**
+- Zombies: höher aufgelöste Haut mit Relief (Poren, Adern), **leuchtende Augen** (gut im dunklen Flur zu sehen), **Einschusslöcher mit Blutspuren** bleiben am Körper
+- Schwebender **Staub** im Raum, Blitz-Effekte, Sprengbolzen, Automaten mit Leuchtschildern und Lichtschein am Boden
+- Neues Power-up **☠ Sofort-Tod** (20 s lang tötet jeder Treffer)
+
 ## Neu in Version 19 – Wandkäufe, Glückskiste & 12 neue Waffen
 
 **Punkte & Einkaufen (Zombie-Modus-Stil)**
@@ -108,6 +143,8 @@ Alles geht per **Laser** – du musst nichts berühren. Menü: Zeigestrahl + Abz
 | 💰 Wandkauf | Laser auf eine markierte Wand + Abzug. Dort hängt jede Runde eine zufällige Waffe zum Kaufen |
 | ❓ Glückskiste | Laser auf den Boden + Abzug (ziehen = Ausrichtung) |
 | ✂ Löschen | Auf eine Fläche zeigen (wird rot) + Abzug |
+| 🥤 Automat | Laser auf eine Wand + Abzug. Jeder neue Automat ist eine andere Sorte |
+| ⚙ Aufrüster | Laser auf eine Wand + Abzug (nur einer pro Raum) |
 | 💾 Räume … | 5 Speicherplätze zum Speichern/Laden + „Letzten Raum laden“ |
 | 🧭 Ausrichten | Geladene Karte an den echten Raum anlegen: Linie am Boden an einer echten Wand entlang ziehen (rastet ein), optional eine zweite an einer Querwand. Stick ◀ ▶ drehen, ▲▼ schieben |
 
@@ -195,7 +232,7 @@ Punkte: Treffer +10, erledigt +100, Kopfschuss +150, überlebte Welle +50 × Wel
 
 `python3 -m http.server` im Ordner starten und `http://localhost:8000` öffnen (mit einem Beispielraum).
 1–9 Waffe · Linksklick schießen / Knöpfe · rechte Maustaste ziehen = umschauen · Leertaste = Visier ·
-R nachladen · V Feuermodus · F Messer werfen · G Granate · P Brett annageln · B Wandkauf · K Glückskiste · Enter Start · Mausrad Zoom.
+R nachladen · V Feuermodus · F Messer werfen · G Granate · P Brett annageln · B Wandkauf · K Glückskiste · J Automat · U Aufrüster · Enter Start · Mausrad Zoom.
 
 ## Technik
 

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=19';
-import { WEAPON_DEFS, WEAPON_ORDER, BUILDERS, scopeKit, makeCartridge } from './weapons.js?v=19';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=20';
+import { WEAPON_DEFS, WEAPON_ORDER, BUILDERS, scopeKit, makeCartridge } from './weapons.js?v=20';
 
 // =============================================================================
 // Waffen-Baukasten: 12 weitere Waffen aus Parametern + Sondermodelle
@@ -344,3 +344,141 @@ BUILDERS.pistol = function (m, P, sock, def) {
     sock('muzzle', 0.19, 0.05);
   }
 };
+
+// =============================================================================
+// Version 20: acht weitere Waffen
+// =============================================================================
+M.tesla = new THREE.MeshStandardMaterial({ color: 0x55c8ff, emissive: 0x3aa8ff, emissiveIntensity: 1.8, roughness: 0.3, toneMapped: false });
+M.copperCoil = new THREE.MeshStandardMaterial({ color: 0xb8692e, metalness: 0.9, roughness: 0.35 });
+M.string = new THREE.MeshStandardMaterial({ color: 0xd9d2c0, roughness: 0.9 });
+M.warhead = new THREE.MeshStandardMaterial({ color: 0xff3a1a, emissive: 0x801000, roughness: 0.4 });
+
+// Armbrustbolzen (auch als Munition am Gürtel)
+export function makeArrow() {
+  const g = new THREE.Group();
+  g.add(cylZ(0.003, 0.003, 0.3, MAT.black, 0, 0, 0, 8));
+  const tip = new THREE.Mesh(cachedGeo('arrowtip', () => new THREE.ConeGeometry(0.008, 0.035, 8)), MAT.steel);
+  tip.rotation.x = -Math.PI / 2;
+  tip.position.z = -0.165;
+  g.add(tip);
+  g.add(cylZ(0.0075, 0.0075, 0.02, M.warhead, 0.13, 0, 0, 10)); // Sprengkopf
+  for (let k = 0; k < 3; k++) {
+    const f = box(0.001, 0.014, 0.04, MAT.dotOrange, -0.13, 0.006);
+    const p = new THREE.Group(); p.add(f); p.rotation.z = k * Math.PI * 2 / 3; g.add(p);
+  }
+  return g;
+}
+// Armbrust: Schaft, Bogenarme, Sehne, aufgelegter Bolzen
+function crossbow(m, P, sock) {
+  m.add(prof([[-0.33, 0.03], [-0.06, 0.05], [0.32, 0.05], [0.32, 0.075], [-0.04, 0.078], [-0.34, 0.07]], 0.04, MAT.wood, 0.005));
+  m.add(box(0.012, 0.006, 0.36, MAT.steel, 0.14, 0.081)); // Schiene
+  m.add(prof([[-0.032, 0.03], [0.012, 0.03], [0.0, -0.075], [-0.048, -0.07], [-0.046, -0.01]], 0.03, MAT.grip, 0.003));
+  m.add(box(0.012, 0.004, 0.06, MAT.polymer, 0.028, -0.004));
+  m.add(box(0.006, 0.018, 0.005, MAT.steel, 0.03, 0.01));
+  // Bogenarme (leicht nach vorne gebogen)
+  for (const sx of [-1, 1]) {
+    const arm = box(0.22, 0.016, 0.026, MAT.black, 0.31, 0.072, sx * 0.11);
+    arm.rotation.y = sx * 0.28;
+    m.add(arm);
+    m.add(cylY(0.012, 0.012, 0.02, MAT.steel, 0.27, 0.072, sx * 0.215, 10));
+  }
+  m.add(box(0.06, 0.04, 0.04, MAT.steel, 0.31, 0.07)); // Wurfarmaufnahme
+  const string = new THREE.Group();
+  for (const sx of [-1, 1]) {
+    const seg = box(0.215, 0.002, 0.002, M.string, 0.0, 0.0, sx * 0.105);
+    seg.rotation.y = -sx * 0.62;
+    string.add(seg);
+  }
+  string.position.set(0, 0.082, -0.18);
+  m.add(string);
+  P.string = string;
+  const arrow = makeArrow();
+  arrow.position.set(0, 0.09, -0.18 - 0.11);
+  m.add(arrow);
+  P.arrow = arrow;
+  const ch = new THREE.Group(); m.add(ch); P.charger = ch;
+  // Visier: Kimme hinten, Korn auf der Wurfarmaufnahme
+  m.add(box(0.016, 0.02, 0.006, MAT.black, -0.02, 0.095));
+  m.add(box(0.004, 0.022, 0.006, MAT.black, 0.3, 0.1));
+  m.add(sphere(0.0028, MAT.dotGreen, 0.3, 0.112));
+  sock('sightRear', -0.02, 0.108);
+  sock('sightFront', 0.3, 0.112);
+  sock('muzzle', 0.34, 0.09);
+  sock('eject', 0.05, 0.08, 0.02);
+  sock('chargerGrab', 0.18, 0.085);
+  sock('foregrip', 0.17, 0.04);
+  sock('loadPort', 0.25, 0.09);
+}
+// Blitzwerfer: Plasma-Gehäuse mit Kupferspulen und Teslakugel
+function tesla(m, P, sock) {
+  plasma(m, P, sock);
+  m.traverse(o => { if (o.isMesh && o.material === M.glow) o.material = M.tesla; });
+  for (let i = 0; i < 5; i++) m.add(cylZ(0.026, 0.026, 0.01, M.copperCoil, 0.06 + i * 0.03, 0.052, 0, 16));
+  m.add(sphere(0.03, M.tesla, 0.41, 0.052));
+  for (const a of [0, 2.1, 4.2]) m.add(box(0.004, 0.004, 0.06, MAT.steel, 0.39, 0.052 + Math.cos(a) * 0.035, Math.sin(a) * 0.035));
+  sock('muzzle', 0.44, 0.052);
+}
+// Minigun: sechs Läufe drehen sich vor dem Schießen hoch
+function minigun(m, P, sock) {
+  m.add(box(0.075, 0.085, 0.3, M.gray, 0.02, 0.05));
+  m.add(box(0.06, 0.02, 0.22, MAT.black, 0.02, 0.1));
+  m.add(box(0.012, 0.05, 0.012, MAT.steel, -0.08, 0.13)); m.add(box(0.012, 0.012, 0.18, MAT.black, 0.0, 0.155)); m.add(box(0.012, 0.05, 0.012, MAT.steel, 0.08, 0.13));
+  m.add(prof([[-0.032, 0.01], [0.012, 0.01], [0.0, -0.085], [-0.048, -0.08], [-0.046, -0.02]], 0.03, MAT.grip, 0.003));
+  m.add(box(0.012, 0.004, 0.06, MAT.polymer, 0.028, -0.012));
+  m.add(box(0.006, 0.018, 0.005, MAT.steel, 0.03, 0.0));
+  const spin = new THREE.Group();
+  spin.position.set(0, 0.05, -0.38);
+  for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; spin.add(cylZ(0.0075, 0.0075, 0.42, MAT.blued, 0, Math.cos(a) * 0.024, Math.sin(a) * 0.024, 8)); }
+  for (const s of [-0.16, 0.0, 0.18]) spin.add(cylZ(0.036, 0.036, 0.016, MAT.steel, s, 0, 0, 16));
+  spin.add(cylZ(0.008, 0.008, 0.42, MAT.black, 0, 0, 0, 8));
+  m.add(spin);
+  P.spin = spin;
+  m.add(cylY(0.016, 0.018, 0.09, MAT.grip, 0.2, -0.03)); // Vordergriff
+  m.add(box(0.03, 0.02, 0.06, MAT.steel, 0.2, 0.012));
+  const ch = new THREE.Group(); ch.add(box(0.02, 0.012, 0.03, MAT.steel, -0.12, 0.07, 0.04)); m.add(ch); P.charger = ch;
+  // Ringvisier
+  m.add(box(0.012, 0.02, 0.006, MAT.black, -0.1, 0.118));
+  const ring = new THREE.Mesh(cachedGeo('mgring', () => new THREE.TorusGeometry(0.014, 0.0018, 6, 20)), MAT.black);
+  ring.position.set(0, 0.125, -0.15);
+  m.add(ring);
+  sock('sightRear', -0.1, 0.125);
+  sock('sightFront', 0.15, 0.125);
+  sock('muzzle', 0.6, 0.05);
+  sock('eject', 0.02, 0.05, 0.04);
+  sock('chargerGrab', -0.12, 0.07, 0.04);
+  sock('foregrip', 0.2, -0.04);
+  const seat = sock('magSeat', 0.06, 0.008, -0.05);
+  seat.rotation.x = 0;
+  sock('magwell', 0.06, -0.03, -0.05);
+}
+
+const NEW2 = {
+  burst: base({ name: 'Salvengewehr S-3', desc: '30 Schuss · Drei-Schuss-Salve · Rotpunkt', builder: 'burst', magBuilder: 'ar', capacity: 30, modes: ['safe', 'burst', 'semi'], startMode: 1, rpm: 900, sight: 'reddot',
+    recoil: { back: 0.02, rise: 0.11, jitter: 0.03 }, dmg: 44, price: 1500, tier: 2, mass: 3.4 }),
+  vector: base({ name: 'MP Vektor', desc: '33 Schuss · extrem schnell · wenig Rückstoß', builder: 'vector', capacity: 33, rpm: 1200, spread: 0.004, recoil: { back: 0.01, rise: 0.06, jitter: 0.03 },
+    snd: { cut: 3900, thump: 140, vol: 0.7 }, dmg: 21, price: 1300, tier: 2, mass: 2.7 }),
+  lever: base({ name: 'Unterhebel .44', desc: '8 Schuss · Patronen einzeln laden · Hebel repetieren', builder: 'lever', feed: 'tube', ammo: 'round', action: 'bolt', autoCycle: false, capacity: 8, holdOpen: false,
+    modes: ['semi'], startMode: 0, rpm: 140, spread: 0.0008, recoil: { back: 0.045, rise: 0.3, jitter: 0.02 }, travel: 0.07, snd: { cut: 3000, thump: 100, vol: 1.0 }, dmg: 85, price: 1000, tier: 1, mass: 3.4 }),
+  antimat: base({ name: 'Panzerbüchse .50', desc: '5 Schuss · durchschlägt mehrere Zombies', builder: 'antimat', magBuilder: 'antimat', action: 'bolt', autoCycle: false, capacity: 5, holdOpen: false,
+    modes: ['safe', 'semi'], startMode: 1, rpm: 50, spread: 0.0003, sight: 'scope', pierce: 4, recoil: { back: 0.08, rise: 0.35, jitter: 0.02 }, travel: 0.09,
+    snd: { cut: 2200, thump: 55, vol: 1.2 }, dmg: 320, price: 2600, tier: 3, mass: 9, range: [8, 16], grip: [-0.04, -0.045] }),
+  crossbow: base({ name: 'Armbrust', desc: 'Sprengbolzen · explodiert nach dem Einschlag', builder: 'crossbow', feed: 'tube', ammo: 'bolt', action: 'none', capacity: 1, holdOpen: false, noEject: true, autoCycle: true,
+    modes: ['semi'], startMode: 0, rpm: 60, projectile: 'bolt', recoil: { back: 0.02, rise: 0.08, jitter: 0.01 }, travel: 0.005, snd: { cut: 1200, thump: 60, vol: 0.5 }, dmg: 260, price: 1900, tier: 2, mass: 3.6 }),
+  tesla: base({ name: 'Blitzwerfer', desc: 'Wunderwaffe · Kettenblitz springt von Zombie zu Zombie', builder: 'tesla', magBuilder: 'plasma', capacity: 12, action: 'none', modes: ['semi'], startMode: 0, holdOpen: false, noEject: true,
+    rpm: 150, sight: 'reddot', chain: 6, recoil: { back: 0.03, rise: 0.2, jitter: 0.03 }, travel: 0.005, snd: { cut: 6000, thump: 220, vol: 0.9 }, dmg: 500, price: 0, tier: 4, mass: 4.2, boxOnly: true }),
+  minigun: base({ name: 'Minigun M-6', desc: '200 Schuss · Läufe drehen erst hoch', builder: 'minigun', magBuilder: 'lmg', capacity: 200, modes: ['safe', 'auto'], startMode: 1, rpm: 1800, spinUp: 0.6, spread: 0.012, holdOpen: false,
+    recoil: { back: 0.012, rise: 0.04, jitter: 0.05 }, snd: { cut: 3000, thump: 120, vol: 0.8 }, dmg: 28, price: 0, tier: 4, mass: 13, boxOnly: true, grip: [-0.022, -0.04] }),
+  bullpup: base({ name: 'Bullpup B-9', desc: '30 Schuss · kompakt · Magazin hinter dem Griff', builder: 'bullpup', magBuilder: 'ar', capacity: 30, rpm: 820, sight: 'reddot', recoil: { back: 0.018, rise: 0.1, jitter: 0.03 }, dmg: 40, price: 1600, tier: 2, mass: 3.6 })
+};
+Object.assign(WEAPON_DEFS, NEW2);
+WEAPON_ORDER.push(...Object.keys(NEW2));
+Object.assign(BUILDERS, {
+  burst: lg({ recLen: 0.2, hgLen: 0.2, barrel: 0.14, stock: 'fixed', hg: 'rail', sight: 'reddot', furniture: M.gray, body: MAT.black, vgrip: true }),
+  vector: lg({ recLen: 0.14, hgLen: 0.1, barrel: 0.06, stock: 'folding', hg: 'tube', furniture: M.white, body: M.gray, vgrip: true, magS: 0.07, magTilt: 0 }),
+  vectorMag: () => straightMag(0.022, 0.17, 0.03, MAT.steel, MAT.black),
+  lever: lg({ recLen: 0.14, hgLen: 0.22, barrel: 0.22, stock: 'wood', hg: 'wood', furniture: MAT.wood, body: MAT.blued, rail: false, action: 'bolt', loadPort: true, magS: 0.06 }),
+  antimat: lg({ recLen: 0.26, hgLen: 0.2, barrel: 0.36, stock: 'fixed', hg: 'rail', sight: 'scope', furniture: M.gray, body: MAT.black, bipod: true, action: 'bolt', rail: false, bore: 0.052 }),
+  antimatMag: () => straightMag(0.03, 0.1, 0.075),
+  crossbow, tesla, minigun,
+  bullpup: lg({ recLen: 0.12, hgLen: 0.16, barrel: 0.1, stock: 'fixed', hg: 'rail', sight: 'reddot', furniture: M.od, magS: -0.2, magTilt: 0.05 })
+});
