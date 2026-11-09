@@ -1,15 +1,15 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=18';
+import { VERSION } from './version.js?v=19';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo } from './util.js?v=18';
-import { SFX, ensureAudio, setListener, SFX_PLAYER } from './sfx.js?v=18';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=18';
-import './weaponkit.js?v=18';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=18';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere } from './room.js?v=18';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal } from './effects.js?v=18';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank } from './zombies.js?v=18';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo } from './util.js?v=19';
+import { SFX, ensureAudio, setListener, SFX_PLAYER } from './sfx.js?v=19';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=19';
+import './weaponkit.js?v=19';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=19';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere } from './room.js?v=19';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal } from './effects.js?v=19';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank } from './zombies.js?v=19';
 
 // =============================================================================
 // Grundgerüst
@@ -38,7 +38,31 @@ scene.add(camera);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x666677, 1.2));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(1, 3, 2);
-scene.add(sun);
+scene.add(sun, sun.target);
+// Echte Schatten: Zombies & Waffen werfen Schatten auf den echten Boden (unsichtbarer "Schattenfänger")
+let shadowsOn = (() => { try { return localStorage.getItem('vrspiel-schatten') !== 'false'; } catch { return true; } })();
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false; // nur einmal pro Bild (nicht nochmal fürs Zielfernrohr)
+sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left: -4.5, right: 4.5, top: 4.5, bottom: -4.5, near: 0.5, far: 14 });
+sun.shadow.bias = -0.0006;
+sun.shadow.normalBias = 0.02;
+sun.castShadow = shadowsOn;
+const shadowFloor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.42, depthWrite: false }));
+shadowFloor.rotation.x = -Math.PI / 2;
+shadowFloor.position.y = 0.002;
+shadowFloor.receiveShadow = true;
+shadowFloor.renderOrder = -5;
+shadowFloor.visible = shadowsOn;
+scene.add(shadowFloor);
+function setShadows(on) {
+  shadowsOn = on;
+  sun.castShadow = on;
+  shadowFloor.visible = on;
+  try { localStorage.setItem('vrspiel-schatten', String(on)); } catch { /* ignorieren */ }
+}
+const castShadows = (o) => o.traverse(m => { if (m.isMesh && !m.material.transparent) m.castShadow = true; });
 const flashLight = new THREE.PointLight(0xffaa44, 0, 2.5);
 scene.add(flashLight);
 const desktopFloor = new THREE.GridHelper(40, 40, 0x666666, 0x444444);
@@ -153,6 +177,7 @@ const isFree = (h) => !h.held && !h.grab && !h.pull;
 const arsenal = [];
 function spawnWeapon(id, starter = false) {
   const w = createWeapon(id);
+  castShadows(w.root);
   w.starter = starter;
   w.lastTouch = elapsed;
   scene.add(w.root);
@@ -206,6 +231,7 @@ function takeWeapon(w, h) {
 function dropWeapon(h, throwIt = true) {
   const w = heldWeapon(h);
   if (!w) return;
+  w.smoothQ = null;
   const o = otherHand(h);
   if (o.grab && o.grab.w === w) releaseGrab(o);
   h.held = null;
@@ -284,6 +310,7 @@ function placeBench(c, by) {
     b.position.set(0.72 + (Math.random() - 0.5) * 0.06, 0.615 + i * 0.026, 0);
     benchRack.add(b);
   }
+  castShadows(benchRack);
   benchRack.position.set(c.x, 0, c.z);
   benchRack.rotation.y = by;
   scene.add(benchRack);
@@ -421,6 +448,22 @@ function wallImpact(hit, dir) {
   sparks(hit.point, n, 6);
   puff(hit.point, 0x9a9183, 0.08, 0.7, 0.1, 0.5);
 }
+// Zielhilfe: knapp danebengezielte Kopfschüsse (bis ~2,5°) werden auf den Kopf gelenkt, wenn freie Sicht besteht
+function shotAssist(origin, dir) {
+  let best = null, ba = 0.044;
+  for (const hp of zombieHeads()) {
+    const to = hp.clone().sub(origin);
+    const dist = to.length();
+    if (dist > 25 || dist < 0.3) continue;
+    const ang = to.normalize().angleTo(dir);
+    if (ang < ba) { ba = ang; best = { to: to.clone(), dist }; }
+  }
+  if (!best) return;
+  raycaster.set(origin, best.to);
+  raycaster.far = best.dist - 0.15;
+  if (raycaster.intersectObjects([...roomOccluders(), ...plankMeshes()], false).length) return;
+  dir.lerp(best.to, 0.85).normalize();
+}
 function tryFire(w, desktopRay) {
   const h = w.holder >= 0 ? hands[w.holder] : null;
   if (mode(w) === 'safe' || w.actionOpen || w.chamber !== 'live') { SFX.dry(); pulse(h, 0.15, 20); return false; }
@@ -452,6 +495,7 @@ function tryFire(w, desktopRay) {
     boardDirty = true;
     return true;
   }
+  if (settings.assist && !desktopRay) shotAssist(origin, dir);
   const cands = [...zombieHitMeshes(), ...plankMeshes(), ...roomOccluders(), ...(startButton.visible ? startButton.userData.hit : [])];
   const dmg = w.def.dmg ?? DAMAGE[w.id] ?? 30;
   let startHit = null;
@@ -932,13 +976,39 @@ const wallbuys = [];
 const boardMat = new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.9 });
 const chalkMat = new THREE.MeshBasicMaterial({ color: 0xffd36a, toneMapped: false });
 function clearWallbuys() {
-  for (const wb of wallbuys.splice(0)) { scene.remove(wb.group); wb.label.mesh.material.map.dispose(); wb.label.mesh.material.dispose(); wb.label.mesh.geometry.dispose(); }
+  for (const wb of wallbuys.splice(0)) { scene.remove(wb.group); wb.glow.material.dispose(); wb.label.mesh.material.map.dispose(); wb.label.mesh.material.dispose(); wb.label.mesh.geometry.dispose(); }
+}
+// Wandkauf-Plätze: selbst gesetzte – sonst automatisch an freien Wandstellen (bzw. frei stehend um den Spieler)
+function autoWallbuySpots() {
+  const own = surfacesOf('wallbuy');
+  if (own.length) return own;
+  const spots = [];
+  const ops = surfacesOf('door', 'window');
+  const walls = surfacesOf('wall').filter(w => w.width > 1.3).sort(() => Math.random() - 0.5);
+  for (const w of walls) {
+    for (let k = 0; k < 6 && spots.length < 3; k++) {
+      const u = THREE.MathUtils.randFloat(0.65, w.width - 0.65);
+      const pos = w.a.clone().addScaledVector(w.right, u).setY(1.35);
+      if (ops.some(o => Math.hypot(o.mid.x - pos.x, o.mid.z - pos.z) < o.width / 2 + 0.75)) continue;
+      if (spots.some(o => o.pos.distanceTo(pos) < 1.2)) continue;
+      spots.push({ pos, normal: w.normal.clone() });
+      break;
+    }
+    if (spots.length >= 3) break;
+  }
+  if (!spots.length) { // keine Wände: frei stehende Tafeln im Kreis um den Spieler
+    for (const a of [Math.PI * 0.5, Math.PI, -Math.PI * 0.5]) {
+      const pos = inFront(1.8, a, 1.35);
+      spots.push({ pos, normal: headPos.clone().setY(1.35).sub(pos).setY(0).normalize() });
+    }
+  }
+  return spots;
 }
 function setupWallbuys() {
   clearWallbuys();
   const pool = WEAPON_ORDER.filter(id => !WEAPON_DEFS[id].boxOnly && id !== 'pistol');
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-  surfacesOf('wallbuy').forEach((s, i) => {
+  autoWallbuySpots().forEach((s, i) => {
     const id = pool[i % pool.length];
     const def = WEAPON_DEFS[id];
     const g = new THREE.Group();
@@ -971,8 +1041,31 @@ function setupWallbuys() {
     label.mesh.position.set(0, -0.2, 0.01);
     g.add(label.mesh);
     scene.add(g);
-    wallbuys.push({ s, id, def, group: g, holder, label });
+    const glow = new THREE.Mesh(cachedGeo('wbglow', () => new THREE.PlaneGeometry(1.25, 0.75)), new THREE.MeshBasicMaterial({ map: wbGlowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    glow.position.z = -0.004;
+    g.add(glow);
+    castShadows(holder);
+    wallbuys.push({ s, id, def, group: g, holder, label, glow, phase: Math.random() * 6 });
   });
+}
+// leuchtender Rahmen: gelb = genug Punkte, rot = zu teuer
+const wbGlowTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(128, 64, 10, 128, 64, 128);
+  g.addColorStop(0, 'rgba(255,255,255,0.0)'); g.addColorStop(0.55, 'rgba(255,255,255,0.15)'); g.addColorStop(0.8, 'rgba(255,255,255,0.6)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 128);
+  return new THREE.CanvasTexture(c);
+})();
+function updateWallbuys() {
+  for (const wb of wallbuys) {
+    const own = ownedWeapon(wb.id);
+    const afford = free() || points >= (own ? Math.round(wb.def.price / 2) : wb.def.price);
+    wb.glow.material.color.setHex(afford ? 0xffc23a : 0xff3a2a);
+    wb.glow.material.opacity = (afford ? 0.55 : 0.25) + Math.sin(elapsed * 3 + wb.phase) * 0.12;
+    wb.holder.rotation.y = Math.sin(elapsed * 0.8 + wb.phase) * 0.12;
+  }
 }
 function wallbuyNear(p, maxD = 0.22) {
   let best = null, bd = maxD;
@@ -1023,8 +1116,17 @@ function clearMysteryBox() {
 }
 function setupMysteryBox() {
   clearMysteryBox();
-  const s = surfacesOf('mbox')[0];
-  if (!s) return;
+  let s = surfacesOf('mbox')[0];
+  if (!s) { // nicht platziert: automatisch an eine freie Stelle neben dem Spieler
+    let best = 2.2, ang = 2.4;
+    for (const a of [2.4, -2.4, 1.6, -1.6, Math.PI]) {
+      const dir = new THREE.Vector3(-Math.sin(headYaw() + a), 0, -Math.cos(headYaw() + a));
+      if (freeDistance(headPos.clone().setY(0.4), dir, 2.4) >= best) { ang = a; break; }
+    }
+    const c = inFront(1.5, ang, 0);
+    const yaw = headYaw() + ang;
+    s = makeBox('mbox', c.clone().add(new THREE.Vector3(-0.42, 0.48, -0.22).applyAxisAngle(UP, yaw)), c.clone().add(new THREE.Vector3(0.42, 0.48, 0.22).applyAxisAngle(UP, yaw)), yaw);
+  }
   mbox.s = s;
   const g = new THREE.Group();
   g.position.set(s.center.x, 0, s.center.z);
@@ -1047,6 +1149,7 @@ function setupMysteryBox() {
   const glow = new THREE.PointLight(0x6fd8ff, 1.2, 2.5);
   glow.position.y = H + 0.3;
   g.add(glow);
+  castShadows(g);
   scene.add(g);
   Object.assign(mbox, { group: g, lid: lidPivot, beam, glow, top: new THREE.Vector3(s.center.x, H, s.center.z) });
 }
@@ -1314,6 +1417,9 @@ function collectMedkit(m) {
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } };
 const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignorieren */ } };
 let voiceOn = load('vrspiel-ansager', true);
+// Bedienung: Griff halten/umschalten, Nachladen realistisch/einfach, Zielhilfe
+const settings = { grip: load('vrspiel-griff', 'hold'), reload: load('vrspiel-nachladen', 'real'), assist: load('vrspiel-zielhilfe', true) };
+function setSetting(k, v, key) { settings[k] = v; store(key, v); refreshMenu(); }
 function speak(textStr) {
   if (!voiceOn || !window.speechSynthesis) return;
   try {
@@ -1453,7 +1559,7 @@ function updateHandsXR(dt) {
     let len = pt ? pt.dist : 2;
     let showPtr = free && (pt || state !== 'playing');
     if (state === 'setup' && free && !pt && setup.tool && setup.tool !== 'floor') {
-      if (setup.tool === 'door' || setup.tool === 'window') {
+      if (setup.tool === 'door' || setup.tool === 'window' || setup.tool === 'wallbuy') {
         const wh = setup.drag && setup.drag.src === h ? wallHit(rayOf(h), setup.drag.wall) : wallHit(rayOf(h));
         len = wh ? wh.point.distanceTo(h.tip) : 4;
       } else {
@@ -1475,7 +1581,8 @@ function updateHandsXR(dt) {
     }
 
     // Griff-Taste: greifen
-    if (down(h, 'squeeze') && free) {
+    if (down(h, 'squeeze') && !free && settings.grip === 'toggle' && h.held && h.held.type === 'weapon' && !h.grab) releaseHand(h); // Umschalten: nochmal drücken = loslassen
+    else if (down(h, 'squeeze') && free) {
       if (tryWeaponGrab(h)) { /* zweite Hand an der Waffe */ }
       else if (tryBeltGrab(h)) { /* vom Gürtel */ }
       else if (h.point.distanceTo(plankPilePos) < 0.35) holdItem(h, 'plank', makePlankMesh(1.0)); // Brett vom Stapel
@@ -1496,7 +1603,7 @@ function updateHandsXR(dt) {
       else o.position.lerp(h.point, Math.min(1, dt * 10));
       if (o.position.distanceTo(h.point) < 0.2) { const c = h.pull; h.pull = null; pickCandidate(h, c); }
     }
-    if (up(h, 'squeeze')) releaseHand(h);
+    if (up(h, 'squeeze') && !(settings.grip === 'toggle' && h.held && h.held.type === 'weapon')) releaseHand(h);
 
     // Abzug: UI klicken bzw. Raum-Werkzeug
     if (free && down(h, 'trigger')) {
@@ -1525,6 +1632,13 @@ function updateHeldWeapon(w, main, dt) {
     tmpM2.lookAt(w.root.position, off.point, upv);
     w.root.quaternion.setFromRotationMatrix(tmpM2).multiply(w.foreQ);
   }
+  // Zittern glätten: kleine Bewegungen stark, große kaum (kein Nachziehen beim schnellen Schwenken)
+  if (w.smoothQ && w.smoothHand === main) {
+    const ang = w.smoothQ.angleTo(w.root.quaternion);
+    const k = 1 - Math.exp(-dt * (w.twoHanding || w.def.sight === 'scope' ? 14 : 22) * (1 + ang * 60));
+    w.smoothQ.slerp(w.root.quaternion, k);
+    w.root.quaternion.copy(w.smoothQ);
+  } else { w.smoothQ = w.root.quaternion.clone(); w.smoothHand = main; }
   w.root.updateMatrixWorld(true);
   // Verschluss / Schlitten / Pumpe mit der zweiten Hand
   if (offGrab && (offGrab.type === 'charger' || (offGrab.type === 'fore' && w.def.action === 'pump'))) {
@@ -1538,13 +1652,13 @@ function updateHeldWeapon(w, main, dt) {
   const item = off.held;
   if (item && (item.type === 'mag' || item.type === 'shell')) {
     const itemPos = item.obj.getWorldPosition(new THREE.Vector3());
-    if (item.type === 'mag' && item.weaponId === w.id && !w.magInserted && itemPos.distanceTo(w.sockets.magwell.getWorldPosition(tmpV)) < 0.11) {
+    if (item.type === 'mag' && item.weaponId === w.id && !w.magInserted && itemPos.distanceTo(w.sockets.magwell.getWorldPosition(tmpV)) < 0.14) {
       off.ray.remove(item.obj);
       off.held = null;
       insertMag(w, item.rounds);
       if (w.def.action === 'none' && w.chamber !== 'live') feed(w);
       pulse(off, 0.8, 50); pulse(main, 0.5, 40);
-    } else if (item.type === 'shell' && w.def.feed === 'tube' && w.tube < w.def.capacity && itemPos.distanceTo(w.sockets.loadPort.getWorldPosition(tmpV)) < 0.11) {
+    } else if (item.type === 'shell' && w.def.feed === 'tube' && w.tube < w.def.capacity && itemPos.distanceTo(w.sockets.loadPort.getWorldPosition(tmpV)) < 0.13) {
       off.ray.remove(item.obj);
       off.held = null;
       w.tube++;
@@ -1555,12 +1669,19 @@ function updateHeldWeapon(w, main, dt) {
     }
   }
   // Tasten
-  if (down(main, 'a')) ejectMag(w);
+  const simple = settings.reload === 'simple';
+  if (down(main, 'a')) { if (simple) autoReload(w); else ejectMag(w); }
   if (down(main, 'b')) { if (!toggleMode(w) && w.actionOpen) actionForward(w); pulse(main, 0.2, 20); }
   if (w.def.sight === 'scope' && Math.abs(main.stickY) > 0.3) w.zoom = THREE.MathUtils.clamp(w.zoom - main.stickY * dt * 8, 4, 12);
   // Abzug
-  if (down(main, 'trigger')) { if (w.cooldown <= 0) tryFire(w); }
-  else if (main.btn.trigger && mode(w) === 'auto' && w.cooldown <= 0 && w.chamber === 'live') tryFire(w);
+  if (simple && w.desktopBusy) return; // gerade am automatischen Nachladen
+  if (down(main, 'trigger')) {
+    if (simple && w.chamber !== 'live' && mode(w) !== 'safe') { // leer: einfach automatisch nachladen/durchladen
+      const ammoLeft = w.def.feed === 'mag' ? w.magInserted && w.magRounds > 0 : w.tube > 0;
+      if (ammoLeft) cycleAction(w); else autoReload(w);
+      SFX.dry();
+    } else if (w.cooldown <= 0 && tryFire(w) && simple && !w.def.autoCycle) cycleAction(w, 0.25);
+  } else if (main.btn.trigger && mode(w) === 'auto' && w.cooldown <= 0 && w.chamber === 'live') tryFire(w);
 }
 
 function updateWeaponVisuals(w, dt) {
@@ -1654,7 +1775,7 @@ function row(y, h, labels, W, pad = 30, gap = 18) {
 
 const setupPanel = new UIPanel(1.0, 0.84, 760);
 setupPanel.border = '#3a8bff';
-const menuPanel = new UIPanel(1.1, 0.84, 720);
+const menuPanel = new UIPanel(1.1, 0.95, 720);
 const board = new UIPanel(1.2, 0.5, 640);
 setupPanel.visible = menuPanel.visible = board.visible = false;
 
@@ -2381,8 +2502,9 @@ function refreshMenu() {
     }
     text(ctx, MODES[gameMode].desc, w / 2, 168, 23, '#9ad', 'center', true);
     text(ctx, top.length ? '🏆 ' + top.slice(0, 5).map((e, i) => `${i + 1}. ${e.score} (W${e.wave}, ${DIFFS[e.diff] ? DIFFS[e.diff].label : ''})`).join('  ') : '🏆 Noch keine Bestenliste', w / 2, 404, 19, '#9ad');
-    text(ctx, 'Kopf x3 · Bein = humpeln · Granaten & Messer am Gürtel · 🩹 Kästen berühren = heilen', w / 2, 520, 20, '#cfd8e3');
-    text(ctx, `Version ${VERSION}`, w - 24, 576, 18, '#6b7a90', 'right');
+    text(ctx, '⚙ Bedienung', 30, 506, 20, '#9ad', 'left', true);
+    text(ctx, 'Kopf x3 · 💰 Punkte → Wandkäufe & Glückskiste · Waffe über die Schulter = Holster', w / 2, 610, 19, '#cfd8e3');
+    text(ctx, `Version ${VERSION}`, w - 24, 664, 18, '#6b7a90', 'right');
   }, [
     ...row(184, 56, Object.entries(MODES).map(([id, m]) => ({ id, label: `${m.icon} ${m.label}`, active: gameMode === id, onClick: () => { gameMode = id; refreshMenu(); } })), 792),
     ...row(250, 50, [
@@ -2393,6 +2515,12 @@ function refreshMenu() {
     ...row(428, 58, [
       { id: 'room', label: '🧱 Raum bearbeiten', onClick: enterSetup },
       { id: 'reset', label: '🔫 Waffen zurücklegen', onClick: resetWeapons }
+    ], 792),
+    ...row(522, 56, [
+      { id: 'grip', label: settings.grip === 'toggle' ? '✊ Griff: Tippen' : '✊ Griff: Halten', font: 21, onClick: () => setSetting('grip', settings.grip === 'toggle' ? 'hold' : 'toggle', 'vrspiel-griff') },
+      { id: 'reload', label: settings.reload === 'simple' ? '🔄 Laden: Einfach' : '🔄 Laden: Echt', font: 21, active: settings.reload === 'simple', onClick: () => setSetting('reload', settings.reload === 'simple' ? 'real' : 'simple', 'vrspiel-nachladen') },
+      { id: 'assist', label: settings.assist ? '🎯 Zielhilfe: An' : '🎯 Zielhilfe: Aus', font: 21, active: settings.assist, onClick: () => setSetting('assist', !settings.assist, 'vrspiel-zielhilfe') },
+      { id: 'shadow', label: shadowsOn ? '🌗 Schatten: An' : '🌗 Schatten: Aus', font: 21, active: shadowsOn, onClick: () => { setShadows(!shadowsOn); refreshMenu(); } }
     ], 792)
   ]);
 }
@@ -2810,9 +2938,11 @@ function equipDesk(w) {
   setBeltWeapon(w.id);
   SFX.grab();
 }
-function desktopReload() {
-  const w = deskW;
+function desktopReload() { if (deskW) autoReload(deskW); }
+// automatisches Nachladen (PC und Einstellung "Nachladen: einfach")
+function autoReload(w) {
   if (!w || w.desktopBusy) return;
+  if (w.def.feed === 'mag' ? (w.magInserted && w.magRounds >= w.def.capacity) : w.tube >= w.def.capacity) { if (w.chamber !== 'live') cycleAction(w); return; }
   w.desktopBusy = true;
   let t = 0;
   if (w.def.feed === 'mag') {
@@ -2821,13 +2951,19 @@ function desktopReload() {
     t += 0.35;
   } else {
     const need = w.def.capacity - w.tube;
-    for (let i = 0; i < need; i++) later(t + i * 0.3, () => { w.tube++; SFX.shellIn(); boardDirty = true; });
+    for (let i = 0; i < need; i++) later(t + i * 0.3, () => { if (w.tube < w.def.capacity) w.tube++; SFX.shellIn(); boardDirty = true; });
     t += need * 0.3 + 0.1;
   }
   later(t, () => {
     if (w.chamber !== 'live') { actionBack(w); later(0.18, () => { actionForward(w); w.desktopBusy = false; }); }
     else w.desktopBusy = false;
   });
+}
+// Verschluss einmal durchladen (Pumpe/Kammerstängel automatisch)
+function cycleAction(w, delay = 0) {
+  if (w.desktopBusy) return;
+  w.desktopBusy = true;
+  later(delay, () => { actionBack(w); later(0.18, () => { actionForward(w); w.desktopBusy = false; }); });
 }
 function desktopShoot() {
   const w = deskW;
@@ -3021,6 +3157,12 @@ function frame() {
   camera.updateMatrixWorld(true);
   getViewCamera().getWorldPosition(headPos);
   for (const h of hands) h.ray.updateMatrixWorld(true);
+  if (shadowsOn) { // Schattenkamera folgt dem Spieler
+    sun.target.position.set(headPos.x, 0, headPos.z);
+    sun.position.set(headPos.x + 1.6, 5, headPos.z + 2.2);
+    sun.target.updateMatrixWorld();
+    renderer.shadowMap.needsUpdate = true;
+  }
   for (let i = timers.length - 1; i >= 0; i--) {
     timers[i].t -= dt;
     if (timers[i].t <= 0) { const f = timers[i].fn; timers.splice(i, 1); f(); }
@@ -3043,6 +3185,7 @@ function frame() {
   updateGrenades(dt);
   updatePlasmas(dt);
   updateMysteryBox(dt);
+  updateWallbuys();
   updateWeaponExpiry();
   updatePlankGhost();
   updateMedkits(dt);
@@ -3075,5 +3218,5 @@ window.__game = {
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,
-  get points() { return points; }, set points(v) { points = v; }, wallbuys, mbox, useBox, tryBuy, giveWeapon, get holster() { return holster; }, plasmas, setTool, setupTriggerDown, setupTriggerUp, alignToLine, loadSlot, saveSlot, serializeRoom, setupWallbuys, setupMysteryBox, surfaceAt, updateSetup, get benchRack() { return benchRack; }
+  spawnWeapon, resetWeapons, settings, get points() { return points; }, set points(v) { points = v; }, wallbuys, mbox, useBox, tryBuy, giveWeapon, get holster() { return holster; }, plasmas, setTool, setupTriggerDown, setupTriggerUp, alignToLine, loadSlot, saveSlot, serializeRoom, setupWallbuys, setupMysteryBox, surfaceAt, updateSetup, get benchRack() { return benchRack; }
 };

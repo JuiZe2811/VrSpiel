@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=18';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=18';
-import { SFX3D } from './sfx.js?v=18';
-import { burst, addDebris, shockwave } from './effects.js?v=18';
-import { cachedGeo } from './util.js?v=18';
+import { room, surfacesOf, isOpening } from './room.js?v=19';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=19';
+import { SFX3D } from './sfx.js?v=19';
+import { burst, addDebris, shockwave } from './effects.js?v=19';
+import { cachedGeo } from './util.js?v=19';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -347,6 +347,7 @@ export function pickType(wave) {
 export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
   const T = TYPES[type];
   const z = buildZombie(type);
+  z.root.traverse(m => { if (m.isMesh && !m.material.transparent) m.castShadow = true; });
   const scale = rand(T.scale[0], T.scale[1]);
   z.root.scale.setScalar(scale);
   const zombie = {

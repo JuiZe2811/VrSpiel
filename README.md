@@ -5,6 +5,38 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 19 – Wandkäufe, Glückskiste & 12 neue Waffen
+
+**Punkte & Einkaufen (Zombie-Modus-Stil)**
+- Jede Runde startest du nur mit der **Pistole** und **500 Punkten**. Treffer, Kills, Kopfschüsse und Bretter bringen Punkte (💰 auf der Anzeigetafel und am Handgelenk).
+- **Wandkäufe**: An den Stellen, die du beim Raumbau festlegst, hängt jede Runde eine **zufällige Waffe** an einer Kreidetafel. Hingreifen + Griff-Taste = kaufen (leuchtet gelb = genug Punkte, rot = zu teuer). Besitzt du die Waffe schon, kaufst du dort für den halben Preis **Munition**.
+- **Glückskiste** (950 Punkte): Deckel geht auf, die Waffen wirbeln durch – am Ende liegt eine zufällige Waffe darin, die du dir greifen kannst. **Jede Waffe ist möglich**, auch die Wunderwaffe **Plasmawerfer** und das **MG-100**, die es nur hier gibt.
+- **Rückenholster**: Waffe über die Schulter hinter den Kopf führen und loslassen – dort bleibt sie. Von dort jederzeit wieder greifen. So trägst du drei Waffen.
+- Gekaufte Waffen, die du liegen lässt, verschwinden nach 40 s. Im Training ist alles kostenlos.
+- Hast du keine Wandkauf-Plätze/Kiste gesetzt, werden sie automatisch an freien Stellen platziert.
+
+**12 neue Waffen** (jetzt 16): Revolver .357, Magnum M50, Maschinenpistole K, Trommel-MP, Sturmgewehr AR-5 (Rotpunkt),
+Kampfgewehr KG-7, Karabiner K-1, MG-100 (100 Schuss, Zweibein), Auto-Schrotflinte AS-8, Doppelflinte, Präzisionsgewehr P-10 (Zielfernrohr)
+und der Plasmawerfer (explodierende Plasmakugeln). Revolver und Doppelflinte lädt man Patrone für Patrone vom Gürtel.
+
+**Besseres Handling** (Menü → ⚙ Bedienung)
+- **Laden: Einfach** – A/X lädt automatisch nach, leere Waffe + Abzug lädt nach, Pumpe/Kammerstängel repetieren von selbst. **Echt** = wie bisher alles von Hand.
+- **Griff: Tippen** – Griff-Taste einmal drücken = Waffe festhalten, nochmal = loslassen (kein Dauerdrücken mehr).
+- **Zielhilfe** – knapp danebengezielte Kopfschüsse (bis ca. 2,5°) treffen trotzdem, wenn freie Sicht besteht.
+- Ruhigeres Zielen: Zittern wird geglättet (vor allem beidhändig und mit Zielfernrohr), ohne beim schnellen Schwenken nachzuziehen.
+- Magazine und Patronen rasten schon etwas früher ein.
+
+**Raumbau verbessert**
+- Neue Werkzeuge **💰 Wandkauf** (Laser auf eine Wand) und **❓ Glückskiste** (Laser auf den Boden, ziehen = Ausrichtung).
+- **💾 Räume**: 5 Speicherplätze – Räume speichern und in jeder Sitzung wieder laden.
+- **🧭 Ausrichten**: Nach dem Laden eine Linie am Boden **an einer echten Wand entlang** ziehen – die Karte dreht und schiebt sich, bis die gespeicherte Wand genau darauf liegt. Eine zweite Linie an einer Querwand erledigt den Rest. Feinjustieren mit dem Stick (◀ ▶ drehen, ▲▼ schieben), Rückgängig setzt die Ausrichtung zurück.
+- Wände rasten an vorhandenen **Ecken** und im **rechten Winkel** ein, beim Ziehen wird die **Länge** angezeigt.
+- **✂ Löschen**: auf eine Fläche zeigen (wird rot) + Abzug.
+
+**Grafik**
+- **Echte Schatten**: Zombies, Waffen, Waffenständer und Kiste werfen Schatten auf deinen echten Boden (im Menü abschaltbar).
+- Leuchtende Wandkauf-Tafeln, Lichtstrahl über der Glückskiste, Mündungsfeuer-Sterne, neue Waffenmodelle mit Rotpunkt, Zielfernrohr, Zweibein usw.
+
 ## Neu in Version 18 – das große Update
 
 **Physik**
@@ -73,15 +105,19 @@ Alles geht per **Laser** – du musst nichts berühren. Menü: Zeigestrahl + Abz
 | 🪑 Tisch / 💺 Stuhl | Grundfläche mit dem Laser auf dem Boden aufziehen (Ecke zu Ecke), dann mit dem Laser auf die **Tischkante** zeigen = Höhe, Abzug = fertig. Stick ◀ ▶ dreht, B/Y bricht ab |
 | 🔫 Waffenständer | Laser auf den Boden + Abzug (ziehen = Ausrichtung). Kompakter Ständer (90 × 45 cm): Langwaffen stehen aufrecht, die Pistole liegt davor – zu Beginn **jeder Runde** |
 | ↶ Rückgängig / 🗑 Alles löschen | Letzte Fläche bzw. alles entfernen |
-| 💾 Laden | Lädt den zuletzt eingerichteten Raum (passt nur, wenn du am selben Platz und in dieselbe Richtung startest) |
+| 💰 Wandkauf | Laser auf eine markierte Wand + Abzug. Dort hängt jede Runde eine zufällige Waffe zum Kaufen |
+| ❓ Glückskiste | Laser auf den Boden + Abzug (ziehen = Ausrichtung) |
+| ✂ Löschen | Auf eine Fläche zeigen (wird rot) + Abzug |
+| 💾 Räume … | 5 Speicherplätze zum Speichern/Laden + „Letzten Raum laden“ |
+| 🧭 Ausrichten | Geladene Karte an den echten Raum anlegen: Linie am Boden an einer echten Wand entlang ziehen (rastet ein), optional eine zweite an einer Querwand. Stick ◀ ▶ drehen, ▲▼ schieben |
 
 Echte Wände und Möbel verdecken virtuelle Dinge dahinter (Zombies hinter der Wand sieht man nur durch Tür/Fenster), und Waffen, Magazine und Dosen prallen physikalisch daran ab.
 Schüsse hinterlassen Einschusslöcher an den Wänden, Messer bleiben darin stecken.
 
 ## Waffen
 
-Alle vier Waffen stehen im **Waffenständer** – jede genau einmal. Zu Beginn jeder Runde kommen alle Waffen,
-die du nicht in der Hand hältst, voll geladen zurück in den Ständer.
+Zu Beginn jeder Runde liegt nur die **Pistole** im Waffenständer. Alle anderen Waffen gibt es an den **Wandkäufen**
+(zufällig jede Runde) oder in der **Glückskiste**. Die wichtigsten:
 
 | Waffe | Visier | Magazin | Besonderheit |
 |---|---|---|---|
@@ -89,6 +125,13 @@ die du nicht in der Hand hältst, voll geladen zurück in den Ständer.
 | Maschinenpistole MPX | Rotpunktvisier | 30 | Sicher / Einzel / Dauerfeuer, Vordergriff |
 | Pump-Flinte | Perlkorn | 6 + 1 (Röhre) | Schrot, nach jedem Schuss repetieren |
 | Scharfschützengewehr | Zielfernrohr 4–12x | 5 | Kammerverschluss, sehr hoher Schaden |
+| Revolver .357 / Magnum M50 | Kimme & Korn | 6 / 7 + 1 | Revolver: Patronen einzeln laden |
+| MP K / Trommel-MP | offen | 25 / 50 | Dauerfeuer |
+| Sturmgewehr AR-5 / Kampfgewehr KG-7 / Karabiner K-1 | Rotpunkt / offen | 30 / 20 / 30 | Einzel / Dauerfeuer |
+| MG-100 | offen | 100 | nur aus der Glückskiste, Zweibein |
+| Auto-Schrotflinte AS-8 / Doppelflinte | Perlkorn | 8 + 1 / 2 | Schrot |
+| Präzisionsgewehr P-10 | Zielfernrohr | 10 | halbautomatisch |
+| Plasmawerfer | – | – | Wunderwaffe (nur Glückskiste), explodierende Plasmakugeln |
 
 ## Steuerung (Quest-Controller)
 
@@ -99,7 +142,9 @@ die du nicht in der Hand hältst, voll geladen zurück in den Ständer.
 | Hand wechseln | Mit der anderen Hand an den Griff fassen; zwei Waffen gleichzeitig (eine pro Hand) gehen auch |
 | Schießen | Abzug |
 | Zweihändig halten | Zweite Hand an den Vorderschaft + Griff-Taste |
-| Magazin auswerfen | **A / X** |
+| Magazin auswerfen | **A / X** (mit „Laden: Einfach“: automatisch nachladen) |
+| Kaufen | Hand an die Wandtafel bzw. in die Glückskiste + Griff-Taste |
+| Rückenholster | Waffe über die Schulter nach hinten führen und loslassen; zum Ziehen dort greifen |
 | Neues Magazin / Patrone | Nach unten schauen: am **Gürtel** greifen (in Reichweite wird das Magazin größer und der Controller vibriert). Ausgeworfene Magazine kann man vom Boden aufheben (mit Restpatronen) |
 | Magazin einsetzen | Von unten in den Magazinschacht führen |
 | Schrotpatrone laden | An die Ladeöffnung unten am Gehäuse führen |
@@ -149,8 +194,8 @@ Punkte: Treffer +10, erledigt +100, Kopfschuss +150, überlebte Welle +50 × Wel
 ## Am PC testen
 
 `python3 -m http.server` im Ordner starten und `http://localhost:8000` öffnen (mit einem Beispielraum).
-1–4 Waffe · Linksklick schießen / Knöpfe · rechte Maustaste ziehen = umschauen · Leertaste = Visier ·
-R nachladen · V Feuermodus · F Messer werfen · G Granate · P Brett annageln · Enter Start · Mausrad Zoom.
+1–9 Waffe · Linksklick schießen / Knöpfe · rechte Maustaste ziehen = umschauen · Leertaste = Visier ·
+R nachladen · V Feuermodus · F Messer werfen · G Granate · P Brett annageln · B Wandkauf · K Glückskiste · Enter Start · Mausrad Zoom.
 
 ## Technik
 

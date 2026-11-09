@@ -11,7 +11,7 @@ root = pathlib.Path(__file__).resolve().parent.parent
 v = sys.argv[1]
 for f in sorted((root / 'js').glob('*.js')):
     s = f.read_text()
-    s2 = re.sub(r"from '\./([\w-]+)\.js(\?v=[\w.]+)?'", lambda m: f"from './{m.group(1)}.js?v={v}'", s)
+    s2 = re.sub(r"(from |import )'\./([\w-]+)\.js(\?v=[\w.]+)?'", lambda m: f"{m.group(1)}'./{m.group(2)}.js?v={v}'", s)
     if f.name == 'version.js':
         s2 = re.sub(r"export const VERSION = '[^']*';", f"export const VERSION = '{v}';", s2)
     if s2 != s:
