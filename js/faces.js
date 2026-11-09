@@ -3,19 +3,24 @@
 import { setFriendFaces } from './zombies.js?v=27';
 
 const KEY = 'vrspiel-gesichter';
+// fest eingebaute Gesichter (Freunde, mit Erlaubnis) – werden benutzt, solange keine eigenen Fotos geladen sind
+const BUILTIN = ['faces/freund1.jpg', 'faces/freund2.jpg', 'faces/freund3.jpg'];
 const MAX = 6;
 const SHARES = [[0, 'Aus'], [0.35, 'Manche'], [0.6, 'Viele'], [1, 'Alle']];
 let data = load();
 
 function load() {
   try { const v = JSON.parse(localStorage.getItem(KEY) || 'null'); if (v && Array.isArray(v.faces)) return v; } catch { /* leer */ }
-  return { faces: [], share: 0.6 };
+  return { faces: [], share: 0.6, builtin: true };
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { alert('Speicher voll – bitte ein Gesicht entfernen.'); }
   apply();
 }
-function apply() { setFriendFaces(data.faces, data.faces.length ? data.share : 0); }
+function apply() {
+  const list = data.faces.length ? data.faces : data.builtin !== false ? BUILTIN : [];
+  setFriendFaces(list, list.length ? data.share : 0);
+}
 apply();
 
 // ---- Oberfläche ----------------------------------------------------------------------
@@ -49,6 +54,7 @@ dlg.innerHTML = `<div class="box">
      Die Bilder bleiben nur hier auf diesem Gerät gespeichert und werden nirgendwo hochgeladen.</p>
   <div class="list" id="facesList"></div>
   <label class="big">📷 Foto hinzufügen<input id="facesFile" type="file" accept="image/*" style="display:none"></label>
+  <label style="display:block;margin:10px 0"><input type="checkbox" id="facesBuiltin"> Eingebaute Gesichter benutzen, solange keine eigenen Fotos geladen sind</label>
   <div style="margin:10px 0">Anteil der Zombies mit Freundes-Gesicht:
     <select id="facesShare">${SHARES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
   <div class="crop" id="facesCrop">
@@ -63,7 +69,8 @@ document.body.appendChild(dlg);
 const $ = (id) => dlg.querySelector('#' + id);
 
 function refresh() {
-  btn.textContent = `🧟 Gesichter (${data.faces.length})`;
+  btn.textContent = `🧟 Gesichter (${data.faces.length || (data.builtin !== false ? BUILTIN.length + ' eingebaut' : 0)})`;
+  $('facesBuiltin').checked = data.builtin !== false;
   $('facesShare').value = String(data.share);
   $('facesList').innerHTML = data.faces.map((f, i) => `<div class="face"><img src="${f}"><button data-i="${i}">✕</button></div>`).join('') || '<span style="color:#8796ad">Noch keine Gesichter</span>';
   $('facesList').querySelectorAll('button').forEach(b => b.onclick = () => { data.faces.splice(+b.dataset.i, 1); save(); refresh(); });
@@ -71,6 +78,7 @@ function refresh() {
 btn.onclick = () => { dlg.style.display = 'block'; refresh(); };
 $('facesClose').onclick = () => { dlg.style.display = 'none'; };
 $('facesShare').onchange = (e) => { data.share = parseFloat(e.target.value); save(); };
+$('facesBuiltin').onchange = (e) => { data.builtin = e.target.checked; save(); refresh(); };
 
 // ---- Zuschneiden ---------------------------------------------------------------------
 const cv = $('facesCanvas'), ctx = cv.getContext('2d');

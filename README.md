@@ -11,7 +11,8 @@ und wollen dich töten.
 - Auf der Startseite (vor „START AR“) unten links: **„🧟 Gesichter“**.
 - **📷 Foto hinzufügen** → Foto auswählen → den gelben Rahmen aufs Gesicht schieben (ziehen), mit dem Regler die Größe anpassen (Augen etwa auf der gestrichelten Linie) → **Übernehmen**. Bis zu 6 Gesichter.
 - **Anteil** wählen: Aus / Manche / Viele / Alle Zombies tragen ein Freundes-Gesicht. Die Gesichter werden fahl-grünlich eingefärbt, mit dunklen Rändern, Schmutz und Blut. Haare, Augen-Leuchten und Kiefer werden bei diesen Zombies weggelassen, damit das Foto gut zu sehen ist.
-- **Datenschutz:** Die Fotos werden nur im Browser dieses Geräts gespeichert (nicht hochgeladen, nicht im Repository). Auf der Quest: Fotos z. B. per Meta-Horizon-App oder Browser-Download auf die Brille bringen und dann im Quest-Browser auswählen.
+- **Eingebaut:** Drei Freundes-Gesichter (mit deren Erlaubnis) liegen als kleine Ausschnitte in `faces/` und werden automatisch benutzt, solange keine eigenen Fotos geladen sind. Im Gesichter-Fenster lassen sie sich abschalten.
+- **Eigene Fotos** werden nur im Browser des jeweiligen Geräts gespeichert (nicht hochgeladen). Auf der Quest: Fotos z. B. per Meta-Horizon-App oder Browser-Download auf die Brille bringen und dann im Quest-Browser auswählen.
 
 **Flüssiger**
 - Neue Einstellung **Grafik → Leistung**: *Schön* / *Ausgewogen* (Standard) / *Flüssig*.
