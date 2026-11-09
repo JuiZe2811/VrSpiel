@@ -5,6 +5,25 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 26 – Pistole im Holster, kompletter Reset, Karte einfach ausrichten
+
+**Kein Waffenständer mehr – du startest mit der Pistole in der Hand**
+- Beim Rundenstart hast du die **Pistole direkt in der rechten Hand**. Der Waffenständer ist komplett weg.
+- Die Pistole hat ein **Holster an der rechten Hüfte**: dort hinfassen + Griff-Taste = ziehen, an der Hüfte loslassen = wegstecken. Liegt sie irgendwo herum, kehrt sie nach 6 Sekunden von selbst ins Holster zurück.
+- **Bretter** zum Reparieren gibt es jetzt **vorne am Gürtel** (unbegrenzt) – greifen, an die Tür/das Fenster halten, loslassen.
+- Beim Einrichten des Raums steckt die Pistole automatisch im Holster, damit beide Hände frei sind.
+
+**Neue Runde = komplett aufgeräumte Karte**
+- Beim Start jeder Runde wird alles zurückgesetzt: lose Magazine, Messer, Bolzen, Granaten, Affen, Flammen, Blitze, Power-ups, Verbandskästen, Leichen, Blutflecken, gekaufte Waffen, Rückenholster, Fallen (wieder bereit), Glückskiste und Aufrüster.
+
+**Gespeicherte Karte ganz einfach ausrichten**
+- Nach dem Laden (oder mit 🧭 Ausrichten): **Griff-Taste halten = die ganze Karte anfassen**. Bewegst du die Hand, wird die Karte **in jede Richtung verschoben**; drehst du das Handgelenk, **dreht sich die Karte mit**. Loslassen – fertig. So kannst du die Wände direkt an deine echten Wände schieben.
+- Feinjustieren: **linker Stick** schiebt in alle Richtungen (vor/zurück/links/rechts), **rechter Stick** ◀ ▶ dreht.
+- Weiterhin möglich: eine Laser-Linie an einer echten Wand ziehen – die Karte rastet daran ein.
+
+**Behoben**
+- Beim Waffenwechsel verschwanden Granaten und Trommel-Affe vom Gürtel – jetzt bleiben sie.
+
 ## Neu in Version 25 – Todesanimationen, Automaten selbst aufstellen, Preis-Einstellungen
 
 **Bessere Todesanimationen, Zombies verschwinden schnell**

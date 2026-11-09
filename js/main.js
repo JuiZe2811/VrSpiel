@@ -1,15 +1,15 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=25';
+import { VERSION } from './version.js?v=26';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=25';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=25';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=25';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=25';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=25';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=25';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx } from './effects.js?v=25';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime } from './zombies.js?v=25';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=26';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=26';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=26';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=26';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=26';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=26';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=26';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime } from './zombies.js?v=26';
 
 // =============================================================================
 // Grundgerüst
@@ -205,7 +205,7 @@ function makeLoose(w, vel, angVel) {
   w.body.rotation.set(0, 0, 0);
   w.phys = addDynamic(w.root, w.localBox, MASS[w.id], {
     vel, angVel,
-    onLost: () => (w.starter ? placeOnBench([w]) : disposeWeapon(w)),
+    onLost: () => (w.starter ? holsterPistol(w) : disposeWeapon(w)),
     onImpact: (v) => SFX.thud(Math.min(0.6, v * 0.12))
   });
 }
@@ -217,6 +217,7 @@ function takeWeapon(w, h) {
   }
   if (deskW === w) deskW = null;
   if (holster === w) { holster = null; w.holstered = false; w.root.visible = true; }
+  if (w.inBelt) { w.inBelt = false; w.root.visible = true; if (pistolSlot) { pistolSlot.available = false; pistolSlot.obj.visible = false; } }
   if (w.phys) { removeDynamic(w.phys); w.phys = null; }
   if (w.root.parent !== scene) scene.add(w.root);
   w.lastTouch = elapsed;
@@ -240,6 +241,8 @@ function dropWeapon(h, throwIt = true) {
   w.handTravel = false;
   w.parts.flash.visible = false;
   w.lastTouch = elapsed;
+  // Startpistole an der Hüfte losgelassen: zurück ins Gürtel-Holster
+  if (w.starter && pistolSlot && h.point.distanceTo(pistolSlot.obj.getWorldPosition(tmpV)) < 0.22) { holsterPistol(w); SFX.click(700, 0.4, 0.08); pulse(h, 0.5, 50); return; }
   // über der Schulter losgelassen: ins Rückenholster stecken
   if (!holster && inHolsterZone(h.point)) {
     holster = w;
@@ -268,92 +271,36 @@ function releaseGrab(h) {
   h.grab = null;
 }
 
-// ---- Waffenbank: hier liegen die Waffen bereit ---------------------------------
-let bench = null;
-// Waffentisch: vom Spieler platziert (gespeichert) oder automatisch neben dem Spieler
-function setupBench() {
-  const existing = room.surfaces.find(x => x.type === 'bench');
-  if (existing) { bench = existing; return; }
-  const yaw = headYaw();
-  const eye = headPos.clone().setY(0.85);
-  let angle = -0.6; // freie Richtung suchen (vorne rechts bevorzugt)
-  for (const a of [-0.6, 0.6, -1.3, 1.3, 0]) {
-    const dir = new THREE.Vector3(-Math.sin(yaw + a), 0, -Math.cos(yaw + a));
-    if (freeDistance(eye, dir, 1.6) >= 1.5) { angle = a; break; }
-  }
-  placeBench(inFront(0.95, angle, 0, yaw), yaw + angle);
-}
-// Kompakter Waffenständer: Langwaffen stehen aufrecht in der Halterung, die Pistole liegt davor
-let benchRack = null;
+// ---- Kein Waffenständer mehr: die Startpistole steckt im Holster am Gürtel ------------------
+let bench = null; // (alter Waffenständer – wird nicht mehr benutzt)
 const plankPilePos = new THREE.Vector3(0, -10, 0);
-function placeBench(c, by) {
-  for (const old of room.surfaces.filter(x => x.type === 'bench')) removeSurface(old);
-  const X = new THREE.Vector3(Math.cos(by), 0, -Math.sin(by)), Z = new THREE.Vector3(Math.sin(by), 0, Math.cos(by));
-  const p1 = c.clone().addScaledVector(X, -0.45).addScaledVector(Z, -0.22), p2 = c.clone().addScaledVector(X, 0.45).addScaledVector(Z, 0.22);
-  bench = addBox('bench', p1.setY(0.8), p2.setY(0.8), by);
-  if (benchRack) { scene.remove(benchRack); benchRack.traverse(o => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); }); }
-  benchRack = new THREE.Group();
-  const wood = new THREE.MeshStandardMaterial({ color: 0x5a4128, roughness: 0.8 });
-  const mk = (w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wood); m.position.set(x, y, z); benchRack.add(m); };
-  // Halterung an der Rückseite (vom Spieler weg)
-  const back = Z.dot(headPos.clone().sub(c)) > 0 ? -1 : 1;
-  for (const x of [-0.43, 0.43]) mk(0.035, 0.6, 0.035, x, 0.8 + 0.3, back * 0.2);
-  mk(0.9, 0.04, 0.05, 0, 1.35, back * 0.2);
-  mk(0.9, 0.03, 0.09, 0, 0.815, back * 0.17);
-  // Bretterstapel auf einer Kiste neben dem Ständer (zum Reparieren von Türen/Fenstern)
-  const crate = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.6, 0.42), new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.9 }));
-  crate.position.set(0.72, 0.3, 0);
-  benchRack.add(crate);
-  for (let i = 0; i < 4; i++) {
-    const b = makePlankMesh(0.9);
-    b.rotation.set(-Math.PI / 2, Math.PI / 2 + (Math.random() - 0.5) * 0.15, 0);
-    b.position.set(0.72 + (Math.random() - 0.5) * 0.06, 0.615 + i * 0.026, 0);
-    benchRack.add(b);
-  }
-  castShadows(benchRack);
-  benchRack.position.set(c.x, 0, c.z);
-  benchRack.rotation.y = by;
-  scene.add(benchRack);
-  benchRack.updateMatrixWorld(true);
-  plankPilePos.copy(benchRack.localToWorld(new THREE.Vector3(0.72, 0.68, 0)));
+function setupBench() { /* Waffenständer entfernt */ }
+function placeOnBench(list) { for (const w of list) if (w.starter) holsterPistol(w); else makeLoose(w); }
+// Startpistole ins Holster stecken (unsichtbar, im Holster wird ein Modell gezeigt)
+function holsterPistol(w) {
+  if (w.phys) { removeDynamic(w.phys); w.phys = null; }
+  for (const h of hands) { if (heldWeapon(h) === w) h.held = null; if (h.grab && h.grab.w === w) h.grab = null; }
+  if (deskW === w) { deskW = null; camera.remove(w.root); }
+  if (w.root.parent !== scene) scene.add(w.root);
+  w.holder = -1;
+  w.inBelt = true;
+  w.root.visible = false;
+  w.root.position.set(0, -10, 0);
+  if (pistolSlot) { pistolSlot.available = true; pistolSlot.obj.visible = true; }
 }
-function placeOnBench(list) {
-  if (!bench || !room.surfaces.includes(bench)) setupBench();
-  const L = bench.X.clone(), S = bench.Z.clone();
-  if (S.dot(headPos.clone().sub(bench.center)) < 0) S.negate(); // S zeigt zum Spieler
-  const top = bench.height;
-  let along = -0.36;
-  for (const w of arsenal.filter(a => a.starter)) {
-    const upright = w.def.twoHand;
-    const width = w.localBox.max.y - w.localBox.min.y;
-    let target;
-    if (upright) { target = bench.center.clone().addScaledVector(L, along + width / 2).addScaledVector(S, -0.15); along += width + 0.03; }
-    else target = bench.center.clone().addScaledVector(S, 0.1);
-    if (!list.includes(w) || w.holder >= 0 || w === deskW) continue;
-    if (w.phys) { removeDynamic(w.phys); w.phys = null; }
-    if (w.root.parent !== scene) scene.add(w.root);
-    if (upright) {
-      // Mündung nach oben, rechte Seite zum Spieler
-      w.root.quaternion.setFromAxisAngle(UP, Math.atan2(-S.z, S.x)).multiply(new THREE.Quaternion().setFromAxisAngle(XAXIS, Math.PI / 2));
-    } else {
-      const yawW = Math.atan2(-L.x, -L.z);
-      w.root.quaternion.setFromEuler(new THREE.Euler(0, yawW, Math.PI / 2, 'YXZ'));
-    }
-    w.root.position.copy(bench.center);
-    w.root.updateMatrixWorld(true);
-    const bb = new THREE.Box3().setFromObject(w.root);
-    const cc = bb.getCenter(new THREE.Vector3());
-    w.root.position.x += target.x - cc.x;
-    w.root.position.z += target.z - cc.z;
-    w.root.position.y += top + 0.004 - bb.min.y;
-    if (!upright) makeLoose(w); // Pistole liegt mit Physik, Langwaffen stehen fest im Ständer
-  }
-}
-// Startwaffen zurück auf den Ständer; gekaufte Waffen verschwinden (removeBought)
-function resetWeapons(removeBought = false) {
+const starterPistol = () => arsenal.find(w => w.starter);
+// Waffen zurücksetzen: gekaufte weg (optional), alle voll, Pistole in die rechte Hand (bzw. ins Holster)
+function resetWeapons(removeBought = false, toHand = true) {
   if (removeBought) for (const w of [...arsenal]) if (!w.starter) disposeWeapon(w);
   for (const w of arsenal) if (w.holder < 0 && w !== deskW) refillWeapon(w);
-  placeOnBench(arsenal.filter(w => w.starter));
+  const p0 = starterPistol();
+  if (!p0) return;
+  if (p0.holder < 0 && p0 !== deskW) holsterPistol(p0);
+  if (!toHand) return;
+  if (renderer.xr.isPresenting) {
+    const right = hands[1];
+    if (right && right.src && !right.held && p0.inBelt) takeWeapon(p0, right);
+  } else if (!deskW) equipDesk(p0);
 }
 
 // ---- Waffen-Mechanik -------------------------------------------------------------
@@ -683,12 +630,37 @@ function makeMonkey() {
 }
 let monkeyCount = 1;
 const monkeySlot = (() => {
-  const mount = beltMount(1.55);
+  const mount = beltMount(-1.75);
   const m = makeMonkey();
   m.position.set(0, -0.04, -0.03);
   m.rotation.y = Math.PI;
   mount.add(m);
   const slot = { kind: 'monkey', mount, obj: m, available: true, refill: 0, radius: 0.13 };
+  beltSlots.push(slot);
+  return slot;
+})();
+// Pistolen-Holster (rechte Hüfte) und Bretter (vorne) am Gürtel
+let pistolSlot = null;
+{
+  const mount = beltMount(1.35);
+  const hol = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.13, 0.05), leather);
+  hol.position.set(0, -0.06, -0.03);
+  mount.add(hol);
+  const show = buildWeapon('pistol').root;
+  show.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+  show.position.set(0, 0.02, -0.035);
+  mount.add(show);
+  pistolSlot = { kind: 'pistol', mount, obj: show, available: false, refill: 0, radius: 0.14 };
+  show.visible = false;
+  beltSlots.push(pistolSlot);
+}
+const plankBeltSlot = (() => {
+  const mount = beltMount(0);
+  const pl = makePlankMesh(0.22);
+  pl.rotation.set(0, 0, 0);
+  pl.position.set(0, -0.09, -0.03);
+  mount.add(pl);
+  const slot = { kind: 'plank', mount, obj: pl, available: true, refill: 0, radius: 0.12 };
   beltSlots.push(slot);
   return slot;
 })();
@@ -706,7 +678,7 @@ function setBeltWeapon(id, def = null) {
   beltWeaponId = id;
   beltDef = wdef;
   for (let i = beltSlots.length - 1; i >= 0; i--) {
-    if (beltSlots[i].kind === 'knife') continue;
+    if (beltSlots[i].kind !== 'mag' && beltSlots[i].kind !== 'shell') continue; // nur Munition austauschen
     belt.remove(beltSlots[i].mount);
     beltSlots.splice(i, 1);
   }
@@ -756,7 +728,7 @@ function updateBelt(dt) {
   for (const s of beltSlots) {
     if (s.available) continue;
     if (s.kind === 'grenade' && (state === 'playing' || state === 'countdown')) continue; // erst zur nächsten Welle
-    if (s.kind === 'monkey') continue; // nur über den Zähler
+    if (s.kind === 'monkey' || s.kind === 'pistol' || s.kind === 'plank') continue; // eigene Logik
     s.refill -= dt;
     if (s.refill <= 0) { s.available = true; s.obj.visible = true; }
   }
@@ -802,6 +774,8 @@ function tryBeltGrab(h) {
   best.obj.visible = false;
   best.refill = best.kind === 'knife' ? 2 : best.kind === 'grenade' ? 3 : 1.2;
   if (best.kind === 'monkey') { monkeyCount--; holdItem(h, 'monkey', makeMonkey()); syncMonkeySlot(); return true; }
+  if (best.kind === 'pistol') { const p0 = starterPistol(); if (p0) takeWeapon(p0, h); return true; }
+  if (best.kind === 'plank') { best.available = true; best.obj.visible = true; holdItem(h, 'plank', makePlankMesh(1.0)); return true; }
   if (best.kind === 'knife') holdItem(h, 'knife', makeKnife());
   else if (best.kind === 'grenade') holdItem(h, 'grenade', makeGrenade(), { slot: best });
   else if (best.kind === 'mag') holdItem(h, 'mag', makeMag(beltWeaponId), { weaponId: beltWeaponId, rounds: beltDef.capacity });
@@ -1122,6 +1096,8 @@ function updateRoundFx(dt) {
   drawRoundFx();
   if (f.t >= ROUND_DUR) { f.active = false; f.p.mesh.visible = false; }
 }
+// Blickrichtung einer Hand (um die Hochachse)
+function handYaw(h) { const f = new THREE.Vector3(0, 0, -1).applyQuaternion(h.quat); return Math.atan2(-f.x, -f.z); }
 // Klangkulisse: Musik-Spannung und zufällige Gruselgeräusche aus der Umgebung
 function updateSoundscape(dt) {
   if (state === 'playing') {
@@ -1440,6 +1416,8 @@ function giveWeapon(id, h) {
 }
 // nicht mehr benutzte gekaufte Waffen verschwinden nach einer Weile
 function updateWeaponExpiry() {
+  const p0 = starterPistol();
+  if (p0 && !p0.inBelt && p0.holder < 0 && p0 !== deskW && !p0.inMachine && elapsed - p0.lastTouch > 6) { puff(p0.root.position.clone(), 0xcfcfcf, 0.08, 1, 0.3, 0.5); holsterPistol(p0); }
   for (const w of [...arsenal]) {
     if (w.starter || w.holder >= 0 || w === deskW || w.holstered || w.inMachine) continue;
     if (elapsed - w.lastTouch > 40) { burst(w.root.position.clone(), 0xaaaaaa, 10); disposeWeapon(w); }
@@ -2575,7 +2553,7 @@ function grabCandidates(h) {
   // Dinge in Reichweite der Hand
   const list = [];
   for (const w of arsenal) {
-    if (w.holder >= 0 || w === deskW || w.holstered || w.inMachine) continue;
+    if (w.holder >= 0 || w === deskW || w.holstered || w.inMachine || w.inBelt) continue;
     w.root.updateMatrixWorld(true);
     const d = new THREE.Box3().setFromObject(w.root).distanceToPoint(h.point);
     if (d < 0.06) list.push({ d, kind: 'weapon', w });
@@ -2702,10 +2680,9 @@ function updateHandsXR(dt) {
 
     // Griff-Taste: greifen
     if (down(h, 'squeeze') && !free && settings.grip === 'toggle' && h.held && h.held.type === 'weapon' && !h.grab) releaseHand(h); // Umschalten: nochmal drücken = loslassen
-    else if (down(h, 'squeeze') && free) {
+    else if (down(h, 'squeeze') && free && !(state === 'setup' && setup.align)) {
       if (tryWeaponGrab(h)) { /* zweite Hand an der Waffe */ }
       else if (tryBeltGrab(h)) { /* vom Gürtel */ }
-      else if (h.point.distanceTo(plankPilePos) < 0.35) holdItem(h, 'plank', makePlankMesh(1.0)); // Brett vom Stapel
       else if (holster && inHolsterZone(h.point)) takeWeapon(holster, h); // aus dem Rückenholster
       else if (trapNear(h.point)) pullTrap(trapNear(h.point), h); // Fallen-Hebel
       else if (machineNear(h.point)) useMachine(machineNear(h.point), h); // Automat / Aufrüster
@@ -2975,7 +2952,7 @@ const TOOL_HELP = {
   wallbuy: ['WANDKAUF: Mit dem Laser auf eine markierte Wand zeigen und Abzug drücken.', 'Dort hängt jede Runde eine zufällige Waffe zum Kaufen.'],
   mbox: ['GLÜCKSKISTE: Laser auf den Boden, Abzug drücken (ziehen = Ausrichtung).', 'Für 950 Punkte gibt es eine zufällige Waffe – auch die Wunderwaffe.'],
   erase: ['LÖSCHEN: Mit dem Laser auf eine Fläche zeigen (wird rot),', 'Abzug = diese Fläche entfernen.'],
-  align: ['AUSRICHTEN: Mit dem Laser eine Linie am Boden ENTLANG EINER ECHTEN WAND ziehen –', 'die Karte rastet daran ein. Stick ◀ ▶ drehen · ▲▼ schieben · 2. Wand = Feinschliff.'],
+  align: ['AUSRICHTEN: GRIFF-TASTE HALTEN = Karte anfassen und mit der Hand hinschieben/drehen.', 'Fein: linker Stick schieben, rechter Stick drehen · Laser-Linie an echter Wand = einrasten.'],
   floor: ['BODENHÖHE: Controller auf den Boden legen und Abzug drücken, dann mit', 'Stick ▲▼ fein einstellen, bis das Gitter genau auf dem echten Boden liegt.']
 };
 function refreshSetupPanel() {
@@ -2989,7 +2966,7 @@ function refreshSetupPanel() {
       : setup.tool ? TOOL_HELP[setup.tool] : ['Wähle unten ein Werkzeug. Tipp: zuerst die Bodenhöhe prüfen, dann Wände,', 'Türen/Fenster, Möbel, Wandkäufe und die Glückskiste. Räume kannst du speichern.'];
     text(ctx, help[0], w / 2, 86, 20, '#cfd8e3');
     text(ctx, help[1], w / 2, 114, 20, '#cfd8e3');
-    text(ctx, `Wände ${count('wall')} · Türen ${count('door')} · Fenster ${count('window')} · Tische ${count('table')} · Stühle ${count('chair')} · Wandkäufe ${count('wallbuy')} · Kiste ${count('mbox') ? '✔' : '–'} · Automaten ${count('perk')} · Fallen ${count('trap')} · Aufrüster ${count('upgrade') ? '✔' : '–'} · Ständer ${count('bench') ? '✔' : '–'}`, w / 2, 150, 18, '#9ad', 'center', true);
+    text(ctx, `Wände ${count('wall')} · Türen ${count('door')} · Fenster ${count('window')} · Tische ${count('table')} · Stühle ${count('chair')} · Wandkäufe ${count('wallbuy')} · Kiste ${count('mbox') ? '✔' : '–'} · Automaten ${count('perk')} · Fallen ${count('trap')} · Aufrüster ${count('upgrade') ? '✔' : '–'}`, w / 2, 150, 18, '#9ad', 'center', true);
     text(ctx, `Boden ${floorOffset >= 0 ? '+' : ''}${(floorOffset * 100).toFixed(1)} cm${setup.align ? ` · Drehung ${Math.round(THREE.MathUtils.radToDeg(setup.align.angle))}°` : ''}`, w / 2, 174, 18, '#9ad', 'center', true);
     if (setup.msg) text(ctx, setup.msg, w / 2, 204, 22, '#ffcc33', 'center', true);
     text(ctx, `Version ${VERSION}`, w - 22, 26, 16, '#6b8ab0', 'right');
@@ -3001,8 +2978,7 @@ function refreshSetupPanel() {
     ], 760),
     ...row(290, 56, [
       { id: 'table', label: '🪑 Tisch', active: setup.tool === 'table', onClick: () => setTool('table') },
-      { id: 'chair', label: '💺 Stuhl', active: setup.tool === 'chair', onClick: () => setTool('chair') },
-      { id: 'bench', label: '🔫 Waffenständer', font: 26, active: setup.tool === 'bench', onClick: () => setTool('bench') }
+      { id: 'chair', label: '💺 Stuhl', active: setup.tool === 'chair', onClick: () => setTool('chair') }
     ], 760),
     ...row(354, 56, [
       { id: 'wallbuy', label: '💰 Wandkauf', font: 23, active: setup.tool === 'wallbuy', onClick: () => setTool('wallbuy') },
@@ -3065,7 +3041,7 @@ function afterRoomLoad(n, name) {
   setup.confirm = -1;
   setup.last = null;
   syncBench();
-  resetWeapons();
+  resetWeapons(false, false);
   saveRoom();
   SFX.magIn();
   setTool('align');
@@ -3073,16 +3049,14 @@ function afterRoomLoad(n, name) {
   refreshSetupPanel();
 }
 // Waffenständer-Gestell an die (evtl. verschobene) Ständer-Fläche anpassen
+// alte gespeicherte Waffenständer entfernen (gibt es nicht mehr)
 function syncBench() {
-  const b = surfacesOf('bench')[0];
+  for (const b of surfacesOf('bench')) removeSurface(b);
   bench = null;
-  if (b) placeBench(b.center.clone(), b.yaw);
-  else if (benchRack) benchRack.visible = false;
 }
 // ---- Ausrichten: gespeicherte Karte drehen/verschieben, bis sie auf den echten Raum passt ----
 function beginAlign() {
   setup.align = { base: serializeRoom(), angle: 0, pivot: headPos.clone().setY(0), offset: new THREE.Vector3(), dirty: false, t: 0, lines: 0 };
-  if (benchRack) benchRack.visible = false;
 }
 function applyAlign(force = false) {
   const a = setup.align;
@@ -3106,7 +3080,7 @@ function endAlign() {
   applyAlign();
   setup.align = null;
   syncBench();
-  resetWeapons();
+  resetWeapons(false, false);
   saveRoom();
 }
 // Linie entlang einer echten Wand gezogen → passende gespeicherte Wand darauf einrasten
@@ -3418,13 +3392,6 @@ function setupTriggerUp() {
   } else if (setup.tool === 'window') {
     if (len < 0.25) setup.msg = 'Zu schmal – Breite unter dem Fenster aufziehen';
     else { setup.pending = { type: 'window', a: d.start, b: d.cur, stage: 'bottom', bottom: 0.9, top: 2.0, src: d.src }; setup.msg = ''; }
-  } else if (setup.tool === 'bench') {
-    const yaw = len > 0.2 ? Math.atan2(-(d.cur.z - d.start.z), d.cur.x - d.start.x) : headYaw();
-    placeBench(len > 0.2 ? d.start.clone().add(d.cur).multiplyScalar(0.5) : d.start, yaw);
-    resetWeapons();
-    setup.msg = 'Waffenständer platziert';
-    SFX.magIn();
-    saveRoom();
   } else if (setup.tool === 'table' || setup.tool === 'chair') {
     if (len < 0.15) setup.msg = 'Zu klein – Grundfläche von Ecke zu Ecke aufziehen';
     else {
@@ -3549,17 +3516,44 @@ function updateSetup(dt) {
     setup.rotT -= dt;
     if (setup.rotT <= 0) { rotateBox(setup.last, setup.last.yaw - stickX * 0.1); setup.rotT = 0.05; }
   }
-  // Ausrichten: Stick ◀ ▶ dreht die Karte um den Kopf, ▲▼ schiebt sie in Blickrichtung
+  // Ausrichten:
+  //  · Griff-Taste halten = Karte „anfassen“: sie folgt der Hand (verschieben) und dreht sich mit dem Handgelenk
+  //  · linker Stick = in alle Richtungen schieben, rechter Stick ◀ ▶ = drehen (fein)
   if (setup.align && !d) {
     const a = setup.align;
-    if (Math.abs(stickX) > 0.3) { alignRotate(-stickX * dt * 0.35, headPos.clone().setY(0)); }
-    if (Math.abs(stickY) > 0.3) {
-      const yaw = headYaw();
-      a.offset.addScaledVector(new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), -stickY * dt * 0.3);
+    const grabber = renderer.xr.isPresenting ? hands.find(h => h.src && h.btn.squeeze && !h.held) : null;
+    if (grabber) {
+      const hy = handYaw(grabber);
+      if (!a.grab || a.grab.h !== grabber) {
+        a.grab = { h: grabber, start: grabber.point.clone().setY(0), yaw0: hy, angle0: a.angle, offset0: a.offset.clone() };
+        pulse(grabber, 0.5, 40);
+        setup.msg = 'Karte gepackt – Hand bewegen = schieben, Handgelenk drehen = drehen';
+      }
+      const g = a.grab;
+      const dYaw = Math.atan2(Math.sin(hy - g.yaw0), Math.cos(hy - g.yaw0));
+      const dP = grabber.point.clone().setY(0).sub(g.start);
+      // Transformation: erst um den Griffpunkt drehen, dann um die Handbewegung verschieben
+      const q = new THREE.Quaternion().setFromAxisAngle(UP, dYaw);
+      const t = a.pivot.clone().add(g.offset0).sub(g.start).applyQuaternion(q).add(g.start).add(dP);
+      a.angle = g.angle0 + dYaw;
+      a.offset.copy(t.sub(a.pivot));
       a.dirty = true;
+      if (Math.random() < dt * 8) pulse(grabber, 0.08, 10);
+    } else if (a.grab) { a.grab = null; setup.msg = 'Losgelassen – passt es? Sonst nochmal packen'; refreshSetupPanel(); }
+    else {
+      const L = hands[0], R = hands[1];
+      const mx = renderer.xr.isPresenting ? (L && L.stickX) || 0 : stickX, my = renderer.xr.isPresenting ? (L && L.stickY) || 0 : stickY;
+      const rx = renderer.xr.isPresenting ? (R && R.stickX) || 0 : 0;
+      if (Math.abs(rx) > 0.3) alignRotate(-rx * dt * 0.3, headPos.clone().setY(0));
+      if (Math.abs(mx) > 0.25 || Math.abs(my) > 0.25) {
+        const yaw = headYaw();
+        const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+        a.offset.addScaledVector(right, mx * dt * 0.35).addScaledVector(fwd, -my * dt * 0.35);
+        a.dirty = true;
+      }
     }
     a.t -= dt;
-    if (a.dirty && a.t <= 0) { a.t = 0.12; applyAlign(); refreshSetupPanel(); }
+    if (a.dirty && a.t <= 0) { a.t = a.grab ? 0.06 : 0.12; applyAlign(); if (!a.grab) refreshSetupPanel(); }
   }
   if (!d) lenLabel.mesh.visible = false;
   // Bodenhöhe fein einstellen
@@ -3588,6 +3582,7 @@ function updateSetup(dt) {
 }
 function enterSetup() {
   state = 'setup';
+  { const p0 = starterPistol(); if (p0 && (p0.holder >= 0 || p0.phys)) holsterPistol(p0); } // Hände frei zum Einrichten
   setEditMode(true);
   clearZombies();
   clearPlanks();
@@ -3723,8 +3718,28 @@ function refreshSettings() {
 function startPressed() {
   if (state === 'menu' || state === 'over') startCountdown();
 }
+// Karte komplett aufräumen: nichts bleibt von der letzten Runde liegen
+function resetMap() {
+  for (const m of [...looseMags]) removeLooseMag(m);
+  for (const k of knives.splice(0)) if (k.obj.parent) k.obj.parent.remove(k.obj);
+  knifeSlot.available = true; knifeSlot.obj.visible = true;
+  for (const h of hands) { if (h.held && h.held.type !== 'weapon') { h.ray.remove(h.held.obj); h.held = null; } h.grab = null; h.pull = null; }
+  clearDebris();
+  for (const a of arrows.splice(0)) if (a.obj.parent) a.obj.parent.remove(a.obj);
+  for (const f of flameParts.splice(0)) scene.remove(f.obj);
+  burning.clear();
+  for (const b of bolts.splice(0)) { scene.remove(b.obj); b.obj.geometry.dispose(); }
+  for (const p0 of plasmas.splice(0)) { p0.obj.children[0].material.dispose(); scene.remove(p0.obj); }
+  for (const t of traps) { t.state = 'ready'; t.t = 0; }
+  // alle Waffen außer der Startpistole verschwinden, die Pistole kommt ins Holster
+  if (holster) { holster.holstered = false; disposeWeapon(holster); holster = null; }
+  for (const w of [...arsenal]) if (!w.starter) disposeWeapon(w);
+  const p0 = starterPistol();
+  if (p0 && (p0.phys || (p0.holder < 0 && p0 !== deskW && !p0.inBelt))) holsterPistol(p0);
+}
 function startCountdown() {
   state = 'countdown';
+  resetMap();
   countdown = 3.999;
   lastResult = null;
   menuPanel.visible = false;
@@ -4150,7 +4165,8 @@ const timers = [];
 const later = (sec, fn) => timers.push({ t: sec, fn });
 function equipDesk(w) {
   if (deskW === w) return;
-  if (deskW) { const old = deskW; deskW = null; camera.remove(old.root); scene.add(old.root); placeOnBench([old]); }
+  if (deskW) { const old = deskW; deskW = null; camera.remove(old.root); scene.add(old.root); if (old.starter) holsterPistol(old); else makeLoose(old); }
+  if (w.inBelt) { w.inBelt = false; w.root.visible = true; if (pistolSlot) { pistolSlot.available = false; pistolSlot.obj.visible = false; } }
   for (const h of hands) if (heldWeapon(h) === w) h.held = null;
   if (w.phys) { removeDynamic(w.phys); w.phys = null; }
   w.holder = -1;
@@ -4331,7 +4347,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   bench = null;
   lastResult = null;
   setup.autoImport = 4;
-  setTimeout(() => { enterSetup(); for (const w of arsenal) { refillWeapon(w); if (!w.phys) makeLoose(w); } }, 400);
+  setTimeout(() => { enterSetup(); resetWeapons(false, false); }, 400);
 });
 renderer.xr.addEventListener('sessionend', () => {
   scene.background = desktopBackground;
@@ -4473,5 +4489,5 @@ window.__game = {
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,
-  get monkeyCount() { return monkeyCount; }, lure, traps, pullTrap, roundFx, upgradeWeapon, set wave(v) { wave = v; }, set toSpawn(v) { toSpawn = v; }, spawnWeapon, resetWeapons, settings, tryFire, arrows, machines, upg, perks, useMachine, get points() { return points; }, set points(v) { points = v; }, wallbuys, mbox, useBox, tryBuy, giveWeapon, get holster() { return holster; }, plasmas, setTool, setupTriggerDown, setupTriggerUp, alignToLine, loadSlot, saveSlot, serializeRoom, setupWallbuys, setupMysteryBox, surfaceAt, updateSetup, get benchRack() { return benchRack; }
+  get monkeyCount() { return monkeyCount; }, lure, traps, pullTrap, roundFx, upgradeWeapon, set wave(v) { wave = v; }, set toSpawn(v) { toSpawn = v; }, spawnWeapon, resetWeapons, settings, tryFire, arrows, machines, upg, perks, useMachine, get points() { return points; }, set points(v) { points = v; }, wallbuys, mbox, useBox, tryBuy, giveWeapon, get holster() { return holster; }, plasmas, setTool, setupTriggerDown, setupTriggerUp, alignToLine, loadSlot, saveSlot, serializeRoom, setupWallbuys, setupMysteryBox, surfaceAt, updateSetup
 };

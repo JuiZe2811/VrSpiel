@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { makePanel } from './util.js?v=25';
-import { heightAt } from './room.js?v=25';
-import { SFX } from './sfx.js?v=25';
+import { makePanel } from './util.js?v=26';
+import { heightAt } from './room.js?v=26';
+import { SFX } from './sfx.js?v=26';
 
 // Kurzlebige Effekte: Leuchtspuren, Partikel, Punkte-Text, Einschusslöcher, Hülsen
 let scene;
@@ -141,6 +141,7 @@ export function addDebris(obj, vel, life = 4) {
   debris.push({ obj, vel, life, ang: new THREE.Vector3().randomDirection().multiplyScalar(18), bounced: 0 });
   if (debris.length > 50) { const d = debris.shift(); scene.remove(d.obj); }
 }
+export function clearDebris() { for (const d of debris.splice(0)) if (d.obj.parent) d.obj.parent.remove(d.obj); }
 export function updateDebris(dt) {
   for (let i = debris.length - 1; i >= 0; i--) {
     const d = debris[i];
