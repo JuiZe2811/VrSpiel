@@ -1,15 +1,15 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=23';
+import { VERSION } from './version.js?v=24';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=23';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=23';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=23';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=23';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=23';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt } from './room.js?v=23';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx } from './effects.js?v=23';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure } from './zombies.js?v=23';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=24';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=24';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=24';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=24';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=24';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=24';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx } from './effects.js?v=24';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure } from './zombies.js?v=24';
 
 // =============================================================================
 // Grundgerüst
@@ -3186,7 +3186,7 @@ function wallEnds() {
   for (const w of surfacesOf('wall')) pts.push(w.a.clone().setY(0), w.a.clone().addScaledVector(w.right, w.width).setY(0));
   return pts;
 }
-function snapCorner(p, maxD = 0.22) {
+function snapCorner(p, maxD = 0.4) {
   let best = null, bd = maxD;
   for (const e of wallEnds()) { const d = Math.hypot(e.x - p.x, e.z - p.z); if (d < bd) { bd = d; best = e; } }
   return best;
@@ -3362,7 +3362,13 @@ function setupTriggerUp() {
     saveRoom();
   } else if (setup.tool === 'wall') {
     const s = addWall(d.start, d.cur, headPos);
-    if (s) { setup.last = s; setup.msg = 'Wand hinzugefügt'; SFX.magIn(); saveRoom(); } else setup.msg = 'Zu kurz – nochmal';
+    if (s) {
+      const fixed = closeRoomGaps(0.6); // an Nachbarwände anheften
+      setup.last = surfacesOf('wall').includes(s) ? s : null;
+      const open = openWallEnds();
+      setup.msg = `Wand hinzugefügt${fixed ? ' · angeheftet' : ''}${open ? ` · noch ${open} offene Enden` : ' · Raum geschlossen ✔'}`;
+      SFX.magIn(); saveRoom();
+    } else setup.msg = 'Zu kurz – nochmal';
   } else if (setup.tool === 'door') {
     const s = addOpening('door', d.start, d.cur, headPos, 0, 2.05);
     if (s) { setup.last = s; setup.msg = 'Tür hinzugefügt'; SFX.magIn(); saveRoom(); } else setup.msg = 'Zu schmal – nochmal';
@@ -3533,7 +3539,7 @@ function updateSetup(dt) {
     setup.importReq = false;
     setup.autoImport = 0;
     setup.msg = n > 0 ? `${n} Flächen aus der Quest-Raumeinrichtung übernommen – prüfen & ergänzen` : 'Keine Raumdaten gefunden – bitte selbst einzeichnen';
-    if (n > 0) saveRoom();
+    if (n > 0) { closeRoomGaps(0.9); saveRoom(); }
     refreshSetupPanel();
   }
 }
@@ -3550,6 +3556,8 @@ function enterSetup() {
 }
 function finishSetup() {
   endAlign();
+  // Wände zu einem geschlossenen Raum verbinden (Lücken schließen, letzte Öffnung zumachen)
+  if (surfacesOf('wall').length >= 2 && closeRoom() > 0) { floatingText('Raum geschlossen', headPos.clone().add(new THREE.Vector3(0, -0.2, 0)), '#7dffa8'); buildNav(headPos); }
   unhover();
   lenLabel.mesh.visible = false;
   setup.view = 'main';

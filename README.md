@@ -5,6 +5,13 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 24 – Wände schließen sich automatisch
+
+- **Anheften beim Zeichnen**: Jede neue Wand verbindet sich mit den vorhandenen. Ecken werden bis zum Schnittpunkt verlängert oder gekürzt, Wände, die kurz vor einer anderen enden, rasten dort ein (T-Stoß), kleine Lücken werden geschlossen. Start- und Endpunkt rasten schon ab 40 cm an vorhandenen Ecken ein.
+- Die Meldung zeigt dabei, wie viele **offene Enden** noch übrig sind – oder „Raum geschlossen ✔“.
+- **Beim Tippen auf „Fertig“** wird der Raum endgültig geschlossen: Restlücken werden verbunden, und wenn nur noch eine Seite offen ist, wird sie mit einer Wand (bzw. über eine rechtwinklige Ecke) zugemacht.
+- Auch Wände aus der **Quest-Raumeinrichtung** werden so lückenlos verbunden. Türen und Fenster in den Wänden bleiben dabei erhalten.
+
 ## Neu in Version 23 – Aufrüst-Stufen, Balance & Rundenwechsel
 
 **Aufrüsten in drei Stufen**

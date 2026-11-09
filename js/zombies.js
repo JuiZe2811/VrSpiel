@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=23';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=23';
-import { SFX3D } from './sfx.js?v=23';
-import { burst, addDebris, shockwave } from './effects.js?v=23';
-import { cachedGeo } from './util.js?v=23';
+import { room, surfacesOf, isOpening } from './room.js?v=24';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=24';
+import { SFX3D } from './sfx.js?v=24';
+import { burst, addDebris, shockwave } from './effects.js?v=24';
+import { cachedGeo } from './util.js?v=24';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),

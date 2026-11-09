@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addStaticBox, removeStatic } from './physics.js?v=23';
+import { addStaticBox, removeStatic } from './physics.js?v=24';
 
 // Raum-Modell: echte Wände, Tische und Stühle des Spielers.
 // Jede Fläche bekommt eine sichtbare Vorschau (im Einrichtungsmodus), einen unsichtbaren
@@ -434,3 +434,123 @@ export function loadRoom() {
   try { data = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return 0; }
   return deserializeRoom(data);
 }
+
+// ---- Wände automatisch zu einem geschlossenen Raum verbinden ---------------------------------
+// Lücken zwischen Wandenden werden geschlossen: Ecken werden bis zum Schnittpunkt verlängert,
+// Enden nahe an einer anderen Wand rasten dort ein (T-Stoß), sonst entsteht eine Verbindungswand.
+const END_EPS = 0.03;
+function wallEndsInfo() {
+  const out = [];
+  for (const w of surfacesOf('wall')) {
+    const A = w.a.clone().setY(0), B = w.a.clone().addScaledVector(w.right, w.width).setY(0);
+    out.push({ w, which: 'a', p: A, other: B }, { w, which: 'b', p: B, other: A });
+  }
+  return out;
+}
+function onOtherWall(e) {
+  for (const w of surfacesOf('wall')) {
+    if (w === e.w) continue;
+    const rel = e.p.clone().sub(w.a);
+    const u = rel.dot(w.right);
+    if (u > -END_EPS && u < w.width + END_EPS && Math.abs(rel.dot(w.normal)) < 0.02) return true;
+  }
+  return false;
+}
+function freeEnds(ends) {
+  return ends.filter(e => !ends.some(o => o.w !== e.w && o.p.distanceTo(e.p) < END_EPS) && !onOtherWall(e));
+}
+function replaceWall(w, A, B) {
+  const inside = w.mid.clone().add(w.normal), h = w.height;
+  removeSurface(w);
+  return addWall(A, B, inside, h);
+}
+// Schnittpunkt zweier Geraden (p1 + t*d1, p2 + s*d2) in der Bodenebene
+function lineIntersect(p1, d1, p2, d2) {
+  const den = d1.x * d2.z - d1.z * d2.x;
+  if (Math.abs(den) < 1e-6) return null;
+  const t = ((p2.x - p1.x) * d2.z - (p2.z - p1.z) * d2.x) / den;
+  return new THREE.Vector3(p1.x + d1.x * t, 0, p1.z + d1.z * t);
+}
+// Mittelpunkt aller Wände ≈ Raummitte (für die Innenseite neuer Wände)
+function roomCenter() { const ws = surfacesOf('wall'); const c = new THREE.Vector3(); for (const w of ws) c.add(w.mid); return ws.length ? c.divideScalar(ws.length).setY(0) : c; }
+const dirOf = (e) => e.p.clone().sub(e.other).setY(0).normalize(); // zeigt aus der Wand heraus
+// Ein freies Ende auf einen Punkt setzen (Wand wird verlängert bzw. gekürzt)
+function moveEnd(e, P) {
+  if (P.distanceTo(e.other) < 0.25) return null;
+  return replaceWall(e.w, e.which === 'a' ? P : e.other, e.which === 'a' ? e.other : P);
+}
+export function closeRoomGaps(maxGap = 0.9) {
+  let fixed = 0;
+  for (let iter = 0; iter < 40; iter++) {
+    const ends = wallEndsInfo();
+    const free = freeEnds(ends);
+    let best = null, bd = maxGap;
+    // 1) zwei freie Enden nahe beieinander
+    for (let i = 0; i < free.length; i++) for (let j = i + 1; j < free.length; j++) {
+      const a = free[i], b = free[j];
+      if (a.w === b.w) continue;
+      const d = a.p.distanceTo(b.p);
+      if (d < bd) { bd = d; best = { kind: 'pair', a, b }; }
+    }
+    // 2) freies Ende nahe an einer anderen Wand (T-Stoß)
+    if (!best) {
+      for (const e of free) for (const w of surfacesOf('wall')) {
+        if (w === e.w) continue;
+        const rel = e.p.clone().sub(w.a);
+        const u = rel.dot(w.right), off = Math.abs(rel.dot(w.normal));
+        if (u > 0.05 && u < w.width - 0.05 && off > 0.01 && off < Math.min(maxGap, 0.45) && off < bd) { bd = off; best = { kind: 'tee', e, w }; }
+      }
+    }
+    if (!best) break;
+    if (best.kind === 'tee') {
+      const X = lineIntersect(best.e.p, dirOf(best.e), best.w.a, best.w.right);
+      if (!X || !moveEnd(best.e, X)) break;
+      fixed++;
+      continue;
+    }
+    const { a, b } = best;
+    const da = dirOf(a), db = dirOf(b);
+    if (a.p.distanceTo(b.p) < END_EPS) break;
+    let ok = false;
+    if (Math.abs(da.dot(db)) < 0.96) {
+      // Ecke: beide Wände bis zum Schnittpunkt verlängern/kürzen
+      const X = lineIntersect(a.p, da, b.p, db);
+      if (X && X.distanceTo(a.p) < maxGap * 1.6 && X.distanceTo(b.p) < maxGap * 1.6) {
+        const bw = b.w, bWhich = b.which, bOther = b.other;
+        if (moveEnd(a, X)) {
+          const nb = surfacesOf('wall').find(w => w === bw);
+          if (nb) replaceWall(nb, bWhich === 'a' ? X : bOther, bWhich === 'a' ? bOther : X);
+          ok = true;
+        }
+      }
+    }
+    if (!ok) {
+      // (fast) parallel oder kein sinnvoller Schnittpunkt: Ende an das andere Ende setzen bzw. Verbindungswand
+      const perp = Math.abs(b.p.clone().sub(a.p).dot(new THREE.Vector3(-da.z, 0, da.x)));
+      if (perp < 0.12 && Math.abs(da.dot(db)) > 0.96) ok = !!moveEnd(a, b.p.clone());
+      if (!ok) ok = !!addWall(a.p.clone(), b.p.clone(), roomCenter(), a.w.height);
+    }
+    if (!ok) break;
+    fixed++;
+  }
+  return fixed;
+}
+// Raum ganz schließen: bleiben genau zwei offene Enden, werden sie mit einer Wand verbunden
+export function closeRoom() {
+  let n = closeRoomGaps(1.2);
+  const free = freeEnds(wallEndsInfo());
+  if (free.length === 2 && free[0].w !== free[1].w && free[0].p.distanceTo(free[1].p) < 8) {
+    const a = free[0], b = free[1];
+    // Wenn die beiden Wände senkrecht zueinander stehen: über eine Ecke schließen (zwei Wände)
+    const X = lineIntersect(a.p, dirOf(a), b.p, dirOf(b));
+    const forwardA = X && X.clone().sub(a.p).dot(dirOf(a)) > 0.2, forwardB = X && X.clone().sub(b.p).dot(dirOf(b)) > 0.2;
+    if (X && forwardA && forwardB && Math.abs(dirOf(a).dot(dirOf(b))) < 0.3) {
+      const ins = roomCenter();
+      if (addWall(a.p.clone(), X, ins, a.w.height)) n++;
+      if (addWall(X, b.p.clone(), ins, a.w.height)) n++;
+    } else if (addWall(a.p.clone(), b.p.clone(), roomCenter(), a.w.height)) n++;
+    n += closeRoomGaps(0.3);
+  }
+  return n;
+}
+export const openWallEnds = () => freeEnds(wallEndsInfo()).length;
