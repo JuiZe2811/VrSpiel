@@ -4,9 +4,10 @@ import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { makePanel, panelBg, roundRect, MAT, cachedGeo } from './util.js?v=18';
 import { SFX, ensureAudio, setListener, SFX_PLAYER } from './sfx.js?v=18';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=18';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=18';
+import './weaponkit.js?v=18';
 import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=18';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere } from './room.js?v=18';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere } from './room.js?v=18';
 import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal } from './effects.js?v=18';
 import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank } from './zombies.js?v=18';
 
@@ -148,8 +149,27 @@ const isFree = (h) => !h.held && !h.grab && !h.pull;
 // =============================================================================
 // Waffen: genau ein Exemplar pro Waffe, liegen mit Physik im Raum
 // =============================================================================
-const arsenal = WEAPON_ORDER.map(id => createWeapon(id));
-for (const w of arsenal) scene.add(w.root);
+// Alle Waffen, die gerade in der Welt existieren (Startwaffe + gekaufte/gezogene)
+const arsenal = [];
+function spawnWeapon(id, starter = false) {
+  const w = createWeapon(id);
+  w.starter = starter;
+  w.lastTouch = elapsed;
+  scene.add(w.root);
+  arsenal.push(w);
+  return w;
+}
+function disposeWeapon(w) {
+  for (const h of hands) { if (heldWeapon(h) === w) h.held = null; if (h.grab && h.grab.w === w) h.grab = null; }
+  if (deskW === w) { deskW = null; camera.remove(w.root); }
+  if (holster === w) holster = null;
+  if (w.phys) { removeDynamic(w.phys); w.phys = null; }
+  if (w.root.parent) w.root.parent.remove(w.root);
+  const i = arsenal.indexOf(w);
+  if (i >= 0) arsenal.splice(i, 1);
+}
+let holster = null; // im Rückenholster verstaute Waffe
+spawnWeapon('pistol', true);
 let deskW = null; // am PC gehaltene Waffe
 const mode = (w) => w.def.modes[w.modeIdx];
 
@@ -160,7 +180,7 @@ function makeLoose(w, vel, angVel) {
   w.body.rotation.set(0, 0, 0);
   w.phys = addDynamic(w.root, w.localBox, MASS[w.id], {
     vel, angVel,
-    onLost: () => placeOnBench([w]),
+    onLost: () => (w.starter ? placeOnBench([w]) : disposeWeapon(w)),
     onImpact: (v) => SFX.thud(Math.min(0.6, v * 0.12))
   });
 }
@@ -171,8 +191,10 @@ function takeWeapon(w, h) {
     if (o.grab && o.grab.w === w && o !== h) o.grab = null;
   }
   if (deskW === w) deskW = null;
+  if (holster === w) { holster = null; w.holstered = false; w.root.visible = true; }
   if (w.phys) { removeDynamic(w.phys); w.phys = null; }
   if (w.root.parent !== scene) scene.add(w.root);
+  w.lastTouch = elapsed;
   w.holder = h.i;
   w.twoHanding = false;
   h.held = { type: 'weapon', w };
@@ -191,8 +213,27 @@ function dropWeapon(h, throwIt = true) {
   w.twoHanding = false;
   w.handTravel = false;
   w.parts.flash.visible = false;
+  w.lastTouch = elapsed;
+  // über der Schulter losgelassen: ins Rückenholster stecken
+  if (!holster && inHolsterZone(h.point)) {
+    holster = w;
+    w.holstered = true;
+    w.root.visible = false;
+    SFX.click(700, 0.4, 0.08);
+    pulse(h, 0.6, 60);
+    boardDirty = true;
+    return;
+  }
   makeLoose(w, throwIt ? h.vel.clone().multiplyScalar(1.2) : new THREE.Vector3(), throwIt ? h.angVel.clone() : new THREE.Vector3());
   SFX.grab();
+}
+// Rückenholster: hinter den Schultern (links oder rechts)
+function inHolsterZone(p) {
+  getViewCamera().getWorldDirection(tmpV3);
+  const f = tmpV3.setY(0).normalize();
+  const side = new THREE.Vector3(-f.z, 0, f.x);
+  const base = headPos.clone().addScaledVector(f, -0.12).add(new THREE.Vector3(0, -0.18, 0));
+  return p.distanceTo(base.clone().addScaledVector(side, 0.18)) < 0.26 || p.distanceTo(base.clone().addScaledVector(side, -0.18)) < 0.26;
 }
 function releaseGrab(h) {
   const g = h.grab;
@@ -255,9 +296,8 @@ function placeOnBench(list) {
   if (S.dot(headPos.clone().sub(bench.center)) < 0) S.negate(); // S zeigt zum Spieler
   const top = bench.height;
   let along = -0.36;
-  for (const id of WEAPON_ORDER) {
-    const w = arsenal.find(a => a.id === id);
-    const upright = id !== 'pistol';
+  for (const w of arsenal.filter(a => a.starter)) {
+    const upright = w.def.twoHand;
     const width = w.localBox.max.y - w.localBox.min.y;
     let target;
     if (upright) { target = bench.center.clone().addScaledVector(L, along + width / 2).addScaledVector(S, -0.15); along += width + 0.03; }
@@ -282,9 +322,11 @@ function placeOnBench(list) {
     if (!upright) makeLoose(w); // Pistole liegt mit Physik, Langwaffen stehen fest im Ständer
   }
 }
-function resetWeapons() {
+// Startwaffen zurück auf den Ständer; gekaufte Waffen verschwinden (removeBought)
+function resetWeapons(removeBought = false) {
+  if (removeBought) for (const w of [...arsenal]) if (!w.starter) disposeWeapon(w);
   for (const w of arsenal) if (w.holder < 0 && w !== deskW) refillWeapon(w);
-  placeOnBench(arsenal);
+  placeOnBench(arsenal.filter(w => w.starter));
 }
 
 // ---- Waffen-Mechanik -------------------------------------------------------------
@@ -298,6 +340,7 @@ function ejectObject(w, obj, speed = 1.6) {
   addDebris(obj, right.multiplyScalar(speed * THREE.MathUtils.randFloat(0.8, 1.2)).addScaledVector(upv, speed * 0.7), 3);
 }
 function ejectChamber(w) {
+  if (w.def.noEject && w.chamber !== 'empty') { w.chamber = 'empty'; return; } // Revolver/Doppelflinte/Plasma: nichts fliegt heraus
   if (w.chamber === 'empty') return;
   const spent = w.chamber === 'spent';
   const obj = w.def.feed === 'tube' ? makeShell(spent) : spent ? makeCasing(w.id === 'sniper') : makeCartridge(w.id === 'sniper');
@@ -401,8 +444,16 @@ function tryFire(w, desktopRay) {
   flashLight.distance = 2.5;
   flashLight.intensity = 4;
   puff(muzzlePos, 0xcfcfcf, w.def.pellets > 1 ? 0.09 : 0.05, 1.0, 0.12, w.def.pellets > 1 ? 0.45 : 0.3);
+  if (w.parts.spin) w.parts.spin.rotation.z += Math.PI / 3; // Revolvertrommel dreht weiter
+  if (w.def.projectile) { // Plasmakugel statt Sofort-Treffer
+    launchPlasma(muzzlePos, dir.clone(), w.def.dmg);
+    if (w.def.autoCycle) { ejectChamber(w); if (!feed(w)) w.actionOpen = w.def.holdOpen; w.cycleAnim = 1; }
+    if (inRound()) stats.shots++;
+    boardDirty = true;
+    return true;
+  }
   const cands = [...zombieHitMeshes(), ...plankMeshes(), ...roomOccluders(), ...(startButton.visible ? startButton.userData.hit : [])];
-  const dmg = DAMAGE[w.id];
+  const dmg = w.def.dmg ?? DAMAGE[w.id] ?? 30;
   let startHit = null;
   for (let p = 0; p < w.def.pellets; p++) {
     const d = dir.clone();
@@ -515,9 +566,11 @@ function setBeltWeapon(id) {
       const strip = new THREE.Mesh(cachedGeo('shellstrip', () => new THREE.BoxGeometry(0.105, 0.032, 0.008)), leather);
       strip.position.set(0, 0, -0.014);
       mount.add(strip);
-      for (let k = 0; k < 4; k++) {
-        const sh = makeShell();
-        sh.position.set(-0.036 + k * 0.024, 0.008, -0.027);
+      const round = def.ammo === 'round';
+      for (let k = 0; k < (round ? 5 : 4); k++) {
+        const sh = round ? makeCartridge(true) : makeShell();
+        if (round) sh.scale.setScalar(1.4);
+        sh.position.set(round ? -0.04 + k * 0.02 : -0.036 + k * 0.024, 0.008, -0.027);
         mount.add(sh);
         beltSlots.push({ kind: 'shell', mount, obj: sh, available: true, refill: 0, radius: 0.12 });
       }
@@ -591,7 +644,7 @@ function tryBeltGrab(h) {
   if (best.kind === 'knife') holdItem(h, 'knife', makeKnife());
   else if (best.kind === 'grenade') holdItem(h, 'grenade', makeGrenade(), { slot: best });
   else if (best.kind === 'mag') holdItem(h, 'mag', makeMag(beltWeaponId), { weaponId: beltWeaponId, rounds: WEAPON_DEFS[beltWeaponId].capacity });
-  else holdItem(h, 'shell', makeShell());
+  else { const round = WEAPON_DEFS[beltWeaponId].ammo === 'round'; const o = round ? makeCartridge(true) : makeShell(); if (round) o.scale.setScalar(1.4); holdItem(h, 'shell', o); }
   return true;
 }
 
@@ -779,6 +832,303 @@ function onGiantStomp(z, big) {
 }
 
 // =============================================================================
+// Plasmakugeln (Wunderwaffe): fliegende Geschosse mit Flächenschaden
+// =============================================================================
+const plasmaGeo = new THREE.SphereGeometry(0.035, 12, 8);
+const plasmaMat = new THREE.MeshBasicMaterial({ color: 0x7dff9a, toneMapped: false });
+const plasmas = [];
+function launchPlasma(pos, dir, dmg) {
+  const m = new THREE.Mesh(plasmaGeo, plasmaMat);
+  m.position.copy(pos);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffSpriteTex(), color: 0x55ff88, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false }));
+  glow.scale.setScalar(0.25);
+  m.add(glow);
+  scene.add(m);
+  plasmas.push({ obj: m, vel: dir.multiplyScalar(22), life: 2.5, dmg });
+  if (audioReady()) SFX.click(5200, 0.25, 0.08);
+}
+let _puffTex = null;
+function puffSpriteTex() {
+  if (_puffTex) return _puffTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
+  _puffTex = new THREE.CanvasTexture(c);
+  return _puffTex;
+}
+const audioReady = () => true;
+function updatePlasmas(dt) {
+  for (let i = plasmas.length - 1; i >= 0; i--) {
+    const p = plasmas[i];
+    p.life -= dt;
+    const step = p.vel.clone().multiplyScalar(dt);
+    raycaster.set(p.obj.position, step.clone().normalize());
+    raycaster.far = step.length() + 0.04;
+    const hit = raycaster.intersectObjects([...zombieHitMeshes(), ...roomOccluders(), ...plankMeshes()], false)[0];
+    const floorHitNow = p.obj.position.y + step.y < 0.02;
+    if (hit || floorHitNow || p.life <= 0) {
+      const at = hit ? hit.point : p.obj.position.clone();
+      p.obj.material?.dispose?.call && null;
+      p.obj.children[0].material.dispose();
+      scene.remove(p.obj);
+      plasmas.splice(i, 1);
+      // Plasma-Explosion: grünes Licht, Druckwelle, Flächenschaden (trifft den Spieler nicht)
+      burst(at, 0x66ff88, 22);
+      shockwave(at);
+      flashLight.position.copy(at); flashLight.distance = 5; flashLight.intensity = 14;
+      SFX.click(900, 0.6, 0.2);
+      if (hit && hit.object.userData.zombie) handleZombieHit(damageZombie(hit.object, hit.point, p.vel.clone().normalize(), p.dmg), hit.point, '⚡ ');
+      for (const r of explosionDamage(at, 2.4, p.dmg * 0.8)) handleZombieHit(r, r.pos.clone().setY(1.2), '⚡ ');
+      continue;
+    }
+    p.obj.position.add(step);
+  }
+}
+
+// =============================================================================
+// Punkte als Währung
+// =============================================================================
+const START_POINTS = 500;
+let points = 0;
+const free = () => gameMode === 'training';
+function award(n) { score += n; points += n; boardDirty = true; }
+function spend(price, where) {
+  if (free() || points >= price) {
+    if (!free()) points -= price;
+    boardDirty = true;
+    if (audioCtxOk()) { SFX.jingle([988, 1319], 0.12); SFX.click(3000, 0.3, 0.05); }
+    return true;
+  }
+  SFX.buzz();
+  floatingText(`Zu wenig Punkte (${price})`, where, '#ff7070');
+  return false;
+}
+const audioCtxOk = () => true;
+const ownedWeapon = (id) => arsenal.find(w => w.id === id && (w.holder >= 0 || w.holstered || w === deskW));
+// gekaufte Waffe in die Hand (VR) bzw. vor die Kamera (PC) geben
+function giveWeapon(id, h) {
+  const w = spawnWeapon(id);
+  if (h) takeWeapon(w, h); else equipDesk(w);
+  return w;
+}
+// nicht mehr benutzte gekaufte Waffen verschwinden nach einer Weile
+function updateWeaponExpiry() {
+  for (const w of [...arsenal]) {
+    if (w.starter || w.holder >= 0 || w === deskW || w.holstered) continue;
+    if (elapsed - w.lastTouch > 40) { burst(w.root.position.clone(), 0xaaaaaa, 10); disposeWeapon(w); }
+  }
+  // höchstens 8 Waffen gleichzeitig
+  const loose = arsenal.filter(w => !w.starter && w.holder < 0 && w !== deskW && !w.holstered);
+  while (arsenal.length > 8 && loose.length) disposeWeapon(loose.shift());
+}
+
+// =============================================================================
+// Wandkäufe: an markierten Wandstellen hängt jede Runde eine zufällige Waffe zum Kaufen
+// =============================================================================
+const wallbuys = [];
+const boardMat = new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.9 });
+const chalkMat = new THREE.MeshBasicMaterial({ color: 0xffd36a, toneMapped: false });
+function clearWallbuys() {
+  for (const wb of wallbuys.splice(0)) { scene.remove(wb.group); wb.label.mesh.material.map.dispose(); wb.label.mesh.material.dispose(); wb.label.mesh.geometry.dispose(); }
+}
+function setupWallbuys() {
+  clearWallbuys();
+  const pool = WEAPON_ORDER.filter(id => !WEAPON_DEFS[id].boxOnly && id !== 'pistol');
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  surfacesOf('wallbuy').forEach((s, i) => {
+    const id = pool[i % pool.length];
+    const def = WEAPON_DEFS[id];
+    const g = new THREE.Group();
+    g.position.copy(s.pos).addScaledVector(s.normal, 0.015);
+    g.lookAt(g.position.clone().add(s.normal));
+    const back = new THREE.Mesh(cachedGeo('wbboard', () => new THREE.PlaneGeometry(0.95, 0.5)), boardMat);
+    g.add(back);
+    // Kreide-Umriss
+    for (const [w, h, x, y] of [[0.92, 0.012, 0, 0.235], [0.92, 0.012, 0, -0.235], [0.012, 0.47, 0.46, 0], [0.012, 0.47, -0.46, 0]]) {
+      const l = new THREE.Mesh(cachedGeo(`chalk${w}${h}`, () => new THREE.PlaneGeometry(w, h)), chalkMat);
+      l.position.set(x, y, 0.002);
+      g.add(l);
+    }
+    const disp = buildWeapon(id);
+    disp.root.rotation.y = -Math.PI / 2;
+    disp.root.scale.setScalar(Math.min(0.85, 0.75 / Math.max(0.3, disp.localBox.max.z - disp.localBox.min.z)));
+    const holder = new THREE.Group();
+    holder.add(disp.root);
+    holder.updateMatrixWorld(true);
+    const c = new THREE.Box3().setFromObject(disp.root).getCenter(new THREE.Vector3());
+    disp.root.position.sub(c);
+    holder.position.set(0, 0.04, 0.07);
+    g.add(holder);
+    const label = makePanel(0.9, 0.12, 700);
+    label.draw((ctx, w, h) => {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, w, h);
+      text(ctx, def.name, 14, h * 0.32, 30, '#ffe7a8', 'left', true);
+      text(ctx, `💰 ${def.price}  ·  Munition ${Math.round(def.price / 2)}`, 14, h * 0.75, 26, '#ffd21f', 'left', true);
+    });
+    label.mesh.position.set(0, -0.2, 0.01);
+    g.add(label.mesh);
+    scene.add(g);
+    wallbuys.push({ s, id, def, group: g, holder, label });
+  });
+}
+function wallbuyNear(p, maxD = 0.22) {
+  let best = null, bd = maxD;
+  for (const wb of wallbuys) {
+    const d = new THREE.Box3().setFromObject(wb.holder).distanceToPoint(p);
+    if (d < bd) { bd = d; best = wb; }
+  }
+  return best;
+}
+function tryBuy(wb, h) {
+  const where = wb.group.position.clone().addScaledVector(wb.s.normal, 0.2);
+  const own = ownedWeapon(wb.id);
+  if (own) {
+    if (!spend(Math.round(wb.def.price / 2), where)) return false;
+    refillWeapon(own);
+    floatingText('Munition aufgefüllt', where, '#9fe8ff');
+    return true;
+  }
+  if (!spend(wb.def.price, where)) return false;
+  giveWeapon(wb.id, h);
+  floatingText(wb.def.name, where, '#ffe7a8');
+  speak(wb.def.name);
+  return true;
+}
+
+// =============================================================================
+// Glückskiste: für 950 Punkte eine zufällige Waffe (auch die Wunderwaffe)
+// =============================================================================
+const BOX_PRICE = 950;
+const mbox = { s: null, group: null, lid: null, beam: null, state: 'idle', t: 0, disp: null, id: null, step: 0, user: null };
+const crateMat = new THREE.MeshStandardMaterial({ color: 0x4a3018, roughness: 0.8 });
+const crateTrim = new THREE.MeshStandardMaterial({ color: 0x8a8f96, metalness: 0.9, roughness: 0.3 });
+const qTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#4a3018'; ctx.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 40; i++) { ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.25})`; ctx.fillRect(0, Math.random() * 128, 128, 2); }
+  ctx.fillStyle = '#9fe8ff'; ctx.font = 'bold 96px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#39c8ff'; ctx.shadowBlur = 18; ctx.fillText('?', 64, 70);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
+const qMat = new THREE.MeshStandardMaterial({ map: qTex, emissive: 0x2a7fa0, emissiveIntensity: 0.6, roughness: 0.7 });
+function clearMysteryBox() {
+  if (mbox.group) scene.remove(mbox.group);
+  if (mbox.disp) mbox.disp = null;
+  Object.assign(mbox, { s: null, group: null, lid: null, beam: null, state: 'idle', t: 0, id: null });
+}
+function setupMysteryBox() {
+  clearMysteryBox();
+  const s = surfacesOf('mbox')[0];
+  if (!s) return;
+  mbox.s = s;
+  const g = new THREE.Group();
+  g.position.set(s.center.x, 0, s.center.z);
+  g.rotation.y = s.yaw;
+  const W = s.hx * 2, D = s.hz * 2, H = s.height;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(W, H - 0.06, D), [crateMat, crateMat, crateMat, crateMat, qMat, qMat]);
+  body.position.y = (H - 0.06) / 2;
+  g.add(body);
+  for (const x of [-W / 2, W / 2]) for (const z of [-D / 2, D / 2]) { const e = new THREE.Mesh(cachedGeo('crateEdge', () => new THREE.BoxGeometry(0.04, 1, 0.04)), crateTrim); e.scale.y = H - 0.06; e.position.set(x, (H - 0.06) / 2, z); g.add(e); }
+  const lidPivot = new THREE.Group();
+  lidPivot.position.set(0, H - 0.06, -D / 2);
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(W + 0.02, 0.06, D + 0.02), crateMat);
+  lid.position.set(0, 0.03, D / 2);
+  lidPivot.add(lid);
+  g.add(lidPivot);
+  // Lichtstrahl nach oben
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.22, 3, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0x6fd8ff, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+  beam.position.y = H + 1.5;
+  g.add(beam);
+  const glow = new THREE.PointLight(0x6fd8ff, 1.2, 2.5);
+  glow.position.y = H + 0.3;
+  g.add(glow);
+  scene.add(g);
+  Object.assign(mbox, { group: g, lid: lidPivot, beam, glow, top: new THREE.Vector3(s.center.x, H, s.center.z) });
+}
+function boxPool() {
+  const held = new Set(arsenal.filter(w => w.holder >= 0 || w.holstered || w === deskW).map(w => w.id));
+  const ids = WEAPON_ORDER.filter(id => id !== 'pistol' && !held.has(id));
+  const weights = ids.map(id => (id === 'plasma' ? 0.5 : WEAPON_DEFS[id].tier >= 3 ? 0.8 : 1));
+  return { ids, weights };
+}
+function setBoxDisplay(id) {
+  if (mbox.disp) mbox.group.remove(mbox.disp.holder);
+  const disp = buildWeapon(id);
+  disp.root.scale.setScalar(Math.min(0.8, 0.7 / Math.max(0.3, disp.localBox.max.z - disp.localBox.min.z)));
+  const holder = new THREE.Group();
+  holder.add(disp.root);
+  disp.root.rotation.y = Math.PI / 2;
+  holder.position.set(0, mbox.s.height + 0.05, 0);
+  mbox.group.add(holder);
+  mbox.disp = { root: disp.root, holder };
+  mbox.id = id;
+}
+function useBox(h) {
+  if (!mbox.group) return false;
+  const where = mbox.top.clone().add(new THREE.Vector3(0, 0.5, 0));
+  if (mbox.state === 'offer') { // gezogene Waffe nehmen
+    mbox.group.remove(mbox.disp.holder);
+    mbox.disp = null;
+    giveWeapon(mbox.id, h);
+    mbox.state = 'close';
+    mbox.t = 0;
+    return true;
+  }
+  if (mbox.state !== 'idle') return false;
+  if (boxPool().ids.length === 0 || !spend(BOX_PRICE, where)) return false;
+  mbox.state = 'spin';
+  mbox.t = 0;
+  mbox.step = 0;
+  SFX.jingle([523, 659, 784, 1047, 784, 659], 0.18);
+  return true;
+}
+function updateMysteryBox(dt) {
+  if (!mbox.group) return;
+  mbox.t += dt;
+  mbox.beam.material.opacity = 0.12 + Math.sin(elapsed * 3) * 0.05 + (mbox.state === 'spin' ? 0.15 : 0);
+  mbox.beam.rotation.y += dt;
+  const openK = mbox.state === 'idle' ? 0 : mbox.state === 'close' ? Math.max(0, 1 - mbox.t * 2) : Math.min(1, mbox.t * 3);
+  mbox.lid.rotation.x = -1.9 * openK;
+  if (mbox.state === 'spin') {
+    // Waffen wechseln immer langsamer, die Anzeige steigt aus der Kiste
+    const interval = 0.07 + mbox.t * 0.08;
+    mbox.step -= dt;
+    if (mbox.step <= 0) {
+      mbox.step = interval;
+      const { ids } = boxPool();
+      setBoxDisplay(ids[Math.floor(Math.random() * ids.length)]);
+      SFX.click(1200 + mbox.t * 300, 0.2, 0.03);
+    }
+    if (mbox.disp) { mbox.disp.holder.position.y = mbox.s.height + 0.05 + Math.min(1, mbox.t / 4) * 0.35; mbox.disp.holder.rotation.y += dt * 2; }
+    if (mbox.t > 4.2) {
+      const { ids, weights } = boxPool();
+      let r = Math.random() * weights.reduce((a, b) => a + b, 0), pick = ids[0];
+      for (let i = 0; i < ids.length; i++) { r -= weights[i]; if (r <= 0) { pick = ids[i]; break; } }
+      setBoxDisplay(pick);
+      mbox.disp.holder.position.y = mbox.s.height + 0.4;
+      mbox.state = 'offer';
+      mbox.t = 0;
+      SFX.bonus();
+      floatingText(WEAPON_DEFS[pick].name, mbox.top.clone().add(new THREE.Vector3(0, 0.8, 0)), pick === 'plasma' ? '#7dff9a' : '#9fe8ff');
+      speak(WEAPON_DEFS[pick].name);
+    }
+  } else if (mbox.state === 'offer') {
+    if (mbox.disp) { mbox.disp.holder.rotation.y += dt * 0.8; mbox.disp.holder.position.y = mbox.s.height + 0.4 + Math.sin(elapsed * 2) * 0.03; }
+    if (mbox.t > 12) { if (mbox.disp) mbox.group.remove(mbox.disp.holder); mbox.disp = null; mbox.state = 'close'; mbox.t = 0; }
+  } else if (mbox.state === 'close' && mbox.t > 0.6) mbox.state = 'idle';
+}
+function boxNear(p) {
+  if (!mbox.group) return false;
+  if (mbox.state === 'offer' && mbox.disp) return new THREE.Box3().setFromObject(mbox.disp.holder).distanceToPoint(p) < 0.18;
+  return p.distanceTo(mbox.top) < 0.45;
+}
+
+// =============================================================================
 // Bretter annageln: Brett vom Stapel an eine Tür/ein Fenster halten und loslassen
 // =============================================================================
 const ghostPlank = new THREE.Mesh(new THREE.BoxGeometry(1, 0.13, 0.03), new THREE.MeshBasicMaterial({ color: 0x66ff88, transparent: true, opacity: 0.35, depthWrite: false }));
@@ -816,7 +1166,7 @@ function nailPlank(h) {
   addPlank(t.o);
   // drei Hammerschläge
   for (let i = 0; i < 3; i++) later(i * 0.14, () => { SFX.thunk(); pulse(h, 0.6, 30); });
-  if (inRound()) { score += 10; boardDirty = true; }
+  if (inRound()) award(10);
   floatingText('🔨 +10', t.slot.pos.clone().addScaledVector(t.o.normal, 0.1), '#ffd28a');
   return true;
 }
@@ -1034,7 +1384,7 @@ function tryWeaponGrab(h) {
   if (!w) return false;
   const p = h.point;
   const opts = [];
-  if (w.def.action !== 'pump') opts.push({ type: 'charger', d: p.distanceTo(w.sockets.chargerGrab.getWorldPosition(tmpV)) / 0.09 });
+  if (w.def.action !== 'pump' && w.def.action !== 'none') opts.push({ type: 'charger', d: p.distanceTo(w.sockets.chargerGrab.getWorldPosition(tmpV)) / 0.09 });
   if (w.sockets.foregrip) opts.push({ type: 'fore', d: p.distanceTo(w.sockets.foregrip.getWorldPosition(tmpV)) / 0.2 });
   opts.push({ type: 'swap', d: p.distanceTo(w.root.getWorldPosition(tmpV)) / 0.05 });
   opts.sort((a, b) => a.d - b.d);
@@ -1129,6 +1479,9 @@ function updateHandsXR(dt) {
       if (tryWeaponGrab(h)) { /* zweite Hand an der Waffe */ }
       else if (tryBeltGrab(h)) { /* vom Gürtel */ }
       else if (h.point.distanceTo(plankPilePos) < 0.35) holdItem(h, 'plank', makePlankMesh(1.0)); // Brett vom Stapel
+      else if (holster && inHolsterZone(h.point)) takeWeapon(holster, h); // aus dem Rückenholster
+      else if (boxNear(h.point)) useBox(h); // Glückskiste
+      else if (wallbuyNear(h.point)) tryBuy(wallbuyNear(h.point), h); // Wandkauf
       else {
         const c = grabCandidates(h)[0];
         if (c) pickCandidate(h, c);
@@ -1189,11 +1542,13 @@ function updateHeldWeapon(w, main, dt) {
       off.ray.remove(item.obj);
       off.held = null;
       insertMag(w, item.rounds);
+      if (w.def.action === 'none' && w.chamber !== 'live') feed(w);
       pulse(off, 0.8, 50); pulse(main, 0.5, 40);
     } else if (item.type === 'shell' && w.def.feed === 'tube' && w.tube < w.def.capacity && itemPos.distanceTo(w.sockets.loadPort.getWorldPosition(tmpV)) < 0.11) {
       off.ray.remove(item.obj);
       off.held = null;
       w.tube++;
+      if (w.def.action === 'none' && w.chamber !== 'live') feed(w);
       SFX.shellIn();
       pulse(off, 0.5, 30);
       boardDirty = true;
@@ -1297,7 +1652,7 @@ function row(y, h, labels, W, pad = 30, gap = 18) {
   return labels.map((b, i) => ({ ...b, x: pad + i * (bw + gap), y, w: bw, h }));
 }
 
-const setupPanel = new UIPanel(1.0, 0.72, 760);
+const setupPanel = new UIPanel(1.0, 0.84, 760);
 setupPanel.border = '#3a8bff';
 const menuPanel = new UIPanel(1.1, 0.84, 720);
 const board = new UIPanel(1.2, 0.5, 640);
@@ -1325,7 +1680,7 @@ scene.add(startButton);
 // Raum einrichten – alles per Laser (wie die Begrenzung der Quest):
 // Wände und Möbel auf dem Boden aufziehen, Waffentisch platzieren, Bodenhöhe einstellen
 // =============================================================================
-const setup = { tool: null, drag: null, pending: null, last: null, msg: '', rotT: 0, planeSupport: false, importReq: false, autoImport: 0, refT: 0 };
+const setup = { view: 'main', align: null, hoverS: null, confirm: -1, tool: null, drag: null, pending: null, last: null, msg: '', rotT: 0, planeSupport: false, importReq: false, autoImport: 0, refT: 0 };
 const previewMat = new THREE.MeshBasicMaterial({ color: 0xffee00, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide });
 const previewWall = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), previewMat);
 const previewBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), previewMat);
@@ -1361,46 +1716,179 @@ const TOOL_HELP = {
   bench: ['WAFFENSTÄNDER: Mit dem Laser auf den Boden zeigen und Abzug drücken', '(ziehen = Ausrichtung). Hier stehen die Waffen zu Beginn jeder Runde.'],
   door: ['TÜR: Laser oben an eine Türecke auf der Wand, Abzug halten,', 'zur anderen Ecke ziehen, loslassen. Unten = automatisch Boden.'],
   window: ['FENSTER: Laser an eine Fensterecke auf der Wand, Abzug halten,', 'zur gegenüberliegenden Ecke ziehen, loslassen.'],
+  wallbuy: ['WANDKAUF: Mit dem Laser auf eine markierte Wand zeigen und Abzug drücken.', 'Dort hängt jede Runde eine zufällige Waffe zum Kaufen.'],
+  mbox: ['GLÜCKSKISTE: Laser auf den Boden, Abzug drücken (ziehen = Ausrichtung).', 'Für 950 Punkte gibt es eine zufällige Waffe – auch die Wunderwaffe.'],
+  erase: ['LÖSCHEN: Mit dem Laser auf eine Fläche zeigen (wird rot),', 'Abzug = diese Fläche entfernen.'],
+  align: ['AUSRICHTEN: Mit dem Laser eine Linie am Boden ENTLANG EINER ECHTEN WAND ziehen –', 'die Karte rastet daran ein. Stick ◀ ▶ drehen · ▲▼ schieben · 2. Wand = Feinschliff.'],
   floor: ['BODENHÖHE: Controller auf den Boden legen und Abzug drücken, dann mit', 'Stick ▲▼ fein einstellen, bis das Gitter genau auf dem echten Boden liegt.']
 };
 function refreshSetupPanel() {
   const count = (t) => surfacesOf(t).length;
   const pend = setup.pending;
+  if (setup.view === 'rooms') { refreshRoomsPanel(); return; }
   setupPanel.set((ctx, w) => {
-    text(ctx, '🧱 Spielbereich einrichten', w / 2, 44, 42, '#fff', 'center', true);
+    text(ctx, '🧱 Spielbereich einrichten', w / 2, 40, 40, '#fff', 'center', true);
     const help = pend && pend.type === 'window' ? [`Laser auf die ${pend.stage === 'bottom' ? 'UNTERKANTE' : 'OBERKANTE'} des Fensters zeigen (${(pend.stage === 'bottom' ? pend.bottom : pend.top).toFixed(2)} m),`, 'Abzug = übernehmen · B/Y = abbrechen']
       : pend ? ['Mit dem Laser auf die Oberkante zeigen = Höhe (' + pend.height.toFixed(2) + ' m),', 'Abzug = übernehmen · Stick ◀ ▶ = drehen · B/Y = abbrechen']
-      : setup.tool ? TOOL_HELP[setup.tool] : ['Wähle unten ein Werkzeug. Die Zielscheiben erscheinen dann an', 'deinen Wänden, auf Tischen und Stühlen. Tipp: zuerst die Bodenhöhe prüfen.'];
-    text(ctx, help[0], w / 2, 94, 21, '#cfd8e3');
-    text(ctx, help[1], w / 2, 124, 21, '#cfd8e3');
-    text(ctx, `Wände ${count('wall')} · Türen ${count('door')} · Fenster ${count('window')} · Tische ${count('table')} · Stühle ${count('chair')} · Ständer ${count('bench') ? '✔' : '–'} · Boden ${floorOffset >= 0 ? '+' : ''}${(floorOffset * 100).toFixed(1)} cm`, w / 2, 166, 19, '#9ad', 'center', true);
-    if (setup.msg) text(ctx, setup.msg, w / 2, 200, 24, '#ffcc33', 'center', true);
+      : setup.tool ? TOOL_HELP[setup.tool] : ['Wähle unten ein Werkzeug. Tipp: zuerst die Bodenhöhe prüfen, dann Wände,', 'Türen/Fenster, Möbel, Wandkäufe und die Glückskiste. Räume kannst du speichern.'];
+    text(ctx, help[0], w / 2, 86, 20, '#cfd8e3');
+    text(ctx, help[1], w / 2, 114, 20, '#cfd8e3');
+    text(ctx, `Wände ${count('wall')} · Türen ${count('door')} · Fenster ${count('window')} · Tische ${count('table')} · Stühle ${count('chair')} · Wandkäufe ${count('wallbuy')} · Kiste ${count('mbox') ? '✔' : '–'} · Ständer ${count('bench') ? '✔' : '–'}`, w / 2, 150, 18, '#9ad', 'center', true);
+    text(ctx, `Boden ${floorOffset >= 0 ? '+' : ''}${(floorOffset * 100).toFixed(1)} cm${setup.align ? ` · Drehung ${Math.round(THREE.MathUtils.radToDeg(setup.align.angle))}°` : ''}`, w / 2, 174, 18, '#9ad', 'center', true);
+    if (setup.msg) text(ctx, setup.msg, w / 2, 204, 22, '#ffcc33', 'center', true);
     text(ctx, `Version ${VERSION}`, w - 22, 26, 16, '#6b8ab0', 'right');
   }, [
-    ...row(220, 62, [
+    ...row(226, 56, [
       { id: 'wall', label: '🧱 Wand', active: setup.tool === 'wall', onClick: () => setTool('wall') },
       { id: 'door', label: '🚪 Tür', active: setup.tool === 'door', onClick: () => setTool('door') },
       { id: 'window', label: '🪟 Fenster', active: setup.tool === 'window', onClick: () => setTool('window') }
     ], 760),
-    ...row(292, 62, [
+    ...row(290, 56, [
       { id: 'table', label: '🪑 Tisch', active: setup.tool === 'table', onClick: () => setTool('table') },
       { id: 'chair', label: '💺 Stuhl', active: setup.tool === 'chair', onClick: () => setTool('chair') },
       { id: 'bench', label: '🔫 Waffenständer', font: 26, active: setup.tool === 'bench', onClick: () => setTool('bench') }
     ], 760),
-    ...row(364, 58, [
-      { id: 'floor', label: '📏 Bodenhöhe', font: 27, active: setup.tool === 'floor', onClick: () => setTool('floor') },
-      { id: 'quest', label: '📡 Quest-Raum', font: 27, disabled: !setup.planeSupport, onClick: () => { setup.importReq = true; } },
-      { id: 'load', label: '💾 Laden', font: 27, disabled: !hasSavedRoom(), onClick: () => { const n = loadRoom(); bench = null; setup.msg = `${n} Flächen geladen (passt nur, wenn du am selben Platz gestartet bist)`; refreshSetupPanel(); } }
+    ...row(354, 56, [
+      { id: 'wallbuy', label: '💰 Wandkauf', font: 27, active: setup.tool === 'wallbuy', onClick: () => setTool('wallbuy') },
+      { id: 'mbox', label: '❓ Glückskiste', font: 27, active: setup.tool === 'mbox', onClick: () => setTool('mbox') },
+      { id: 'floor', label: '📏 Bodenhöhe', font: 27, active: setup.tool === 'floor', onClick: () => setTool('floor') }
     ], 760),
-    ...row(432, 62, [
+    ...row(418, 56, [
+      { id: 'quest', label: '📡 Quest-Raum', font: 27, disabled: !setup.planeSupport, onClick: () => { endAlign(); setup.importReq = true; } },
+      { id: 'rooms', label: '💾 Räume …', font: 27, onClick: () => { endAlign(); setup.tool = null; setup.view = 'rooms'; setup.confirm = -1; refreshSetupPanel(); } },
+      { id: 'align', label: '🧭 Ausrichten', font: 27, disabled: !room.surfaces.length, active: setup.tool === 'align', onClick: () => setTool('align') }
+    ], 760),
+    ...row(482, 56, [
+      { id: 'erase', label: '✂ Löschen', font: 27, active: setup.tool === 'erase', onClick: () => setTool('erase') },
       { id: 'undo', label: '↶ Rückgängig', font: 27, onClick: undoSurface },
-      { id: 'clear', label: '🗑 Alles löschen', font: 27, onClick: () => { clearRoom(); bench = null; setup.last = null; setup.pending = null; setup.msg = 'Alles gelöscht'; refreshSetupPanel(); } },
-      { id: 'done', label: '✔ Fertig', font: 36, onClick: finishSetup }
-    ], 760)
+      { id: 'clear', label: '🗑 Alles löschen', font: 27, onClick: () => { endAlign(); clearRoom(); syncBench(); setup.last = null; setup.pending = null; setup.msg = 'Alles gelöscht'; refreshSetupPanel(); } }
+    ], 760),
+    ...row(552, 62, [{ id: 'done', label: '✔ Fertig – los geht’s', font: 34, onClick: finishSetup }], 760, 160)
   ]);
 }
+// Speicherplätze für Räume
+const SLOT_COUNT = 5;
+function refreshRoomsPanel() {
+  const slots = roomSlots();
+  const btns = [];
+  for (let i = 0; i < SLOT_COUNT; i++) {
+    const y = 132 + i * 72;
+    btns.push({ id: 'ld' + i, label: '📂 Laden', font: 26, x: 400, y, w: 160, h: 56, disabled: !slots[i], onClick: () => loadSlot(i) });
+    btns.push({ id: 'sv' + i, label: setup.confirm === i ? '⚠ Überschreiben?' : '💾 Speichern', font: setup.confirm === i ? 21 : 26, x: 574, y, w: 160, h: 56, disabled: !room.surfaces.length, onClick: () => saveSlot(i) });
+  }
+  btns.push({ id: 'auto', label: '↺ Letzten Raum laden', font: 25, x: 30, y: 498, w: 340, h: 56, disabled: !hasSavedRoom(), onClick: () => { const n = loadRoom(); afterRoomLoad(n, 'Letzter Raum'); } });
+  btns.push({ id: 'back', label: '◀ Zurück', font: 28, x: 394, y: 498, w: 340, h: 56, onClick: () => { setup.view = 'main'; setup.confirm = -1; refreshSetupPanel(); } });
+  setupPanel.set((ctx, w) => {
+    text(ctx, '💾 Gespeicherte Räume', w / 2, 40, 40, '#fff', 'center', true);
+    text(ctx, 'Nach dem Laden die Karte mit 🧭 Ausrichten an deine echten Wände anlegen.', w / 2, 88, 20, '#cfd8e3');
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const y = 160 + i * 72, sl = slots[i];
+      text(ctx, `Raum ${i + 1}`, 40, y - 10, 26, '#fff', 'left', true);
+      text(ctx, sl ? `${sl.count} Flächen · ${new Date(sl.date).toLocaleDateString('de-DE')} ${new Date(sl.date).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : 'leer', 40, y + 16, 18, sl ? '#9ad' : '#6b778a', 'left');
+    }
+    if (setup.msg) text(ctx, setup.msg, w / 2, 580, 22, '#ffcc33', 'center', true);
+  }, btns);
+}
+function saveSlot(i) {
+  if (roomSlots()[i] && setup.confirm !== i) { setup.confirm = i; refreshSetupPanel(); return; }
+  setup.confirm = -1;
+  saveRoomSlot(i);
+  setup.msg = `Raum ${i + 1} gespeichert (${room.surfaces.length} Flächen)`;
+  SFX.magIn();
+  refreshSetupPanel();
+}
+function loadSlot(i) {
+  const n = loadRoomSlot(i);
+  afterRoomLoad(n, `Raum ${i + 1}`);
+}
+function afterRoomLoad(n, name) {
+  setup.view = 'main';
+  setup.confirm = -1;
+  setup.last = null;
+  syncBench();
+  resetWeapons();
+  saveRoom();
+  SFX.magIn();
+  setTool('align');
+  setup.msg = `${name} geladen (${n} Flächen) – jetzt an einer echten Wand ausrichten`;
+  refreshSetupPanel();
+}
+// Waffenständer-Gestell an die (evtl. verschobene) Ständer-Fläche anpassen
+function syncBench() {
+  const b = surfacesOf('bench')[0];
+  bench = null;
+  if (b) placeBench(b.center.clone(), b.yaw);
+  else if (benchRack) benchRack.visible = false;
+}
+// ---- Ausrichten: gespeicherte Karte drehen/verschieben, bis sie auf den echten Raum passt ----
+function beginAlign() {
+  setup.align = { base: serializeRoom(), angle: 0, pivot: headPos.clone().setY(0), offset: new THREE.Vector3(), dirty: false, t: 0, lines: 0 };
+  if (benchRack) benchRack.visible = false;
+}
+function applyAlign(force = false) {
+  const a = setup.align;
+  if (!a || (!a.dirty && !force)) return;
+  a.dirty = false;
+  deserializeRoom(a.base, a.angle, a.pivot, a.offset);
+  setup.hoverS = null;
+}
+// zusätzliche Drehung um einen Punkt c (in Weltkoordinaten) in die Transformation einrechnen
+function alignRotate(delta, c) {
+  const a = setup.align;
+  const q = new THREE.Quaternion().setFromAxisAngle(UP, delta);
+  const t = a.pivot.clone().add(a.offset).sub(c).applyQuaternion(q).add(c);
+  a.offset.copy(t.sub(a.pivot));
+  a.angle += delta;
+  a.dirty = true;
+}
+function endAlign() {
+  const a = setup.align;
+  if (!a) return;
+  applyAlign();
+  setup.align = null;
+  syncBench();
+  resetWeapons();
+  saveRoom();
+}
+// Linie entlang einer echten Wand gezogen → passende gespeicherte Wand darauf einrasten
+function alignToLine(p0, p1) {
+  const a = setup.align;
+  const dir = p1.clone().sub(p0).setY(0);
+  const len = dir.length();
+  if (len < 0.4) return 'Linie zu kurz – mindestens 40 cm an der Wand entlang ziehen';
+  dir.normalize();
+  const mid = p0.clone().add(p1).multiplyScalar(0.5).setY(0);
+  const lineAng = Math.atan2(dir.z, dir.x);
+  let best = null, bs = Infinity;
+  for (const w of surfacesOf('wall')) {
+    let dA = Math.atan2(w.right.z, w.right.x) - lineAng;
+    dA = Math.atan2(Math.sin(dA), Math.cos(dA));
+    if (dA > Math.PI / 2) dA -= Math.PI; else if (dA < -Math.PI / 2) dA += Math.PI; // Richtung egal
+    const dist = Math.abs(mid.clone().sub(w.mid).dot(w.normal));
+    const along = Math.max(0, Math.abs(mid.clone().sub(w.mid).dot(w.right)) - w.width / 2);
+    // beim 2. Mal nur noch fast parallele Wände (Drehung steht schon)
+    if (a.lines > 0 && Math.abs(dA) > 0.35) continue;
+    const score = Math.abs(dA) * 2.5 + dist + along * 0.5;
+    if (score < bs) { bs = score; best = { w, dA }; }
+  }
+  if (!best) return 'Keine passende Wand gefunden';
+  const w = best.w;
+  // erste Linie: drehen (um die Wandmitte, die bleibt dabei stehen); danach nur noch schieben
+  const rot = a.lines === 0 ? best.dA : 0; // atan2-Winkel und Drehung um die Hochachse haben entgegengesetzte Vorzeichen
+  if (rot) alignRotate(rot, w.mid.clone().setY(0));
+  const n = w.normal.clone().applyAxisAngle(UP, rot);
+  const shift = mid.clone().sub(w.mid.clone().setY(0)).dot(n);
+  a.offset.addScaledVector(n, shift);
+  a.dirty = true;
+  a.lines++;
+  applyAlign();
+  return a.lines === 1 ? 'Eingerastet! Optional: Linie an einer QUER stehenden Wand ziehen' : 'Feinschliff übernommen ✔';
+}
 function setTool(t) {
-  setup.tool = setup.tool === t ? null : t;
+  if (setup.tool === 'align' && t !== 'align') endAlign();
+  setup.tool = setup.tool === t && t !== 'align' ? null : t;
+  if (setup.tool === 'align' && !setup.align) beginAlign();
+  if (setup.hoverS) { unhover(); }
   setup.pending = null;
   setup.drag = null;
   setup.msg = '';
@@ -1409,8 +1897,10 @@ function setTool(t) {
 }
 function undoSurface() {
   if (setup.pending) { setup.pending = null; refreshSetupPanel(); return; }
+  if (setup.align) { setup.align.angle = 0; setup.align.offset.set(0, 0, 0); setup.align.lines = 0; setup.align.dirty = true; applyAlign(); setup.msg = 'Ausrichtung zurückgesetzt'; refreshSetupPanel(); return; }
   const list = room.surfaces.filter(s => s.type !== 'bench');
   if (!list.length) return;
+  unhover();
   removeSurface(list[list.length - 1]);
   setup.last = null;
   setup.msg = 'Letzte Fläche entfernt';
@@ -1466,6 +1956,77 @@ function openingFromDrag(d) {
 }
 const boxWithHeight = (p) => makeBox(p.type, p.p1.clone().setY(p.height), p.p2.clone().setY(p.height), p.yaw);
 
+// ---- Hilfen: Wand-Ecken einrasten, Längen-Anzeige, Löschen per Laser ----
+function wallEnds() {
+  const pts = [];
+  for (const w of surfacesOf('wall')) pts.push(w.a.clone().setY(0), w.a.clone().addScaledVector(w.right, w.width).setY(0));
+  return pts;
+}
+function snapCorner(p, maxD = 0.22) {
+  let best = null, bd = maxD;
+  for (const e of wallEnds()) { const d = Math.hypot(e.x - p.x, e.z - p.z); if (d < bd) { bd = d; best = e; } }
+  return best;
+}
+// Endpunkt einer neuen Wand: an Ecken einrasten, sonst rechte Winkel zur nächsten Wand
+function snapWallEnd(start, cur) {
+  const c = snapCorner(cur);
+  if (c && c.distanceTo(start) > 0.25) return { p: c, how: 'Ecke' };
+  const dir = cur.clone().sub(start).setY(0);
+  const len = dir.length();
+  if (len < 0.3) return { p: cur, how: '' };
+  let ref = null, bd = Infinity;
+  for (const w of surfacesOf('wall')) { const d = start.distanceTo(w.mid.clone().setY(0)) - w.width / 2; if (d < bd) { bd = d; ref = w; } }
+  if (!ref) return { p: cur, how: '' };
+  const phi = Math.atan2(ref.right.z, ref.right.x);
+  let rel = Math.atan2(dir.z, dir.x) - phi;
+  rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+  const snapped = Math.round(rel / (Math.PI / 2)) * (Math.PI / 2);
+  if (Math.abs(rel - snapped) > 0.12) return { p: cur, how: '' };
+  return { p: start.clone().add(new THREE.Vector3(Math.cos(phi + snapped), 0, Math.sin(phi + snapped)).multiplyScalar(len)), how: snapped % Math.PI === 0 ? '∥' : '90°' };
+}
+const lenLabel = makePanel(0.34, 0.09, 600);
+lenLabel.mesh.renderOrder = 40;
+lenLabel.mesh.material.depthTest = false;
+lenLabel.mesh.visible = false;
+scene.add(lenLabel.mesh);
+let lenLabelTxt = '';
+function showLenLabel(pos, str) {
+  lenLabel.mesh.visible = true;
+  lenLabel.mesh.position.copy(pos);
+  lenLabel.mesh.lookAt(headPos);
+  if (str === lenLabelTxt) return;
+  lenLabelTxt = str;
+  lenLabel.draw((ctx, w, h) => { roundRect(ctx, 2, 2, w - 4, h - 4, 14); ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fill(); text(ctx, str, w / 2, h / 2 + 2, 34, '#ffee66', 'center', true); });
+}
+function surfaceAt(r) {
+  const vis = room.surfaces.map(x => x.visual).filter(Boolean);
+  raycaster.set(r.o, r.d);
+  raycaster.far = 15;
+  const hit = raycaster.intersectObjects(vis, false)[0];
+  return hit ? room.surfaces.find(x => x.visual === hit.object) : null;
+}
+function unhover() {
+  const s0 = setup.hoverS;
+  if (s0 && s0.edges && s0._ec !== undefined) { s0.edges.material.color.setHex(s0._ec); s0.visual.material.opacity = s0._eo; }
+  setup.hoverS = null;
+}
+function hoverSurface(x) {
+  if (x === setup.hoverS) return;
+  unhover();
+  if (!x || !x.edges) return;
+  setup.hoverS = x;
+  x._ec = x.edges.material.color.getHex();
+  x._eo = x.visual.material.opacity;
+  x.edges.material.color.setHex(0xff2a2a);
+  if (x.visual.material.transparent) x.visual.material.opacity = 0.6;
+}
+function placeMysteryBoxSurface(c, yaw) {
+  for (const old of surfacesOf('mbox')) removeSurface(old);
+  const X = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), Z = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  const p1 = c.clone().addScaledVector(X, -0.42).addScaledVector(Z, -0.22), p2 = c.clone().addScaledVector(X, 0.42).addScaledVector(Z, 0.22);
+  return addBox('mbox', p1.setY(0.48), p2.setY(0.48), yaw);
+}
+
 // Abzug gedrückt (mit Laser, nicht auf ein Menü)
 function setupTriggerDown(src) {
   const tool = setup.tool;
@@ -1496,6 +2057,33 @@ function setupTriggerDown(src) {
     }
     return;
   }
+  if (tool === 'erase') {
+    const x = surfaceAt(rayOf(src));
+    if (!x) return;
+    unhover();
+    if (x === setup.last) setup.last = null;
+    removeSurface(x);
+    if (x.type === 'bench') syncBench();
+    setup.msg = `${surfaceName(x.type)} gelöscht`;
+    SFX.click();
+    saveRoom();
+    refreshSetupPanel();
+    return;
+  }
+  if (tool === 'wallbuy') {
+    const wh = wallHit(rayOf(src));
+    if (!wh) { setup.msg = surfacesOf('wall').length ? 'Zeige mit dem Laser auf eine markierte (blaue) Wand' : 'Zuerst Wände markieren'; refreshSetupPanel(); return; }
+    const u = THREE.MathUtils.clamp(wh.u, 0.45, Math.max(0.45, wh.wall.width - 0.45));
+    const pos = wh.wall.a.clone().addScaledVector(wh.wall.right, u).setY(THREE.MathUtils.clamp(wh.v, 1.0, 1.6));
+    if (surfacesOf('wallbuy').some(o => o.pos.distanceTo(pos) < 0.9)) { setup.msg = 'Zu nah an einem anderen Wandkauf'; refreshSetupPanel(); return; }
+    const x = addWallbuy(pos, wh.wall.normal);
+    setup.last = x;
+    setup.msg = `Wandkauf ${surfacesOf('wallbuy').length} platziert – jede Runde eine zufällige Waffe`;
+    SFX.magIn();
+    saveRoom();
+    refreshSetupPanel();
+    return;
+  }
   if (tool === 'door' || tool === 'window') {
     const wh = wallHit(rayOf(src));
     if (!wh) { setup.msg = surfacesOf('wall').length ? 'Zeige mit dem Laser auf eine markierte (blaue) Wand' : 'Zuerst Wände markieren – dann Türen/Fenster einzeichnen'; refreshSetupPanel(); return; }
@@ -1505,7 +2093,8 @@ function setupTriggerDown(src) {
   }
   const hit = floorHit(rayOf(src));
   if (!tool || !hit) return;
-  setup.drag = { src, start: hit, cur: hit.clone() };
+  const start = tool === 'wall' ? (snapCorner(hit) || hit) : hit;
+  setup.drag = { src, start, cur: start.clone() };
   if (src !== 'mouse') pulse(src, 0.4, 30);
 }
 function setupTriggerUp() {
@@ -1521,8 +2110,19 @@ function setupTriggerUp() {
     refreshSetupPanel();
     return;
   }
+  lenLabel.mesh.visible = false;
   const len = d.start.distanceTo(d.cur);
-  if (setup.tool === 'wall') {
+  if (setup.tool === 'align') {
+    setup.msg = alignToLine(d.start, d.cur);
+    SFX.magIn();
+  } else if (setup.tool === 'mbox') {
+    const yaw = len > 0.2 ? Math.atan2(-(d.cur.z - d.start.z), d.cur.x - d.start.x) : headYaw();
+    const x = placeMysteryBoxSurface(len > 0.2 ? d.start.clone().add(d.cur).multiplyScalar(0.5) : d.start, yaw);
+    setup.last = x;
+    setup.msg = 'Glückskiste platziert';
+    SFX.magIn();
+    saveRoom();
+  } else if (setup.tool === 'wall') {
     const s = addWall(d.start, d.cur, headPos);
     if (s) { setup.last = s; setup.msg = 'Wand hinzugefügt'; SFX.magIn(); saveRoom(); } else setup.msg = 'Zu kurz – nochmal';
   } else if (setup.tool === 'door') {
@@ -1556,15 +2156,26 @@ function updateSetup(dt) {
   for (const src of srcs) {
     const marker = src === 'mouse' ? mouseMarker : src.floorMarker;
     if (!laserTool || (src !== 'mouse' && (!isFree(src) || src.uiHover))) continue;
-    if (setup.tool === 'door' || setup.tool === 'window') {
+    if (setup.tool === 'erase') continue;
+    if (setup.tool === 'door' || setup.tool === 'window' || setup.tool === 'wallbuy') {
       const wh = setup.drag && setup.drag.src === src ? wallHit(rayOf(src), setup.drag.wall) : wallHit(rayOf(src));
       if (wh) { marker.visible = true; marker.position.copy(wh.point).addScaledVector(wh.wall.normal, 0.01); marker.quaternion.setFromUnitVectors(UP, wh.wall.normal); }
       continue;
     }
     marker.quaternion.identity();
     const hit = floorHit(rayOf(src));
-    if (hit) { marker.visible = true; marker.position.copy(hit).setY(0.003); }
+    if (hit) {
+      marker.visible = true;
+      const c = setup.tool === 'wall' && !setup.drag ? snapCorner(hit) : null;
+      marker.position.copy(c || hit).setY(0.003);
+      marker.scale.setScalar(c ? 1.8 : 1);
+    }
   }
+  if (setup.tool === 'erase') {
+    let hx = null;
+    for (const src of srcs) { if (src !== 'mouse' && (!isFree(src) || src.uiHover)) continue; hx = surfaceAt(rayOf(src)); if (hx) break; }
+    hoverSurface(hx);
+  } else if (setup.hoverS) unhover();
   // Ziehen
   const d = setup.drag;
   previewWall.visible = previewBox.visible = previewLine.visible = false;
@@ -1579,8 +2190,11 @@ function updateSetup(dt) {
     previewWall.quaternion.setFromRotationMatrix(tmpM.makeBasis(w.right, UP, w.normal));
   } else if (d) {
     const hit = floorHit(rayOf(d.src));
-    if (hit) d.cur = hit;
+    let how = '';
+    if (hit) { if (setup.tool === 'wall') { const sn = snapWallEnd(d.start, hit); d.cur = sn.p; how = sn.how; } else d.cur = hit; }
     d.yaw = suggestYaw(d.start, headYaw());
+    const L = d.start.distanceTo(d.cur);
+    if (L > 0.05) showLenLabel(d.cur.clone().setY(0.25), `${L.toFixed(2)} m${how ? ' · ' + how : ''}`);
     previewLine.visible = true;
     previewLine.geometry.setFromPoints([d.start.clone().setY(0.01), d.cur.clone().setY(0.01)]);
     if (setup.tool === 'wall' || setup.tool === 'door' || setup.tool === 'window') {
@@ -1591,6 +2205,14 @@ function updateSetup(dt) {
         previewWall.position.copy(s.center);
         previewWall.quaternion.setFromRotationMatrix(tmpM.makeBasis(s.right, UP, s.normal));
       }
+    } else if (setup.tool === 'mbox') {
+      const L2 = d.start.distanceTo(d.cur);
+      const yaw = L2 > 0.2 ? Math.atan2(-(d.cur.z - d.start.z), d.cur.x - d.start.x) : headYaw();
+      const c = L2 > 0.2 ? d.start.clone().add(d.cur).multiplyScalar(0.5) : d.start;
+      previewBox.visible = true;
+      previewBox.scale.set(0.84, 0.48, 0.44);
+      previewBox.position.set(c.x, 0.24, c.z);
+      previewBox.rotation.set(0, yaw, 0);
     } else if (setup.tool === 'table' || setup.tool === 'chair') {
       const s = makeBox(setup.tool, d.start.clone().setY(0.02), d.cur.clone().setY(0.02), d.yaw);
       previewBox.visible = true;
@@ -1635,11 +2257,24 @@ function updateSetup(dt) {
     previewBox.rotation.set(0, s.yaw, 0);
     setup.refT -= dt;
     if (setup.refT <= 0) { setup.refT = 0.15; refreshSetupPanel(); }
-  } else if (setup.last && setup.last.type !== 'wall' && Math.abs(stickX) > 0.4 && room.surfaces.includes(setup.last)) {
+  } else if (!setup.align && setup.last && setup.last.type !== 'wall' && setup.last.type !== 'wallbuy' && Math.abs(stickX) > 0.4 && room.surfaces.includes(setup.last)) {
     // zuletzt platzierten Tisch/Stuhl drehen
     setup.rotT -= dt;
     if (setup.rotT <= 0) { rotateBox(setup.last, setup.last.yaw - stickX * 0.1); setup.rotT = 0.05; }
   }
+  // Ausrichten: Stick ◀ ▶ dreht die Karte um den Kopf, ▲▼ schiebt sie in Blickrichtung
+  if (setup.align && !d) {
+    const a = setup.align;
+    if (Math.abs(stickX) > 0.3) { alignRotate(-stickX * dt * 0.35, headPos.clone().setY(0)); }
+    if (Math.abs(stickY) > 0.3) {
+      const yaw = headYaw();
+      a.offset.addScaledVector(new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)), -stickY * dt * 0.3);
+      a.dirty = true;
+    }
+    a.t -= dt;
+    if (a.dirty && a.t <= 0) { a.t = 0.12; applyAlign(); refreshSetupPanel(); }
+  }
+  if (!d) lenLabel.mesh.visible = false;
   // Bodenhöhe fein einstellen
   if (setup.tool === 'floor') {
     floorGrid.position.set(headPos.x, 0.001, headPos.z);
@@ -1676,6 +2311,10 @@ function enterSetup() {
   refreshSetupPanel();
 }
 function finishSetup() {
+  endAlign();
+  unhover();
+  lenLabel.mesh.visible = false;
+  setup.view = 'main';
   setup.tool = null;
   setup.drag = null;
   setup.pending = null;
@@ -1778,8 +2417,13 @@ function startCountdown() {
   playerHp = 100;
   lowHpWarned = false;
   pendingDeath = false;
-  for (const w of arsenal) if (w.holder >= 0 || w === deskW) refillWeapon(w);
-  resetWeapons(); // nicht gehaltene Waffen stehen zu Beginn jeder Runde wieder im Waffenständer
+  // jede Runde: nur die Startpistole, Punkte neu, neue Wandkauf-Waffen, Glückskiste bereit
+  if (holster) { disposeWeapon(holster); holster = null; }
+  for (const w of [...arsenal]) if (!w.starter) disposeWeapon(w);
+  for (const w of arsenal) refillWeapon(w);
+  resetWeapons();
+  setupWallbuys();
+  setupMysteryBox();
   const fd = freeDistance(headPos, inFront(1, 0, headPos.y + 0.6).sub(headPos), 3.2);
   board.place(Math.max(1.2, Math.min(3, fd - 0.2)), 0, 0.6);
   board.mesh.scale.setScalar(1.3);
@@ -1789,6 +2433,7 @@ function startCountdown() {
 function beginRound() {
   state = 'playing';
   score = 0; roundClock = 0; wave = 0;
+  points = free() ? 0 : START_POINTS;
   stats.shots = stats.hits = stats.kills = stats.headshots = 0;
   stats.bestStreak = 0;
   streak = 0;
@@ -1903,7 +2548,7 @@ function updateGame(dt) {
     }
   } else if (aliveCount() === 0) {
     const bonus = 50 * wave;
-    score += bonus;
+    award(bonus);
     floatingText(`Welle ${wave} überlebt! +${bonus}`, board.mesh.position.clone().add(new THREE.Vector3(0, -0.5, 0)), '#7dffa8');
     SFX.jingle([523, 659, 784, 1046]);
     speak(`Welle ${wave} überlebt`);
@@ -1923,7 +2568,7 @@ function handleZombieHit(res, point, prefix = '') {
   if (inRound()) {
     if (!res.explosion) stats.hits++;
     const mult = active.double > 0 ? 2 : 1;
-    score += 10 * mult;
+    award(10 * mult);
     if (res.kill) {
       stats.kills++;
       // Killserie: mehrere Kills kurz hintereinander
@@ -1934,11 +2579,11 @@ function handleZombieHit(res, point, prefix = '') {
         const names = { 2: 'Doppelkill!', 3: 'Dreifachkill!', 4: 'Vierfachkill!' };
         const name = names[streak] || 'Massaker!';
         const bonus = 50 * (streak - 1) * mult;
-        score += bonus;
+        award(bonus);
         streakMsg = { text: `${name} +${bonus}`, t: 2.2 };
         if (streak <= 5 || streak % 3 === 0) speak(name.replace('!', ''));
       }
-      score += (res.headshot ? 150 : 100) * mult;
+      award((res.headshot ? 150 : 100) * mult);
       if (res.headshot) stats.headshots++;
     }
   }
@@ -1962,7 +2607,7 @@ function refreshBoard() {
     ctx.fillStyle = playerHp > 50 ? '#3ad35a' : playerHp > 25 ? '#f0b020' : '#e02a2a';
     ctx.fillRect(bx, by, bw * playerHp / 100, 30);
     text(ctx, `❤ ${Math.ceil(playerHp)}`, w / 2, by + 16, 24, '#fff', 'center', true);
-    text(ctx, `${score} Punkte · Erledigt ${stats.kills} · Kopfschüsse ${stats.headshots} · 💣 ${grenadeSlots.filter(g => g.available).length}`, w / 2, 176, 28, '#cfd8e3', 'center', true);
+    text(ctx, `💰 ${free() ? '∞' : points} · ${score} Punkte · Erledigt ${stats.kills} · 💣 ${grenadeSlots.filter(g => g.available).length}${holster ? ' · 🎒 ' + holster.def.name : ''}`, w / 2, 176, 26, '#cfd8e3', 'center', true);
     const act = [active.double > 0 ? `×2 Punkte ${Math.ceil(active.double)}s` : '', active.slowmo > 0 ? `⏳ Zeitlupe ${Math.ceil(active.slowmo)}s` : ''].filter(Boolean).join(' · ');
     if (act) text(ctx, act, w / 2, 214, 26, '#ffd21f', 'center', true);
   }, training ? row(238, 58, [{ id: 'end', label: '■ Training beenden', onClick: () => endRound(false) }], 768, 230) : []);
@@ -1985,7 +2630,7 @@ function statusLines(w, h) {
   const modeName = { safe: 'GESICHERT', semi: d.modes.length > 2 ? 'EINZEL' : 'FEUER', auto: 'DAUERFEUER' }[mode(w)];
   const loaded = w.chamber === 'live' ? 1 : 0;
   const ammo = d.feed === 'mag' ? `${w.magInserted ? w.magRounds : '–'}/${d.capacity}+${loaded}` : `${w.tube}/${d.capacity}+${loaded}`;
-  const line2 = `${inRound() ? `❤${Math.ceil(playerHp)} · ` : ''}${ammo} · ${modeName}${d.sight === 'scope' ? ` · ${w.zoom.toFixed(0)}x` : ''}`;
+  const line2 = `${inRound() ? `❤${Math.ceil(playerHp)} 💰${free() ? '∞' : points} · ` : ''}${ammo} · ${modeName}${d.sight === 'scope' ? ` · ${w.zoom.toFixed(0)}x` : ''}`;
   let hint = '';
   if (mode(w) === 'safe') hint = `Gesichert – ${B}: entsichern`;
   else if (d.feed === 'mag' && !w.magInserted) hint = desk ? 'R: nachladen' : holding ? 'Magazin von unten einschieben' : 'Magazin vom Gürtel holen';
@@ -1993,7 +2638,7 @@ function statusLines(w, h) {
   else if (d.feed === 'tube' && w.chamber !== 'live' && w.tube === 0) hint = desk ? 'Leer – R: nachladen' : holding ? 'Patrone unten einführen' : 'Patronen vom Gürtel holen';
   else if (w.chamber !== 'live' || w.actionOpen) {
     if (desk) hint = 'Lade durch…';
-    else hint = { slide: `Schlitten ziehen (oder ${B})`, charge: 'Spannhebel zurückziehen', pump: 'Vorderschaft zurück & vor', bolt: 'Kammerstängel zurück & vor' }[d.action];
+    else hint = { slide: `Schlitten ziehen (oder ${B})`, charge: 'Spannhebel zurückziehen', pump: 'Vorderschaft zurück & vor', bolt: 'Kammerstängel zurück & vor', none: 'Nachladen' }[d.action] || '';
   } else if (holding && d.feed === 'tube' && w.tube < d.capacity) hint = 'Patrone unten einführen';
   return { title: d.name, line2, hint };
 }
@@ -2233,12 +2878,18 @@ renderer.domElement.addEventListener('wheel', (e) => { if (deskW && deskW.def.si
 window.addEventListener('keydown', (e) => {
   if (renderer.xr.isPresenting) return;
   const n = parseInt(e.key, 10);
-  if (n >= 1 && n <= 4) equipDesk(arsenal[n - 1]);
+  if (n >= 1 && n <= 9 && arsenal[n - 1]) equipDesk(arsenal[n - 1]);
+  if (e.key === 'b' || e.key === 'B') { // nächsten Wandkauf benutzen
+    let best = null, bd = Infinity;
+    for (const wb of wallbuys) { const d = wb.group.position.distanceTo(camera.position); if (d < bd) { bd = d; best = wb; } }
+    if (best) tryBuy(best, null);
+  }
+  if (e.key === 'k' || e.key === 'K') useBox(null);
   if (e.key === 'f' || e.key === 'F') desktopThrowKnife();
   if (e.key === 'p' || e.key === 'P') {
     let best = null, bd = Infinity;
     for (const o of openings()) { if (missingPlanks(o) <= 0) continue; const d = o.mid.distanceTo(camera.position); if (d < bd) { bd = d; best = o; } }
-    if (best) { addPlank(best); SFX.thunk(); if (inRound()) { score += 10; boardDirty = true; } }
+    if (best) { addPlank(best); SFX.thunk(); if (inRound()) award(10); }
   }
   if (e.key === 'g' || e.key === 'G') {
     const gs = grenadeSlots.find(x => x.available);
@@ -2283,6 +2934,9 @@ function buildDemoRoom() {
   addBox('chair', v(-1.7, 0.46, -3.3), v(-1.25, 0.46, -2.85), 0);
   addOpening('door', v(-3.2, 0, -3.6), v(-3.2, 0, -2.6), headPos, 0, 2.05);
   addOpening('window', v(-0.6, 0, -5), v(0.6, 0, -5), headPos, 0.9, 2.0);
+  addWallbuy(v(2.4, 1.35, -5), v(0, 0, 1));
+  addWallbuy(v(-3.2, 1.35, -0.6), v(1, 0, 0));
+  placeMysteryBoxSurface(v(2.6, 0, -1.6), Math.PI / 2);
 }
 
 // =============================================================================
@@ -2387,6 +3041,9 @@ function frame() {
   stepPhysics(dt);
   updateKnives(dt);
   updateGrenades(dt);
+  updatePlasmas(dt);
+  updateMysteryBox(dt);
+  updateWeaponExpiry();
   updatePlankGhost();
   updateMedkits(dt);
   updateZombies(active.slowmo > 0 ? dt * 0.35 : dt, headPos, { harmless: gameMode === 'training' });
@@ -2417,5 +3074,6 @@ function frame() {
 window.__game = {
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
-  get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound
+  get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,
+  get points() { return points; }, set points(v) { points = v; }, wallbuys, mbox, useBox, tryBuy, giveWeapon, get holster() { return holster; }, plasmas, setTool, setupTriggerDown, setupTriggerUp, alignToLine, loadSlot, saveSlot, serializeRoom, setupWallbuys, setupMysteryBox, surfaceAt, updateSetup, get benchRack() { return benchRack; }
 };

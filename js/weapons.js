@@ -281,32 +281,7 @@ export const BUILDERS = {
       ring.position.set(0, 0.11, -s);
       m.add(ring);
     }
-    m.add(cylZ(0.0155, 0.0155, 0.26, MAT.black, 0.03, 0.11, 0, 24));
-    m.add(cylZ(0.024, 0.0155, 0.06, MAT.black, 0.19, 0.11, 0, 28));
-    m.add(cylZ(0.025, 0.025, 0.02, MAT.black, 0.23, 0.11, 0, 28));
-    m.add(cylZ(0.0155, 0.0195, 0.03, MAT.black, -0.115, 0.11, 0, 24));
-    m.add(cylZ(0.0195, 0.0195, 0.035, MAT.black, -0.1475, 0.11, 0, 24));
-    m.add(cylY(0.011, 0.011, 0.024, MAT.steel, 0.03, 0.135));
-    m.add(cylX(0.011, 0.024, MAT.steel, 0.03, 0.11, 0.024));
-    const objective = new THREE.Mesh(new THREE.CircleGeometry(0.022, 28), MAT.glass);
-    objective.position.set(0, 0.11, -0.2405);
-    objective.rotation.y = Math.PI;
-    m.add(objective);
-    // Okular: mehrere Schichten (Kamerabild / Durchblick, vergrößerte Ziele, Abdunklung, Fadenkreuz)
-    const circ = () => new THREE.CircleGeometry(0.0175, 32);
-    const lensMat = (o) => new THREE.MeshBasicMaterial(Object.assign({ toneMapped: false, depthWrite: false, transparent: true }, o));
-    const layer = (mat, order, z) => { const l = new THREE.Mesh(circ(), mat); l.position.set(0, 0.11, z); l.renderOrder = order; m.add(l); return l; };
-    P.lensHole = layer(lensMat({ color: 0x000000, opacity: 0, blending: THREE.NoBlending }), 10, 0.1656);
-    P.lensVideo = layer(lensMat({ color: 0xffffff, transparent: false }), 10, 0.1656);
-    P.lensVideo.visible = false;
-    P.lensHole.visible = false;
-    P.lensRT = layer(lensMat({ map: scopeRT.texture }), 11, 0.16565);
-    P.lensShade = layer(lensMat({ color: 0x000000, opacity: 0 }), 12, 0.1657);
-    layer(lensMat({ map: reticleTexture }), 13, 0.1658);
-    sock('sightRear', -0.166, 0.11);
-    sock('sightFront', 0.24, 0.11);
-    sock('scopeEye', -0.1656, 0.11);
-    sock('scopeCam', 0.25, 0.11);
+    scopeKit(m, P, sock, 0.03, 0.11);
     sock('muzzle', 0.82, 0.052);
     sock('eject', 0.0, 0.065, 0.022);
     sock('chargerGrab', -0.06, 0.032, 0.058);
@@ -328,6 +303,37 @@ export const BUILDERS = {
 
 // ---- Zielfernrohr: Render-Target + Fadenkreuz ---------------------------
 export const scopeRT = new THREE.WebGLRenderTarget(512, 512, { samples: 2 });
+// Zielfernrohr-Baustein: Rohr mittig bei s0 (Design-Koordinaten), Höhe y; setzt die nötigen Anker
+export function scopeKit(m, P, sock, s0, y) {
+  const d = s0 - 0.03;
+  m.add(cylZ(0.0155, 0.0155, 0.26, MAT.black, s0, y, 0, 24));
+  m.add(cylZ(0.024, 0.0155, 0.06, MAT.black, 0.19 + d, y, 0, 28));
+  m.add(cylZ(0.025, 0.025, 0.02, MAT.black, 0.23 + d, y, 0, 28));
+  m.add(cylZ(0.0155, 0.0195, 0.03, MAT.black, -0.115 + d, y, 0, 24));
+  m.add(cylZ(0.0195, 0.0195, 0.035, MAT.black, -0.1475 + d, y, 0, 24));
+  m.add(cylY(0.011, 0.011, 0.024, MAT.steel, s0, y + 0.025));
+  m.add(cylX(0.011, 0.024, MAT.steel, s0, y, 0.024));
+  const objective = new THREE.Mesh(cachedGeo('objlens', () => new THREE.CircleGeometry(0.022, 28)), MAT.glass);
+  objective.position.set(0, y, -(0.2405 + d));
+  objective.rotation.y = Math.PI;
+  m.add(objective);
+  // Okular: mehrere Schichten (Kamerabild / Durchblick, vergrößerte Ziele, Abdunklung, Fadenkreuz)
+  const circ = () => cachedGeo('eyelens', () => new THREE.CircleGeometry(0.0175, 32));
+  const lensMat = (o) => new THREE.MeshBasicMaterial(Object.assign({ toneMapped: false, depthWrite: false, transparent: true }, o));
+  const z = 0.1656 - d;
+  const layer = (mat, order, dz) => { const l = new THREE.Mesh(circ(), mat); l.position.set(0, y, z + dz); l.renderOrder = order; m.add(l); return l; };
+  P.lensHole = layer(lensMat({ color: 0x000000, opacity: 0, blending: THREE.NoBlending }), 10, 0);
+  P.lensVideo = layer(lensMat({ color: 0xffffff, transparent: false }), 10, 0);
+  P.lensVideo.visible = false;
+  P.lensHole.visible = false;
+  P.lensRT = layer(lensMat({ map: scopeRT.texture }), 11, 0.00005);
+  P.lensShade = layer(lensMat({ color: 0x000000, opacity: 0 }), 12, 0.0001);
+  layer(lensMat({ map: reticleTexture }), 13, 0.0002);
+  sock('sightRear', -0.166 + d, y);
+  sock('sightFront', 0.24 + d, y);
+  sock('scopeEye', -0.1656 + d, y);
+  sock('scopeCam', 0.25 + d, y);
+}
 scopeRT.texture.colorSpace = THREE.SRGBColorSpace;
 export const scopeCam = new THREE.PerspectiveCamera(4, 1, 0.1, 200);
 export const reticleTexture = (() => {
@@ -359,6 +365,27 @@ export const reticleTexture = (() => {
   return t;
 })();
 
+const MUZZLE_FLASH = new THREE.MeshBasicMaterial({ color: 0xffc860, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+const PLASMA_FLASH = new THREE.MeshBasicMaterial({ color: 0x66ff88, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+// sternförmiges Mündungsfeuer (Sprite)
+const FLASH_SPRITE = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.translate(64, 64);
+  for (let i = 0; i < 7; i++) {
+    ctx.rotate(Math.PI * 2 / 7 + Math.random() * 0.3);
+    const g = ctx.createLinearGradient(0, 0, 0, -60);
+    g.addColorStop(0, 'rgba(255,240,200,1)'); g.addColorStop(1, 'rgba(255,140,30,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(0, -40 - Math.random() * 22); ctx.lineTo(6, 0); ctx.fill();
+  }
+  const rg = ctx.createRadialGradient(0, 0, 0, 0, 0, 26);
+  rg.addColorStop(0, 'rgba(255,255,230,1)'); rg.addColorStop(1, 'rgba(255,160,40,0)');
+  ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.fill();
+  const t = new THREE.CanvasTexture(c);
+  return new THREE.SpriteMaterial({ map: t, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false });
+})();
 export function buildWeapon(id) {
   const def = WEAPON_DEFS[id];
   const root = new THREE.Group();
@@ -374,22 +401,25 @@ export function buildWeapon(id) {
     sockets[name] = o;
     return o;
   };
-  BUILDERS[id](model, parts, sock);
-  model.position.set(0, -def.grip[1], def.grip[0]);
+  BUILDERS[def.builder || id](model, parts, sock, def);
+  const sc = def.scale || 1;
+  model.scale.setScalar(sc);
+  model.position.set(0, -def.grip[1] * sc, def.grip[0] * sc);
   // Magazin einsetzen
   if (def.feed === 'mag') {
-    parts.mag = BUILDERS[id + 'Mag']();
+    parts.mag = makeMag(id);
     sockets.magSeat.add(parts.mag);
   }
   // Mündungsfeuer
   const flash = new THREE.Group();
-  const flashMat = new THREE.MeshBasicMaterial({ color: 0xffc860, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-  const f1 = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.09, 8, 1, true), flashMat);
+  const flashMat = def.projectile ? PLASMA_FLASH : MUZZLE_FLASH;
+  const f1 = new THREE.Mesh(cachedGeo('flashcone', () => new THREE.ConeGeometry(0.025, 0.09, 8, 1, true)), flashMat);
   f1.rotation.x = -Math.PI / 2;
   f1.position.z = -0.045;
   flash.add(f1);
-  const f2 = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), flashMat);
-  flash.add(f2);
+  const star = new THREE.Sprite(FLASH_SPRITE);
+  star.scale.setScalar(0.12);
+  flash.add(star);
   flash.visible = false;
   sockets.muzzle.add(flash);
   parts.flash = flash;
@@ -422,8 +452,8 @@ export function makeGrenade() {
   g.userData.ring = ring;
   return g;
 }
-export const makeMag = (id) => BUILDERS[id + 'Mag']();
-export const MASS = { pistol: 0.9, smg: 2.6, shotgun: 3.3, sniper: 5.5 };
+export const makeMag = (id) => BUILDERS[(WEAPON_DEFS[id].magBuilder || id) + 'Mag'](WEAPON_DEFS[id]);
+export const MASS = new Proxy({ pistol: 0.9, smg: 2.6, shotgun: 3.3, sniper: 5.5 }, { get: (t, k) => t[k] ?? (WEAPON_DEFS[k] && WEAPON_DEFS[k].mass) ?? 3 });
 
 // Vollständige Waffe inkl. Munitionszustand
 export function createWeapon(id) {

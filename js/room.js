@@ -8,8 +8,8 @@ import { addStaticBox, removeStatic } from './physics.js?v=18';
 export const WALL_HEIGHT = 2.5;
 export const room = { surfaces: [], group: new THREE.Group(), edit: false, desktop: false };
 
-const COLORS = { wall: 0x3a8bff, table: 0xff9d2e, chair: 0x46d17a, bench: 0x8a6a45, door: 0xc0702a, window: 0x4dd0ff };
-const NAMES = { wall: 'Wand', table: 'Tisch', chair: 'Stuhl', bench: 'Waffenständer', door: 'Tür', window: 'Fenster' };
+const COLORS = { wall: 0x3a8bff, table: 0xff9d2e, chair: 0x46d17a, bench: 0x8a6a45, door: 0xc0702a, window: 0x4dd0ff, wallbuy: 0xffd21f, mbox: 0xb26bff };
+const NAMES = { wall: 'Wand', table: 'Tisch', chair: 'Stuhl', bench: 'Waffenständer', door: 'Tür', window: 'Fenster', wallbuy: 'Wandkauf', mbox: 'Glückskiste' };
 export const isOpening = (s) => s.type === 'door' || s.type === 'window';
 export const surfaceName = (t) => NAMES[t];
 const occluderMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
@@ -44,7 +44,28 @@ function wallGeometry(w) {
   return new THREE.ShapeGeometry(shape);
 }
 
+function buildMarker(s) {
+  // Wandkauf-Platz: gelbe Markierung an der Wand (nur im Einrichtungsmodus sichtbar)
+  const g = new THREE.Group();
+  const geo = new THREE.PlaneGeometry(0.8, 0.35);
+  g.position.copy(s.pos).addScaledVector(s.normal, 0.01);
+  g.lookAt(g.position.clone().add(s.normal));
+  const visual = new THREE.Mesh(geo, visualMaterial(s.type));
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: COLORS[s.type] }));
+  g.add(visual, edges);
+  Object.assign(s, { visual, edges, group: g, occluder: null, body: null });
+  room.group.add(g);
+  applyMode(s);
+}
+export function addWallbuy(pos, normal) {
+  const s = { type: 'wallbuy', pos: pos.clone(), normal: new THREE.Vector3(normal.x, 0, normal.z).normalize() };
+  s.center = s.pos;
+  room.surfaces.push(s);
+  buildMarker(s);
+  return s;
+}
 function buildSurface(s) {
+  if (s.type === 'wallbuy') { buildMarker(s); return; }
   const g = new THREE.Group();
   let geo, basisQ;
   const vertical = s.type === 'wall' || isOpening(s);
@@ -62,7 +83,7 @@ function buildSurface(s) {
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: COLORS[s.type] }));
   g.add(visual, edges);
   s.occluder = null;
-  if (!isOpening(s)) {
+  if (!isOpening(s) && s.type !== 'mbox') { // die Glückskiste ist virtuell – kein echtes Möbelstück
     const occ = new THREE.Mesh(geo, occluderMat);
     occ.renderOrder = -10;
     occ.userData.surface = s;
@@ -190,9 +211,9 @@ function rebuildWalls() {
 }
 export const roomOccluders = () => room.surfaces.filter(s => s.occluder).map(s => s.occluder);
 function applyMode(s) {
-  const show = room.edit || (room.desktop && !isOpening(s)) || s.type === 'bench';
+  const show = room.edit || (room.desktop && !isOpening(s) && s.type !== 'wallbuy' && s.type !== 'mbox') || s.type === 'bench';
   s.visual.visible = show;
-  s.edges.visible = room.edit || (room.desktop && s.type !== 'bench');
+  s.edges.visible = room.edit || (room.desktop && s.type !== 'bench' && s.type !== 'wallbuy' && s.type !== 'mbox');
 }
 function destroySurface(s) {
   room.group.remove(s.group);
@@ -292,7 +313,7 @@ export function suggestYaw(point, fallbackYaw) {
 export function heightAt(x, z) {
   let h = 0;
   for (const s of room.surfaces) {
-    if (s.type === 'wall' || isOpening(s)) continue;
+    if (s.type === 'wall' || isOpening(s) || s.type === 'wallbuy') continue;
     const dx = x - s.center.x, dz = z - s.center.z;
     if (Math.abs(dx * s.X.x + dz * s.X.z) <= s.hx && Math.abs(dx * s.Z.x + dz * s.Z.z) <= s.hz) h = Math.max(h, s.height);
   }
@@ -354,13 +375,50 @@ export function importDetectedPlanes(frame, refSpace) {
 
 // Speichern / Laden (Koordinaten relativ zum Startpunkt der VR-Sitzung)
 const KEY = 'vrspiel-raum';
-export function saveRoom() {
-  const data = room.surfaces.map(s => isOpening(s)
+export function serializeRoom() {
+  return room.surfaces.map(s => isOpening(s)
     ? { type: s.type, a: s.a.toArray(), b: s.a.clone().addScaledVector(s.right, s.width).toArray(), inside: s.mid.clone().add(s.normal).toArray(), bottom: s.bottom, top: s.top }
     : s.type === 'wall'
     ? { type: 'wall', a: s.a.toArray(), b: s.a.clone().addScaledVector(s.right, s.width).toArray(), height: s.height, inside: s.mid.clone().add(s.normal).toArray() }
+    : s.type === 'wallbuy'
+    ? { type: 'wallbuy', pos: s.pos.toArray(), normal: s.normal.toArray() }
     : { type: s.type, p1: s.p1.toArray(), p2: s.p2.toArray(), yaw: s.yaw });
-  try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { /* ignorieren */ }
+}
+// Raum aus Daten aufbauen; optional gedreht (um pivot, Winkel um die Hochachse) und verschoben
+export function deserializeRoom(data, angle = 0, pivot = new THREE.Vector3(), offset = new THREE.Vector3()) {
+  clearRoom();
+  const q = new THREE.Quaternion().setFromAxisAngle(UP, angle);
+  const P = (a) => new THREE.Vector3().fromArray(a).sub(pivot).applyQuaternion(q).add(pivot).add(offset);
+  const D = (a) => new THREE.Vector3().fromArray(a).applyQuaternion(q);
+  const walls = [], rest = [];
+  for (const d of data) (d.type === 'door' || d.type === 'window' ? rest : walls).push(d);
+  for (const d of walls) {
+    if (d.type === 'wall') addWall(P(d.a), P(d.b), P(d.inside), d.height);
+    else if (d.type === 'wallbuy') addWallbuy(P(d.pos), D(d.normal));
+    else addBox(d.type, P(d.p1), P(d.p2), d.yaw + angle);
+  }
+  for (const d of rest) addOpening(d.type, P(d.a), P(d.b), P(d.inside), d.bottom, d.top);
+  return data.length;
+}
+export function saveRoom() {
+  try { localStorage.setItem(KEY, JSON.stringify(serializeRoom())); } catch { /* ignorieren */ }
+}
+// mehrere Speicherplätze
+const SLOTS_KEY = 'vrspiel-raeume';
+export function roomSlots() {
+  try { const v = JSON.parse(localStorage.getItem(SLOTS_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+export function saveRoomSlot(i) {
+  const slots = roomSlots();
+  while (slots.length <= i) slots.push(null);
+  const data = serializeRoom();
+  slots[i] = { data, date: Date.now(), count: data.length };
+  try { localStorage.setItem(SLOTS_KEY, JSON.stringify(slots)); } catch { /* ignorieren */ }
+}
+export function loadRoomSlot(i) {
+  const slot = roomSlots()[i];
+  if (!slot) return 0;
+  return deserializeRoom(slot.data);
 }
 export function hasSavedRoom() {
   try { return !!localStorage.getItem(KEY); } catch { return false; }
@@ -368,12 +426,5 @@ export function hasSavedRoom() {
 export function loadRoom() {
   let data;
   try { data = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return 0; }
-  clearRoom();
-  const v = (a) => new THREE.Vector3().fromArray(a);
-  for (const d of data) {
-    if (d.type === 'wall') addWall(v(d.a), v(d.b), v(d.inside), d.height);
-    else if (d.type === 'door' || d.type === 'window') addOpening(d.type, v(d.a), v(d.b), v(d.inside), d.bottom, d.top);
-    else addBox(d.type, v(d.p1), v(d.p2), d.yaw);
-  }
-  return data.length;
+  return deserializeRoom(data);
 }

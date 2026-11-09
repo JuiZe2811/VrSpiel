@@ -259,7 +259,7 @@ export function buildNav(head) {
   nav.w = Math.ceil((maxX - minX) / nav.cell);
   nav.h = Math.ceil((maxZ - minZ) / nav.cell);
   nav.blocked = new Uint8Array(nav.w * nav.h);
-  const boxes = room.surfaces.filter(s => s.type === 'table' || s.type === 'chair' || s.type === 'bench');
+  const boxes = room.surfaces.filter(s => s.type === 'table' || s.type === 'chair' || s.type === 'bench' || s.type === 'mbox');
   // Türen je Wand vorab als begehbare Abschnitte berechnen
   const wallInfo = walls.map(w => ({
     w, doors: openings().filter(o => o.type === 'door' && Math.abs(o.normal.dot(w.normal)) > 0.9 && Math.abs((o.mid.x - w.mid.x) * w.normal.x + (o.mid.z - w.mid.z) * w.normal.z) < 0.3)
