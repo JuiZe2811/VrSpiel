@@ -5,6 +5,37 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 18 – das große Update
+
+**Physik**
+- Erledigte Zombies werden zu echten Physik-Körpern: Sie kippen vom Schuss weg um, fallen über Tische und
+  werden von Granaten weggeschleudert.
+- Geworfene Gegenstände (Waffen, Granaten …) prallen an Zombies ab und verletzen sie – je schwerer und schneller, desto mehr.
+- Alle Physik-Objekte haben jetzt ihren Schwerpunkt in der Mitte (realistischeres Kippen und Rollen).
+
+**Neu im Spiel**
+- 🔨 **Bretter reparieren:** Neben dem Waffenständer steht eine Kiste mit Brettern. Brett greifen, an eine Tür/ein
+  Fenster halten (ein grünes Vorschau-Brett zeigt die Stelle) und loslassen = angenagelt (+10 Punkte).
+- ✨ **Power-ups** (fallen selten von Zombies, berühren zum Einsammeln): ×2 Doppelte Punkte, ☢ Atombombe (alle Zombies
+  sterben), ▮▮ Volle Munition (inkl. Granaten), ⏳ Zeitlupe.
+- 👹 **Boss-Welle:** Jede 5. Welle kommt ein **Riese** – über 2 m groß, hält extrem viel aus, brüllt, stampft (Schockwelle,
+  der Controller bebt) und lässt garantiert ein Power-up fallen.
+- **Killserien:** Doppelkill, Dreifachkill, … mit Ansage und Bonuspunkten; Countdown bis zur nächsten Welle; beste Serie im Ergebnis.
+
+**Grafik & Effekte**
+- Hinter Fenstern: Gewitter mit Blitzen, Donner und kahlen Bäumen; im Türflur flackert ein rotes Notlicht.
+- Mündungsrauch, Funken und Staub bei Wandtreffern, Blutspritzer an Wänden hinter getroffenen Zombies, gut sichtbare Leuchtspuren.
+- Roter Richtungsbogen zeigt, von wo ein Zombie angreift; Treffer- und Kill-Geräusche als Rückmeldung.
+
+**Animationen**
+- Zombies drehen sich bei seitlichen Treffern mit, Kopftreffer reißen den Kopf zurück.
+- Schrot aus der Nähe wirft Zombies um – sie bleiben kurz liegen und stehen wieder auf.
+- Renner rennen nach vorne gebeugt mit pumpenden Armen, Brocken und Riesen wanken schwer (mit hörbaren Schritten).
+- Zwei Angriffsarten: Krallenhieb und Biss; Köpfe zucken unheimlich.
+
+**Stabilität:** Zwei weitere kleine Speicherlecks behoben (schwebende Punkte-Texte, Erste-Hilfe-Kästen, Gürteltaschen),
+im Dauertest über 8 Wellen bleibt der Speicher jetzt konstant.
+
 ## Neu in Version 16–17
 
 - **💣 Handgranaten** – zwei am Gürtel (werden jede Welle aufgefüllt). Greifen, ausholen, Griff-Taste beim Werfen loslassen.
@@ -119,7 +150,7 @@ Punkte: Treffer +10, erledigt +100, Kopfschuss +150, überlebte Welle +50 × Wel
 
 `python3 -m http.server` im Ordner starten und `http://localhost:8000` öffnen (mit einem Beispielraum).
 1–4 Waffe · Linksklick schießen / Knöpfe · rechte Maustaste ziehen = umschauen · Leertaste = Visier ·
-R nachladen · V Feuermodus · F Messer werfen · G Granate · Enter Start · Mausrad Zoom.
+R nachladen · V Feuermodus · F Messer werfen · G Granate · P Brett annageln · Enter Start · Mausrad Zoom.
 
 ## Technik
 

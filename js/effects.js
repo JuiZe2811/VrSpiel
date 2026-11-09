@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { makePanel } from './util.js?v=17';
-import { heightAt } from './room.js?v=17';
-import { SFX } from './sfx.js?v=17';
+import { makePanel } from './util.js?v=18';
+import { heightAt } from './room.js?v=18';
+import { SFX } from './sfx.js?v=18';
 
 // Kurzlebige Effekte: Leuchtspuren, Partikel, Punkte-Text, Einschusslöcher, Hülsen
 let scene;
@@ -11,12 +11,50 @@ export function initEffects(s) { scene = s; }
 const effects = [];
 const debris = [];
 
+// Leuchtspur: dünner leuchtender Zylinder (Linien sind in VR nur 1 Pixel breit)
+const tracerGeo = new THREE.CylinderGeometry(0.0025, 0.0025, 1, 5, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
 export function spawnTracer(from, to) {
-  const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
-  const mat = new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.6 });
-  const line = new THREE.Line(geo, mat);
-  scene.add(line);
-  effects.push({ obj: line, life: 0.06, maxLife: 0.06, update(dt, k) { mat.opacity = 0.6 * k; }, dispose() { geo.dispose(); mat.dispose(); } });
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const m = new THREE.Mesh(tracerGeo, mat);
+  m.position.copy(from);
+  m.lookAt(to);
+  m.scale.set(1, 1, from.distanceTo(to));
+  scene.add(m);
+  effects.push({ obj: m, life: 0.07, maxLife: 0.07, keepGeo: true, update(dt, k) { mat.opacity = 0.85 * k; }, dispose() { mat.dispose(); } });
+}
+
+// weiche Rauch-/Staubwolke (Sprite)
+const puffTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
+  g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(0.5, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+export function puff(pos, color = 0xbbbbbb, size = 0.12, life = 0.9, rise = 0.25, opacity = 0.45) {
+  const mat = new THREE.SpriteMaterial({ map: puffTex, color, transparent: true, opacity, depthWrite: false });
+  const sp = new THREE.Sprite(mat);
+  sp.position.copy(pos);
+  sp.scale.setScalar(size);
+  sp.material.rotation = Math.random() * 6;
+  scene.add(sp);
+  const drift = new THREE.Vector3((Math.random() - 0.5) * 0.1, rise, (Math.random() - 0.5) * 0.1);
+  effects.push({ obj: sp, life, maxLife: life, keepGeo: true, update(dt, k) { sp.position.addScaledVector(drift, dt); sp.scale.setScalar(size * (1 + (1 - k) * 2.5)); mat.opacity = opacity * k; mat.rotation += dt * 0.5; }, dispose() { mat.dispose(); } });
+}
+// Funken bei Treffern auf harte Flächen
+const sparkGeo = new THREE.BoxGeometry(0.006, 0.006, 0.03);
+export function sparks(pos, normal, count = 8) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffd060, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  for (let i = 0; i < count; i++) {
+    const m = new THREE.Mesh(sparkGeo, mat);
+    m.position.copy(pos);
+    const v = normal.clone().multiplyScalar(THREE.MathUtils.randFloat(1, 3)).add(new THREE.Vector3().randomDirection().multiplyScalar(1.5));
+    scene.add(m);
+    effects.push({ obj: m, life: 0.35, maxLife: 0.35, keepGeo: true, dispose: i === count - 1 ? () => mat.dispose() : null,
+      update(dt, k) { v.y -= 9.8 * dt; m.position.addScaledVector(v, dt); m.lookAt(m.position.clone().add(v)); mat.opacity = k; } });
+  }
 }
 
 const particleGeo = new THREE.BoxGeometry(0.02, 0.02, 0.02);
@@ -64,7 +102,7 @@ export function floatingText(text, point, color) {
       panel.mesh.position.y += dt * 0.4;
       panel.mesh.material.opacity = Math.min(1, k * 2);
     },
-    dispose() { panel.mesh.material.map.dispose(); panel.mesh.material.dispose(); }
+    dispose() { panel.mesh.material.map.dispose(); panel.mesh.material.dispose(); panel.mesh.geometry.dispose(); }
   });
 }
 
@@ -161,6 +199,19 @@ export function floorDecal(pos, kind = 'blood', size = 0.7) {
   const m = new THREE.Mesh(decalGeo, DECAL_MATS[kind]);
   m.position.set(pos.x, heightAt(pos.x, pos.z) + 0.004, pos.z);
   m.rotation.y = Math.random() * Math.PI * 2;
+  m.scale.setScalar(size);
+  m.renderOrder = 1;
+  scene.add(m);
+  decals.push(m);
+  if (decals.length > 30) scene.remove(decals.shift());
+}
+// Fleck an Wand/Tisch (z. B. Blut hinter einem getroffenen Zombie)
+const wallDecalGeo = new THREE.PlaneGeometry(1, 1);
+export function surfaceDecal(point, normal, kind = 'blood', size = 0.4) {
+  const m = new THREE.Mesh(wallDecalGeo, DECAL_MATS[kind]);
+  m.position.copy(point).addScaledVector(normal, 0.003);
+  m.lookAt(m.position.clone().add(normal));
+  m.rotateZ(Math.random() * Math.PI * 2);
   m.scale.setScalar(size);
   m.renderOrder = 1;
   scene.add(m);

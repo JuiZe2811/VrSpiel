@@ -1,14 +1,14 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=17';
+import { VERSION } from './version.js?v=18';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT } from './util.js?v=17';
-import { SFX, ensureAudio, setListener, SFX_PLAYER } from './sfx.js?v=17';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=17';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=17';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addOpening, makeOpening, roomOccluders, isOpening } from './room.js?v=17';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals } from './effects.js?v=17';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage } from './zombies.js?v=17';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo } from './util.js?v=18';
+import { SFX, ensureAudio, setListener, SFX_PLAYER } from './sfx.js?v=18';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=18';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=18';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere } from './room.js?v=18';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal } from './effects.js?v=18';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank } from './zombies.js?v=18';
 
 // =============================================================================
 // Grundgerüst
@@ -29,7 +29,7 @@ scene.background = desktopBackground;
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 scene.add(room.group);
 initEffects(scene);
-initZombies(scene, (dmg, z) => playerHit(dmg, z));
+initZombies(scene, (dmg, z) => playerHit(dmg, z), (res, p) => handleZombieHit(res, p, '🎯 '), (z, big) => onGiantStomp(z, big));
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 200);
 camera.position.set(0, 1.6, 0);
@@ -218,12 +218,13 @@ function setupBench() {
 }
 // Kompakter Waffenständer: Langwaffen stehen aufrecht in der Halterung, die Pistole liegt davor
 let benchRack = null;
+const plankPilePos = new THREE.Vector3(0, -10, 0);
 function placeBench(c, by) {
   for (const old of room.surfaces.filter(x => x.type === 'bench')) removeSurface(old);
   const X = new THREE.Vector3(Math.cos(by), 0, -Math.sin(by)), Z = new THREE.Vector3(Math.sin(by), 0, Math.cos(by));
   const p1 = c.clone().addScaledVector(X, -0.45).addScaledVector(Z, -0.22), p2 = c.clone().addScaledVector(X, 0.45).addScaledVector(Z, 0.22);
   bench = addBox('bench', p1.setY(0.8), p2.setY(0.8), by);
-  if (benchRack) scene.remove(benchRack);
+  if (benchRack) { scene.remove(benchRack); benchRack.traverse(o => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); }); }
   benchRack = new THREE.Group();
   const wood = new THREE.MeshStandardMaterial({ color: 0x5a4128, roughness: 0.8 });
   const mk = (w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wood); m.position.set(x, y, z); benchRack.add(m); };
@@ -232,9 +233,21 @@ function placeBench(c, by) {
   for (const x of [-0.43, 0.43]) mk(0.035, 0.6, 0.035, x, 0.8 + 0.3, back * 0.2);
   mk(0.9, 0.04, 0.05, 0, 1.35, back * 0.2);
   mk(0.9, 0.03, 0.09, 0, 0.815, back * 0.17);
+  // Bretterstapel auf einer Kiste neben dem Ständer (zum Reparieren von Türen/Fenstern)
+  const crate = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.6, 0.42), new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.9 }));
+  crate.position.set(0.72, 0.3, 0);
+  benchRack.add(crate);
+  for (let i = 0; i < 4; i++) {
+    const b = makePlankMesh(0.9);
+    b.rotation.set(-Math.PI / 2, Math.PI / 2 + (Math.random() - 0.5) * 0.15, 0);
+    b.position.set(0.72 + (Math.random() - 0.5) * 0.06, 0.615 + i * 0.026, 0);
+    benchRack.add(b);
+  }
   benchRack.position.set(c.x, 0, c.z);
   benchRack.rotation.y = by;
   scene.add(benchRack);
+  benchRack.updateMatrixWorld(true);
+  plankPilePos.copy(benchRack.localToWorld(new THREE.Vector3(0.72, 0.68, 0)));
 }
 function placeOnBench(list) {
   if (!bench || !room.surfaces.includes(bench)) setupBench();
@@ -362,7 +375,8 @@ function wallImpact(hit, dir) {
   scene.add(mark);
   wallMarks.push(mark);
   if (wallMarks.length > 60) scene.remove(wallMarks.shift());
-  burst(hit.point, 0x9a9183, 6);
+  sparks(hit.point, n, 6);
+  puff(hit.point, 0x9a9183, 0.08, 0.7, 0.1, 0.5);
 }
 function tryFire(w, desktopRay) {
   const h = w.holder >= 0 ? hands[w.holder] : null;
@@ -386,6 +400,7 @@ function tryFire(w, desktopRay) {
   flashLight.position.copy(muzzlePos);
   flashLight.distance = 2.5;
   flashLight.intensity = 4;
+  puff(muzzlePos, 0xcfcfcf, w.def.pellets > 1 ? 0.09 : 0.05, 1.0, 0.12, w.def.pellets > 1 ? 0.45 : 0.3);
   const cands = [...zombieHitMeshes(), ...plankMeshes(), ...roomOccluders(), ...(startButton.visible ? startButton.userData.hit : [])];
   const dmg = DAMAGE[w.id];
   let startHit = null;
@@ -401,7 +416,20 @@ function tryFire(w, desktopRay) {
     if (ud.isStart) { startHit = hit; continue; }
     if (ud.surface) { if (p < 4) wallImpact(hit, d); continue; }
     if (ud.plank) { burst(hit.point, 0xb08850, 6); continue; }
-    if (ud.zombie) handleZombieHit(damageZombie(hit.object, hit.point, d, dmg), hit.point);
+    if (ud.zombie) {
+      handleZombieHit(damageZombie(hit.object, hit.point, d, dmg), hit.point);
+      // Blut spritzt auf die Wand/den Tisch dahinter
+      if (Math.random() < 0.6) {
+        raycaster.set(hit.point, d);
+        raycaster.far = 1.8;
+        const back = raycaster.intersectObjects(roomOccluders(), false)[0];
+        if (back) {
+          const n = back.face ? back.face.normal.clone().transformDirection(back.object.matrixWorld) : d.clone().negate();
+          if (n.dot(d) > 0) n.negate();
+          surfaceDecal(back.point, n, 'blood', THREE.MathUtils.randFloat(0.18, 0.4) * (1.4 - back.distance / 1.8));
+        }
+      }
+    }
   }
   if (w.def.autoCycle) { // Halbautomat: auswerfen und nachladen
     ejectChamber(w);
@@ -476,7 +504,7 @@ function setBeltWeapon(id) {
   for (const side of [-1, 1]) {
     const mount = beltMount(side * 0.55);
     if (def.feed === 'mag') {
-      const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.075, 0.042), pouchMat);
+      const pouch = new THREE.Mesh(cachedGeo('pouch', () => new THREE.BoxGeometry(0.05, 0.075, 0.042)), pouchMat);
       pouch.position.set(0, -0.022, -0.024);
       mount.add(pouch);
       const mag = makeMag(id);
@@ -484,7 +512,7 @@ function setBeltWeapon(id) {
       mount.add(mag);
       beltSlots.push({ kind: 'mag', mount, obj: mag, available: true, refill: 0, radius: 0.15 });
     } else {
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.032, 0.008), leather);
+      const strip = new THREE.Mesh(cachedGeo('shellstrip', () => new THREE.BoxGeometry(0.105, 0.032, 0.008)), leather);
       strip.position.set(0, 0, -0.014);
       mount.add(strip);
       for (let k = 0; k < 4; k++) {
@@ -527,6 +555,7 @@ function holdItem(h, type, obj, extra = {}) {
   obj.quaternion.setFromEuler(new THREE.Euler(-0.3, 0, 0));
   if (type === 'knife') { obj.position.set(0, -0.045, 0.015); obj.quaternion.identity(); }
   if (type === 'grenade') { obj.position.set(0, -0.03, -0.01); obj.quaternion.identity(); }
+  if (type === 'plank') { obj.position.set(0, -0.03, -0.06); obj.quaternion.setFromEuler(new THREE.Euler(-0.2, 0, 0)); }
   h.ray.add(obj);
   h.held = Object.assign({ type, obj }, extra);
   SFX.grab();
@@ -658,6 +687,141 @@ function stickKnife(k, hit, dir) {
 }
 
 // =============================================================================
+// Power-ups (fallen selten von Zombies): berühren zum Einsammeln
+// =============================================================================
+const POWERUPS = {
+  double: { icon: '×2', name: 'Doppelte Punkte', color: '#ffd21f' },
+  nuke: { icon: '☢', name: 'Atombombe', color: '#7dff4a' },
+  ammo: { icon: '▮▮', name: 'Volle Munition', color: '#4ac8ff' },
+  slowmo: { icon: '⏳', name: 'Zeitlupe', color: '#c48aff' }
+};
+const powerTex = {};
+for (const [id, pu] of Object.entries(POWERUPS)) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 10, 64, 64, 62);
+  g.addColorStop(0, pu.color); g.addColorStop(0.7, pu.color + 'aa'); g.addColorStop(1, pu.color + '00');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(64, 64, 62, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = 6; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(64, 64, 44, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#111'; ctx.font = 'bold 46px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(pu.icon, 64, 68);
+  powerTex[id] = new THREE.CanvasTexture(c);
+  powerTex[id].colorSpace = THREE.SRGBColorSpace;
+}
+const powerups = [];
+const active = { double: 0, slowmo: 0 };
+function spawnPowerup(pos, type) {
+  type = type || Object.keys(POWERUPS)[Math.floor(Math.random() * 4)];
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: powerTex[type], toneMapped: false, transparent: true, depthWrite: false }));
+  sp.scale.setScalar(0.32);
+  sp.position.set(pos.x, 1.05, pos.z);
+  scene.add(sp);
+  powerups.push({ obj: sp, type, t: 0 });
+  SFX.bonus();
+}
+function updatePowerups(dt) {
+  for (const k of Object.keys(active)) if (active[k] > 0) { active[k] -= dt; if (active[k] <= 0) { active[k] = 0; boardDirty = true; } }
+  for (let i = powerups.length - 1; i >= 0; i--) {
+    const pu = powerups[i];
+    pu.t += dt;
+    pu.obj.position.y = 1.05 + Math.sin(pu.t * 2.5) * 0.06;
+    pu.obj.material.rotation += dt;
+    pu.obj.visible = pu.t < 16 || Math.floor(pu.t * 8) % 2 === 0;
+    let take = false;
+    if (renderer.xr.isPresenting) take = hands.some(h => h.src && h.point.distanceTo(pu.obj.position) < 0.3);
+    else take = Math.hypot(camera.position.x - pu.obj.position.x, camera.position.z - pu.obj.position.z) < 1.0;
+    if (take) collectPowerup(pu);
+    else if (pu.t > 20) { scene.remove(pu.obj); pu.obj.material.dispose(); powerups.splice(i, 1); }
+  }
+}
+function collectPowerup(pu) {
+  scene.remove(pu.obj);
+  pu.obj.material.dispose();
+  powerups.splice(powerups.indexOf(pu), 1);
+  const P = POWERUPS[pu.type];
+  speak(P.name);
+  SFX.jingle([659, 880, 1175]);
+  for (const h of hands) pulse(h, 0.8, 120);
+  floatingText(P.name + '!', pu.obj.position.clone(), P.color);
+  if (pu.type === 'double') active.double = 20;
+  if (pu.type === 'slowmo') active.slowmo = 10;
+  if (pu.type === 'ammo') { for (const w of arsenal) refillWeapon(w); refillGrenades(); }
+  if (pu.type === 'nuke') {
+    nukeFlash = 1;
+    SFX.explosion();
+    for (const r of killAll(headPos)) handleZombieHit(r, r.zombie.skull.getWorldPosition(new THREE.Vector3()), '☢ ');
+  }
+  boardDirty = true;
+}
+let nukeFlash = 0;
+const nukeMesh = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, side: THREE.BackSide, depthTest: false, depthWrite: false, toneMapped: false }));
+nukeMesh.renderOrder = 2001;
+nukeMesh.visible = false;
+camera.add(nukeMesh);
+// Stimmung: flackerndes Notlicht im Flur, Blitze + Donner draußen vor den Fenstern
+let flickerT = 0, doorK = 0.2, lightningT = 8, lightningSeq = 0, windowK = 0;
+function updateAtmosphere(dt) {
+  flickerT -= dt;
+  if (flickerT <= 0) { flickerT = Math.random() * 0.15; doorK = Math.random() < 0.12 ? 0 : 0.25 + Math.random() * 0.5; }
+  if (openings().some(o => o.type === 'window')) {
+    lightningT -= dt;
+    if (lightningT <= 0) { lightningT = THREE.MathUtils.randFloat(12, 28); lightningSeq = 0.6; later(THREE.MathUtils.randFloat(0.6, 2.2), () => SFX.thunder()); }
+  }
+  if (lightningSeq > 0) { lightningSeq -= dt; windowK = Math.sin(lightningSeq * 40) > 0.3 ? 1 : 0.15; } else windowK = 0;
+  setAtmosphere(doorK, windowK);
+}
+// Riese stampft: Controller vibrieren je nach Entfernung
+function onGiantStomp(z, big) {
+  const d = headPos.distanceTo(z.root.position);
+  const k = Math.max(0, 1 - d / (big ? 8 : 5));
+  if (k > 0) for (const h of hands) pulse(h, k * (big ? 1 : 0.4), big ? 250 : 60);
+}
+
+// =============================================================================
+// Bretter annageln: Brett vom Stapel an eine Tür/ein Fenster halten und loslassen
+// =============================================================================
+const ghostPlank = new THREE.Mesh(new THREE.BoxGeometry(1, 0.13, 0.03), new THREE.MeshBasicMaterial({ color: 0x66ff88, transparent: true, opacity: 0.35, depthWrite: false }));
+ghostPlank.visible = false;
+scene.add(ghostPlank);
+function plankTarget(pos) {
+  let best = null, bd = 0.6;
+  for (const o of openings()) {
+    if (missingPlanks(o) <= 0) continue;
+    const slot = plankSlot(o, o.planks.length);
+    const d = pos.distanceTo(slot.pos);
+    if (d < bd) { bd = d; best = { o, slot, d }; }
+  }
+  return best;
+}
+function updatePlankGhost() {
+  ghostPlank.visible = false;
+  for (const h of hands) {
+    if (!h.held || h.held.type !== 'plank') continue;
+    const t = plankTarget(h.held.obj.getWorldPosition(tmpV));
+    if (!t) continue;
+    ghostPlank.visible = true;
+    ghostPlank.position.copy(t.slot.pos);
+    ghostPlank.quaternion.copy(t.slot.quat);
+    ghostPlank.scale.set(t.o.width + 0.18, 1, 1);
+    ghostPlank.material.color.set(t.d < 0.45 ? 0x66ff88 : 0xffcc33);
+  }
+}
+function nailPlank(h) {
+  const obj = h.held.obj;
+  const t = plankTarget(obj.getWorldPosition(tmpV));
+  if (!t || t.d >= 0.45) return false;
+  h.ray.remove(obj);
+  h.held = null;
+  addPlank(t.o);
+  // drei Hammerschläge
+  for (let i = 0; i < 3; i++) later(i * 0.14, () => { SFX.thunk(); pulse(h, 0.6, 30); });
+  if (inRound()) { score += 10; boardDirty = true; }
+  floatingText('🔨 +10', t.slot.pos.clone().addScaledVector(t.o.normal, 0.1), '#ffd28a');
+  return true;
+}
+
+// =============================================================================
 // Handgranaten
 // =============================================================================
 const grenades = [];
@@ -760,8 +924,8 @@ const medMat = new THREE.MeshStandardMaterial({ map: medTex, roughness: 0.5, emi
 const medkits = [];
 function spawnMedkit(pos) {
   const g = new THREE.Group();
-  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.08), medMat));
-  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.02), MAT.black);
+  g.add(new THREE.Mesh(cachedGeo('medkit', () => new THREE.BoxGeometry(0.2, 0.14, 0.08)), medMat));
+  const handle = new THREE.Mesh(cachedGeo('medhandle', () => new THREE.BoxGeometry(0.08, 0.02, 0.02)), MAT.black);
   handle.position.y = 0.08;
   g.add(handle);
   g.position.set(pos.x, 0.95, pos.z);
@@ -818,7 +982,8 @@ const DIFFS = {
 };
 let diffKey = load('vrspiel-schwierigkeit', 'normal');
 if (!DIFFS[diffKey]) diffKey = 'normal';
-let lowHpWarned = false, bruteWarned = false, pendingDeath = false;
+let lowHpWarned = false, bruteWarned = false, pendingDeath = false, bossPending = false;
+let streak = 0, lastKillT = -10, streakMsg = null, lastBreakSec = 0;
 function topList(mode) { return load('vrspiel-top-' + mode, []); }
 function addTop(mode, entry) {
   const list = topList(mode);
@@ -895,6 +1060,7 @@ function releaseHand(h) {
   if (held.type === 'weapon') { dropWeapon(h); return; }
   if (held.type === 'knife') { throwKnife(h); return; }
   if (held.type === 'grenade') { throwGrenade(h); return; }
+  if (held.type === 'plank' && nailPlank(h)) return;
   const obj = held.obj;
   obj.updateWorldMatrix(true, false);
   obj.matrixWorld.decompose(obj.position, obj.quaternion, tmpS);
@@ -962,6 +1128,7 @@ function updateHandsXR(dt) {
     if (down(h, 'squeeze') && free) {
       if (tryWeaponGrab(h)) { /* zweite Hand an der Waffe */ }
       else if (tryBeltGrab(h)) { /* vom Gürtel */ }
+      else if (h.point.distanceTo(plankPilePos) < 0.35) holdItem(h, 'plank', makePlankMesh(1.0)); // Brett vom Stapel
       else {
         const c = grabCandidates(h)[0];
         if (c) pickCandidate(h, c);
@@ -1567,7 +1734,7 @@ function refreshMenu() {
     if (r) {
       text(ctx, r.died ? '💀 Die Zombies haben dich erwischt!' : r.place === 0 ? '🏆 Neuer Rekord!' : 'Runde beendet', w / 2, 40, 36, '#fff', 'center', true);
       text(ctx, `${r.score} Punkte · Welle ${r.wave}`, w / 2, 90, 46, '#ffcc33', 'center', true);
-      text(ctx, `Erledigt ${r.kills} · Kopfschüsse ${r.headshots} · Genauigkeit ${r.acc}%`, w / 2, 134, 23, '#cfd8e3');
+      text(ctx, `Erledigt ${r.kills} · Kopfschüsse ${r.headshots} · Genauigkeit ${r.acc}% · Beste Serie ${r.streak}`, w / 2, 134, 22, '#cfd8e3');
     } else {
       text(ctx, '🧟 Zombie-Abwehr', w / 2, 44, 46, '#fff', 'center', true);
       text(ctx, 'Waffe vom Waffenständer nehmen: hingreifen & Griff-Taste HALTEN.', w / 2, 94, 23, '#cfd8e3');
@@ -1604,6 +1771,8 @@ function startCountdown() {
   for (const m of medkits.splice(0)) scene.remove(m.obj);
   for (const g of grenades.splice(0)) { removeDynamic(g.phys); scene.remove(g.obj); }
   refillGrenades();
+  for (const pu of powerups.splice(0)) { scene.remove(pu.obj); pu.obj.material.dispose(); }
+  active.double = active.slowmo = 0;
   setupPlanks();
   buildNav(headPos);
   playerHp = 100;
@@ -1621,6 +1790,9 @@ function beginRound() {
   state = 'playing';
   score = 0; roundClock = 0; wave = 0;
   stats.shots = stats.hits = stats.kills = stats.headshots = 0;
+  stats.bestStreak = 0;
+  streak = 0;
+  streakMsg = null;
   nextWave();
   SFX.jingle([392, 330, 262]);
 }
@@ -1629,7 +1801,8 @@ function nextWave() {
   toSpawn = Math.max(2, Math.round((gameMode === 'training' ? 2 + wave : 3 + wave * 2) * DIFFS[diffKey].count));
   refillGrenades();
   bruteWarned = false;
-  speak(`Welle ${wave}`);
+  bossPending = gameMode !== 'training' && wave % 5 === 0;
+  speak(bossPending ? `Welle ${wave}. Ein Riese kommt!` : `Welle ${wave}`);
   spawnT = 1.5;
   waveBreak = 0;
   setupPlanks(); // Bretter werden vor jeder Welle wieder angenagelt
@@ -1642,7 +1815,7 @@ function endRound(died = false) {
   hurtFlash = 0;
   const acc = stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0;
   const place = addTop(gameMode, { score, wave, kills: stats.kills, diff: diffKey, date: Date.now() });
-  lastResult = { score, kills: stats.kills, headshots: stats.headshots, acc, wave, place, died };
+  lastResult = { score, kills: stats.kills, headshots: stats.headshots, acc, wave, place, died, streak: stats.bestStreak || 0 };
   speak(died ? 'Du wurdest gefressen' : place === 0 ? 'Neuer Rekord!' : 'Runde beendet');
   if (died) SFX.jingle([392, 370, 349, 330, 196], 0.4); else SFX.jingle([784, 659, 523, 392], 0.35);
   enterMenu();
@@ -1653,7 +1826,32 @@ function currentRange() {
   if (!ws.length) return [2.5, 6];
   return [Math.min(...ws.map(w => w.def.range[0])), Math.max(...ws.map(w => w.def.range[1]))];
 }
-function playerHit(dmg) {
+// Richtungsanzeige: roter Bogen zeigt, von wo der Angriff kam
+const dirIndicator = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(128, 128, 80, 128, 128, 126);
+  g.addColorStop(0, 'rgba(255,0,0,0)'); g.addColorStop(0.6, 'rgba(255,20,20,0.9)'); g.addColorStop(1, 'rgba(255,0,0,0)');
+  ctx.strokeStyle = g; ctx.lineWidth = 40;
+  ctx.beginPath(); ctx.arc(128, 128, 104, -Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5); ctx.stroke();
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.42), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false }));
+  m.position.set(0, 0, -0.5);
+  m.renderOrder = 2002;
+  m.visible = false;
+  camera.add(m);
+  return m;
+})();
+function showHitDirection(from) {
+  const cam = getViewCamera();
+  const v = from.clone();
+  cam.worldToLocal(v);
+  dirIndicator.rotation.z = Math.atan2(-v.x, -v.z);
+  dirIndicator.material.opacity = 1;
+  dirIndicator.visible = true;
+}
+function playerHit(dmg, z) {
+  if (z && z.root) showHitDirection(z.root.position.clone().setY(headPos.y));
   if (state !== 'playing') return;
   playerHp -= dmg * DIFFS[diffKey].dmg;
   hurtFlash = 1;
@@ -1684,7 +1882,9 @@ function updateGame(dt) {
   regenT -= dt;
   if (regenT <= 0 && playerHp < 100) { playerHp = Math.min(100, playerHp + dt * 3); if (Math.random() < dt * 2) boardDirty = true; }
   if (playerHp < 35) { heartT -= dt; if (heartT <= 0) { heartT = 0.9; SFX_PLAYER.heartbeat(); } }
+  if (streakMsg) { streakMsg.t -= dt; if (streakMsg.t <= 0) streakMsg = null; boardDirty = true; }
   if (waveBreak > 0) {
+    if (Math.ceil(waveBreak) !== lastBreakSec) { lastBreakSec = Math.ceil(waveBreak); boardDirty = true; }
     waveBreak -= dt;
     if (waveBreak <= 0) nextWave();
     return;
@@ -1694,7 +1894,8 @@ function updateGame(dt) {
     spawnT -= dt;
     if (spawnT <= 0 && aliveCount() < 3 + wave) {
       const D = DIFFS[diffKey];
-      const zn = spawnZombie(gameMode === 'training' ? 0 : wave, headPos, undefined, { hp: D.hp, speed: gameMode === 'training' ? 0.8 : D.speed });
+      const zn = spawnZombie(gameMode === 'training' ? 0 : wave, headPos, bossPending ? 'giant' : undefined, { hp: D.hp, speed: gameMode === 'training' ? 0.8 : D.speed });
+      bossPending = false;
       if (zn.type === 'brute' && !bruteWarned) { bruteWarned = true; speak('Achtung, ein Brocken!'); }
       toSpawn--;
       spawnT = Math.max(0.8, 3.5 - wave * 0.3) * THREE.MathUtils.randFloat(0.7, 1.3);
@@ -1714,14 +1915,30 @@ function handleZombieHit(res, point, prefix = '') {
   if (!res) return;
   if (res.kill) {
     floorDecal(res.pos, 'blood', THREE.MathUtils.randFloat(0.5, 0.9));
-    if (inRound() && Math.random() < (playerHp < 60 ? 0.18 : 0.1)) spawnMedkit(res.pos);
+    if (inRound() && res.type === 'giant') spawnPowerup(res.pos); // der Riese lässt immer ein Power-up fallen
+    else if (inRound() && Math.random() < (playerHp < 60 ? 0.18 : 0.1)) spawnMedkit(res.pos);
+    else if (inRound() && !res.nuke && powerups.length < 2 && Math.random() < 0.045) spawnPowerup(res.pos);
   }
+  SFX.marker(res.kill);
   if (inRound()) {
     if (!res.explosion) stats.hits++;
-    score += 10;
+    const mult = active.double > 0 ? 2 : 1;
+    score += 10 * mult;
     if (res.kill) {
       stats.kills++;
-      score += res.headshot ? 150 : 100;
+      // Killserie: mehrere Kills kurz hintereinander
+      streak = elapsed - lastKillT < 1.6 ? streak + 1 : 1;
+      lastKillT = elapsed;
+      stats.bestStreak = Math.max(stats.bestStreak || 0, streak);
+      if (streak >= 2) {
+        const names = { 2: 'Doppelkill!', 3: 'Dreifachkill!', 4: 'Vierfachkill!' };
+        const name = names[streak] || 'Massaker!';
+        const bonus = 50 * (streak - 1) * mult;
+        score += bonus;
+        streakMsg = { text: `${name} +${bonus}`, t: 2.2 };
+        if (streak <= 5 || streak % 3 === 0) speak(name.replace('!', ''));
+      }
+      score += (res.headshot ? 150 : 100) * mult;
       if (res.headshot) stats.headshots++;
     }
   }
@@ -1737,7 +1954,8 @@ function refreshBoard() {
       return;
     }
     const left = aliveCount() + toSpawn;
-    text(ctx, waveBreak > 0 ? `Welle ${wave} überlebt!` : `Welle ${wave} · 🧟 ${left}`, w / 2, 56, 56, '#fff', 'center', true);
+    text(ctx, waveBreak > 0 ? `Welle ${wave} überlebt! Nächste in ${Math.max(1, Math.ceil(waveBreak))}` : `Welle ${wave} · 🧟 ${left}`, w / 2, 56, waveBreak > 0 ? 44 : 56, '#fff', 'center', true);
+    if (streakMsg && !training) text(ctx, streakMsg.text, w / 2, 282, 40, '#ff8a3a', 'center', true);
     // Lebensbalken
     const bx = 90, bw = w - 180, by = 104;
     ctx.fillStyle = '#333'; ctx.fillRect(bx, by, bw, 30);
@@ -1745,7 +1963,9 @@ function refreshBoard() {
     ctx.fillRect(bx, by, bw * playerHp / 100, 30);
     text(ctx, `❤ ${Math.ceil(playerHp)}`, w / 2, by + 16, 24, '#fff', 'center', true);
     text(ctx, `${score} Punkte · Erledigt ${stats.kills} · Kopfschüsse ${stats.headshots} · 💣 ${grenadeSlots.filter(g => g.available).length}`, w / 2, 176, 28, '#cfd8e3', 'center', true);
-  }, training ? row(220, 60, [{ id: 'end', label: '■ Training beenden', onClick: () => endRound(false) }], 768, 230) : []);
+    const act = [active.double > 0 ? `×2 Punkte ${Math.ceil(active.double)}s` : '', active.slowmo > 0 ? `⏳ Zeitlupe ${Math.ceil(active.slowmo)}s` : ''].filter(Boolean).join(' · ');
+    if (act) text(ctx, act, w / 2, 214, 26, '#ffd21f', 'center', true);
+  }, training ? row(238, 58, [{ id: 'end', label: '■ Training beenden', onClick: () => endRound(false) }], 768, 230) : []);
 }
 
 // =============================================================================
@@ -2015,6 +2235,11 @@ window.addEventListener('keydown', (e) => {
   const n = parseInt(e.key, 10);
   if (n >= 1 && n <= 4) equipDesk(arsenal[n - 1]);
   if (e.key === 'f' || e.key === 'F') desktopThrowKnife();
+  if (e.key === 'p' || e.key === 'P') {
+    let best = null, bd = Infinity;
+    for (const o of openings()) { if (missingPlanks(o) <= 0) continue; const d = o.mid.distanceTo(camera.position); if (d < bd) { bd = d; best = o; } }
+    if (best) { addPlank(best); SFX.thunk(); if (inRound()) { score += 10; boardDirty = true; } }
+  }
   if (e.key === 'g' || e.key === 'G') {
     const gs = grenadeSlots.find(x => x.available);
     if (gs) {
@@ -2162,8 +2387,16 @@ function frame() {
   stepPhysics(dt);
   updateKnives(dt);
   updateGrenades(dt);
+  updatePlankGhost();
   updateMedkits(dt);
-  updateZombies(dt, headPos, { harmless: gameMode === 'training' });
+  updateZombies(active.slowmo > 0 ? dt * 0.35 : dt, headPos, { harmless: gameMode === 'training' });
+  updatePowerups(dt);
+  updateAtmosphere(dt);
+  if (dirIndicator.visible) { dirIndicator.material.opacity -= dt * 0.9; if (dirIndicator.material.opacity <= 0) dirIndicator.visible = false; }
+  if ((active.double > 0 || active.slowmo > 0) && Math.random() < dt * 3) boardDirty = true;
+  nukeFlash = Math.max(0, nukeFlash - dt * 1.2);
+  nukeMesh.material.opacity = nukeFlash * 0.85;
+  nukeMesh.visible = nukeFlash > 0.01;
   getViewCamera().getWorldDirection(tmpV);
   setListener(headPos, tmpV, UP.clone().applyQuaternion(getViewCamera().getWorldQuaternion(tmpQ)));
   updateGame(dt);
@@ -2182,7 +2415,7 @@ function frame() {
 
 // Für automatisierte Tests
 window.__game = {
-  renderer, get errors() { return errorCount; }, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
+  renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound
 };

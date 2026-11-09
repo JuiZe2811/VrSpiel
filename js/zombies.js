@@ -1,23 +1,24 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=17';
-import { addDynamic, removeDynamic, localBoxOf } from './physics.js?v=17';
-import { SFX3D } from './sfx.js?v=17';
-import { burst, addDebris } from './effects.js?v=17';
-import { cachedGeo } from './util.js?v=17';
+import { room, surfacesOf, isOpening } from './room.js?v=18';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=18';
+import { SFX3D } from './sfx.js?v=18';
+import { burst, addDebris, shockwave } from './effects.js?v=18';
+import { cachedGeo } from './util.js?v=18';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
 // laufen um Wände/Tische/Stühle herum zum Spieler und greifen an.
 // Trefferzonen: Kopf (x3), Körper, Arme (können abfallen), Beine (Humpeln / Kriechen).
 // =============================================================================
-let scene, onPlayerHit = () => {};
+let scene, onPlayerHit = () => {}, onBump = () => {}, onStomp = null;
+const corpses = [];
 export const zombies = [];
 const planks = [];
 const rand = THREE.MathUtils.randFloat;
 const UP = new THREE.Vector3(0, 1, 0);
 const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
 
-export function initZombies(s, hitCallback) { scene = s; onPlayerHit = hitCallback; }
+export function initZombies(s, hitCallback, bumpCallback, stompCallback) { scene = s; onPlayerHit = hitCallback; if (bumpCallback) onBump = bumpCallback; if (stompCallback) onStomp = stompCallback; }
 
 // ---- Aussehen -------------------------------------------------------------------
 // Alle Formen und Texturen werden geteilt (kein Speicherleck bei vielen Zombies).
@@ -102,7 +103,8 @@ export const TYPES = {
   walker: { name: 'Schlurfer', scale: [0.86, 0.96], width: 1, hp: 100, speed: 1, dmg: 10 },
   runner: { name: 'Renner', scale: [0.84, 0.92], width: 0.85, hp: 70, speed: 1.9, dmg: 8 },
   brute: { name: 'Brocken', scale: [0.97, 1.04], width: 1.35, hp: 220, speed: 0.7, dmg: 18 },
-  crawler: { name: 'Kriecher', scale: [0.82, 0.9], width: 0.95, hp: 60, speed: 1.4, dmg: 7 }
+  crawler: { name: 'Kriecher', scale: [0.82, 0.9], width: 0.95, hp: 60, speed: 1.4, dmg: 7 },
+  giant: { name: 'Riese', scale: [1.24, 1.3], width: 1.5, hp: 900, speed: 0.62, dmg: 28 }
 };
 function buildZombie(type) {
   const T = TYPES[type];
@@ -139,7 +141,7 @@ function buildZombie(type) {
   skull.rotation.y = 0; // Gesicht zeigt nach +Z
   head.add(skull);
   if (Math.random() < 0.6) head.add(mesh(hairGeo, hairMat, 0, 0.115, -0.005, null, 0.95, 1.1, 1.02));
-  const eyeMat = type === 'runner' ? EYES[1] : pick(EYES);
+  const eyeMat = type === 'runner' || type === 'giant' ? EYES[1] : pick(EYES);
   for (const sx of [-1, 1]) if (Math.random() > 0.12) head.add(mesh(sphGeo(0.014), eyeMat, sx * 0.034, 0.118, 0.077));
   const jaw = new THREE.Group();
   jaw.position.set(0, 0.06, 0.02);
@@ -175,6 +177,9 @@ function buildZombie(type) {
     knee.add(mesh(capGeo(0.04, 0.1), Math.random() < 0.5 ? mouthMat : skin, 0, -0.4, 0.04, lname).rotateX(Math.PI / 2));
     legs.push({ hip, knee, side, name: lname });
   }
+  // kräftige Typen: dickere Beine und Arme
+  const thick = 0.6 + 0.4 * T.width;
+  if (thick > 1.01) { for (const l of legs) l.hip.scale.set(thick, 1, thick); for (const a of arms) a.shoulder.scale.z = thick; }
   return { root, body, hips, torso, neck, head, skull, jaw, arms, legs };
 }
 
@@ -182,28 +187,43 @@ function buildZombie(type) {
 const plankMat = [0x8a6239, 0x7a5532, 0x94703f].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 }));
 const nailMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.8, roughness: 0.4 });
 export const openings = () => room.surfaces.filter(isOpening);
+const plankCountFor = (o) => (o.type === 'door' ? 5 : 4);
+export function makePlankMesh(len) {
+  const g = new THREE.Group();
+  const board = new THREE.Mesh(cachedGeo(`plank${len.toFixed(2)}`, () => new THREE.BoxGeometry(len, 0.13, 0.025)), pick(plankMat));
+  board.userData.plank = true;
+  g.add(board);
+  for (const sx of [-1, 1]) { const nail = new THREE.Mesh(cachedGeo('nail', () => new THREE.CylinderGeometry(0.006, 0.006, 0.01, 6)), nailMat); nail.rotation.x = Math.PI / 2; nail.position.set(sx * (len / 2 - 0.05), 0, 0.014); g.add(nail); }
+  g.userData.board = board;
+  return g;
+}
+// Lage des i-ten Bretts (von unten gezählt)
+export function plankSlot(o, i) {
+  const lo = o.type === 'door' ? 0.3 : o.bottom + 0.08, hi = o.type === 'door' ? 1.9 : o.top - 0.08;
+  const n = plankCountFor(o);
+  const pos = o.a.clone().addScaledVector(o.right, o.width / 2).setY(lo + (hi - lo) * (i + 0.5) / n).addScaledVector(o.normal, 0.07);
+  const quat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(o.right, UP, o.normal));
+  return { pos, quat };
+}
+export const missingPlanks = (o) => plankCountFor(o) - (o.planks ? o.planks.length : 0);
+// ein Brett annageln (das nächste fehlende); gibt false zurück, wenn alles vernagelt ist
+export function addPlank(o) {
+  if (!o.planks) o.planks = [];
+  const i = o.planks.length;
+  if (i >= plankCountFor(o)) return false;
+  const g = makePlankMesh(o.width + 0.18);
+  const slot = plankSlot(o, i);
+  g.position.copy(slot.pos);
+  g.quaternion.copy(slot.quat).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rand(-0.12, 0.12)));
+  scene.add(g);
+  const p = { opening: o, obj: g, board: g.userData.board };
+  o.planks.push(p);
+  planks.push(p);
+  return true;
+}
 export function setupPlanks() {
   clearPlanks();
-  for (const o of openings()) {
-    o.planks = [];
-    const lo = o.type === 'door' ? 0.3 : o.bottom + 0.08, hi = o.type === 'door' ? 1.9 : o.top - 0.08;
-    const n = o.type === 'door' ? 5 : 4;
-    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(o.right, UP, o.normal));
-    for (let i = 0; i < n; i++) {
-      const g = new THREE.Group();
-      const len = o.width + 0.18;
-      const board = new THREE.Mesh(cachedGeo(`plank${len.toFixed(2)}`, () => new THREE.BoxGeometry(len, 0.13, 0.025)), pick(plankMat));
-      board.userData.plank = true;
-      g.add(board);
-      for (const sx of [-1, 1]) { const nail = new THREE.Mesh(cachedGeo('nail', () => new THREE.CylinderGeometry(0.006, 0.006, 0.01, 6)), nailMat); nail.rotation.x = Math.PI / 2; nail.position.set(sx * (len / 2 - 0.05), 0, 0.014); g.add(nail); }
-      g.position.copy(o.a).addScaledVector(o.right, o.width / 2).setY(lo + (hi - lo) * (i + 0.5) / n).addScaledVector(o.normal, 0.07);
-      g.quaternion.copy(q).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rand(-0.12, 0.12)));
-      scene.add(g);
-      const p = { opening: o, obj: g, board };
-      o.planks.push(p);
-      planks.push(p);
-    }
-  }
+  for (const o of openings()) { o.planks = []; while (addPlank(o)) { /* alle Bretter */ } }
 }
 export function clearPlanks() {
   for (const p of planks) if (p.obj.parent) p.obj.parent.remove(p.obj);
@@ -360,13 +380,21 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
   zombie.root.position.x = zombie.pos.x;
   zombie.root.position.z = zombie.pos.z;
   zombie.root.traverse(o => { if (o.isMesh && o.userData.part) o.userData.zombie = zombie; });
+  // unsichtbarer Körper: geworfene Dinge prallen ab und treffen den Zombie
+  zombie.kin = addKinematicBox(new THREE.Vector3(0.2 * T.width * scale, 0.8 * scale, 0.16 * scale), 0.8 * scale, (other, v, p) => bumpZombie(zombie, other, v, p));
+  zombie.kinCrawl = false;
   scene.add(zombie.root);
   zombies.push(zombie);
   return zombie;
 }
 export function clearZombies() {
-  for (const z of zombies) { if (z.root.parent) z.root.parent.remove(z.root); }
+  for (const z of zombies) {
+    if (z.root.parent) z.root.parent.remove(z.root);
+    if (z.kin) { removeBody(z.kin); z.kin = null; }
+    if (z.phys) { removeDynamic(z.phys); z.phys = null; }
+  }
   zombies.length = 0;
+  corpses.length = 0;
   for (const l of limbs) { removeDynamic(l.phys); if (l.obj.parent) l.obj.parent.remove(l.obj); }
   limbs.length = 0;
 }
@@ -405,6 +433,16 @@ export function damageZombie(mesh, point, dir, dmg) {
   SFX3D.splat(point);
   z.hurtT = Math.max(z.hurtT, 0.25);
   z.hurtDir = dir.clone();
+  // Treffer von der Seite drehen den Oberkörper mit, Kopftreffer reißen den Kopf zurück
+  const fwdH = new THREE.Vector3(Math.sin(z.yaw), 0, Math.cos(z.yaw));
+  z.hurtTwist = Math.sign(fwdH.x * dir.z - fwdH.z * dir.x) || 1;
+  if (partName === 'head') z.headSnap = 0.5;
+  // viel Schaden auf einmal (z. B. Schrot aus der Nähe) wirft den Zombie um
+  z.recentDmg = (z.recentDmg || 0) + dmg;
+  if (z.recentDmg > 75 && !z.knockT && !z.crawl && z.type !== 'brute' && z.type !== 'giant' && (z.state === 'walk' || z.state === 'attack')) {
+    z.knockT = 2.2;
+    z.knockBack = dir.dot(fwdH) < 0 ? -1 : 1; // nach hinten bzw. vorne umfallen
+  }
   // harte Treffer lassen den Zombie taumeln und stoßen ihn zurück (Brocken nicht)
   if (z.type !== 'brute' && z.state !== 'outside' && z.state !== 'tear' && z.state !== 'enter') {
     const push = Math.min(0.12, dmg * 0.0035);
@@ -433,6 +471,19 @@ export function damageZombie(mesh, point, dir, dmg) {
     kill(z, dir);
   }
   return res;
+}
+// Atombombe (Power-up): alle Zombies sterben
+export function killAll(from) {
+  const results = [];
+  for (const z of zombies) {
+    if (z.state === 'dead') continue;
+    const dir = new THREE.Vector3(z.pos.x - from.x, 0, z.pos.z - from.z).normalize();
+    z.hp = 0;
+    burst(z.skull.getWorldPosition(new THREE.Vector3()), 0x6a0000, 14);
+    kill(z, dir);
+    results.push({ part: 'torso', headshot: false, kill: true, pos: z.pos.clone(), type: z.type, zombie: z, explosion: true, nuke: true });
+  }
+  return results;
 }
 // Explosion (Handgranate): Schaden nimmt mit der Entfernung ab, nahe Treffer reißen Gliedmaßen ab
 export function explosionDamage(center, radius, maxDmg) {
@@ -463,12 +514,60 @@ export function explosionDamage(center, radius, maxDmg) {
   }
   return results;
 }
+// Ein geworfener Gegenstand trifft den Zombie
+// (wird während des Physik-Schritts gemeldet – ausgewertet erst im nächsten Zombie-Update)
+function bumpZombie(z, other, v, p) {
+  if (z.state === 'dead' || other.isCorpse || (z.bumpT || 0) > 0 || z.pendingBump) return;
+  z.pendingBump = { mass: other.mass, v, vel: new THREE.Vector3(other.velocity.x, other.velocity.y, other.velocity.z), p: p.clone() };
+}
+function applyBump(z) {
+  const { mass, v, vel, p } = z.pendingBump;
+  z.pendingBump = null;
+  if (z.state === 'dead') return;
+  z.bumpT = 0.3;
+  const other = { mass, velocity: vel };
+  const dmg = THREE.MathUtils.clamp(other.mass * v * 5, 8, 70);
+  const dir = new THREE.Vector3(other.velocity.x, 0, other.velocity.z);
+  if (dir.lengthSq() < 1e-4) dir.set(z.pos.x - p.x, 0, z.pos.z - p.z);
+  dir.normalize();
+  const res = damageZombie(z.torso.children[1], p, dir, dmg);
+  if (res) { res.bump = true; onBump(res, p); }
+}
+// Leiche: wird zum Physik-Körper und kippt in Fallrichtung um
+function makeCorpse(z) {
+  // schlanke Körperform (die ausgestreckten Arme würden den Körper sonst zu standfest machen)
+  const sc = z.scale, w = z.T.width;
+  const lying = z.crawl || Math.abs(z.body.rotation.x) > 0.8; // kriecht oder liegt schon (umgeworfen)
+  let box;
+  if (lying) { box = localBoxOf(z.root); box.min.multiplyScalar(sc); box.max.multiplyScalar(sc); box.max.y = Math.max(box.max.y, box.min.y + 0.15); }
+  else box = new THREE.Box3(new THREE.Vector3(-0.2 * w * sc, 0, -0.13 * sc), new THREE.Vector3(0.2 * w * sc, 1.6 * sc, 0.13 * sc));
+  const dir = z.fallVec || new THREE.Vector3(Math.sin(z.yaw), 0, Math.cos(z.yaw));
+  const axis = new THREE.Vector3(0, 1, 0).cross(dir).normalize();
+  z.phys = addDynamic(z.root, box, 45, {
+    vel: dir.clone().multiplyScalar(1.2).add(new THREE.Vector3(0, 0.3, 0)),
+    angVel: axis.multiplyScalar(lying ? 0.4 : 3.5),
+    linearDamping: 0.15, angularDamping: 0.45,
+    onImpact: (iv) => { if (iv > 1.5) SFX3D.bang(z.root.position.clone().setY(0.3)); }
+  });
+  z.phys.body.isCorpse = true;
+  corpses.push(z);
+  while (corpses.length > 8) { const old = corpses.shift(); removeCorpse(old); }
+}
+function removeCorpse(z) {
+  if (z.phys) { removeDynamic(z.phys); z.phys = null; }
+  if (z.root.parent) z.root.parent.remove(z.root);
+  const i = zombies.indexOf(z);
+  if (i >= 0) zombies.splice(i, 1);
+}
 function kill(z, dir) {
   z.state = 'dead';
   z.deadT = 0;
   // nach hinten (vom Schuss weg) umfallen
   const fwd = new THREE.Vector3(Math.sin(z.yaw), 0, Math.cos(z.yaw));
   z.fallDir = dir && dir.dot(fwd) > 0 ? 1 : -1;
+  z.fallVec = dir ? new THREE.Vector3(dir.x, 0, dir.z).normalize() : fwd;
+  if (!isFinite(z.fallVec.x) || z.fallVec.lengthSq() < 0.5) z.fallVec = fwd;
+  if (z.kin) { removeBody(z.kin); z.kin = null; }
 }
 
 // ---- Bewegung & Animation ------------------------------------------------------------
@@ -512,8 +611,23 @@ function animateWalk(z, dt, speed) {
   });
   z.hips.position.y = 0.86 - Math.abs(s) * 0.03 - (limp[0] || limp[1] ? Math.max(0, limp[0] ? s : -s) * 0.08 : 0);
   z.body.rotation.z = (limp[0] ? -0.12 : limp[1] ? 0.12 : 0) + s * 0.05;
-  z.arms.forEach((a, i) => { a.shoulder.rotation.x = -1.35 + (i ? s : -s) * 0.12; a.shoulder.rotation.z = (a.side) * -0.08; a.elbow.rotation.x = -0.2; });
+  if (z.type === 'runner') {
+    // Renner: nach vorne gebeugt, Arme pumpen
+    z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, 0.38, 6, dt);
+    z.arms.forEach((a, i) => { a.shoulder.rotation.x = -0.35 + (i ? -s : s) * 0.9; a.shoulder.rotation.z = a.side * -0.15; a.elbow.rotation.x = -1.2; });
+  } else {
+    z.arms.forEach((a, i) => { a.shoulder.rotation.x = -1.35 + (i ? s : -s) * 0.12; a.shoulder.rotation.z = (a.side) * -0.08; a.elbow.rotation.x = -0.2; });
+  }
+  if (z.type === 'brute' || z.type === 'giant') { // schwerfällig: stärkeres Wanken
+    z.body.rotation.z += s * 0.08;
+    z.hips.position.y -= Math.abs(s) * 0.04;
+  }
   z.head.rotation.z = Math.sin(z.phase * 0.5) * 0.15;
+  // zufälliges Zucken des Kopfes
+  z.twitchT = (z.twitchT ?? Math.random() * 3) - dt;
+  if (z.twitchT <= 0) { z.twitchT = 1.5 + Math.random() * 3; z.twitch = (Math.random() - 0.5) * 1.4; }
+  z.twitch = (z.twitch || 0) * Math.pow(0.02, dt);
+  z.head.rotation.y = z.twitch;
 }
 function animateTear(z, dt) {
   z.phase += dt * 6;
@@ -525,8 +639,16 @@ function animateTear(z, dt) {
 function animateAttack(z, dt) {
   const t = 1 - Math.max(0, z.attackT) / 1.3; // 0..1 Schlagphase
   const swing = Math.sin(Math.min(1, t * 1.6) * Math.PI);
-  z.arms.forEach((a, i) => { a.shoulder.rotation.x = -1.2 - swing * 1.2 * (i ? 1 : 0.6); a.elbow.rotation.x = -0.6 + swing * 0.5; });
-  z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, z.crawl ? 1.45 : 0.2 + swing * 0.2, 8, dt);
+  if (z.attackVariant === 1 && !z.crawl) {
+    // Biss: packt zu und stößt mit dem Kopf nach vorne
+    z.arms.forEach(a => { a.shoulder.rotation.x = -1.5; a.shoulder.rotation.z = a.side * 0.35; a.elbow.rotation.x = -0.9; });
+    z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, 0.15 + swing * 0.45, 10, dt);
+    z.neck.rotation.x = 0.25 + swing * 0.5;
+  } else {
+    z.arms.forEach((a, i) => { a.shoulder.rotation.x = -1.2 - swing * 1.2 * (i ? 1 : 0.6); a.elbow.rotation.x = -0.6 + swing * 0.5; a.shoulder.rotation.z = 0; });
+    z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, z.crawl ? 1.45 : 0.2 + swing * 0.2, 8, dt);
+    z.neck.rotation.x = THREE.MathUtils.damp(z.neck.rotation.x, 0.25, 8, dt);
+  }
   z.legs.forEach(l => { l.hip.rotation.x *= 0.85; l.knee.rotation.x *= 0.85; });
 }
 
@@ -540,12 +662,15 @@ export function updateZombies(dt, head, opts = {}) {
     if (z.stagger > 0) z.stagger -= dt;
     if (z.state === 'dead') {
       z.deadT += dt;
-      const k = Math.min(1, z.deadT / 0.7);
-      z.body.rotation.x = THREE.MathUtils.lerp(z.body.rotation.x, (z.crawl ? 1.5 : 1.5 * z.fallDir), k * 0.2);
-      z.body.position.y = THREE.MathUtils.lerp(z.body.position.y, z.crawl ? 0.05 : 0.1, k * 0.2);
-      z.arms.forEach(a => { a.shoulder.rotation.x *= 0.95; });
-      if (z.deadT > 5) z.root.position.y -= dt * 0.3; // versinkt
-      if (z.deadT > 8) { scene.remove(z.root); zombies.splice(i, 1); }
+      // erschlafft: Arme sinken, Knie knicken, Kopf fällt
+      z.arms.forEach(a => { a.shoulder.rotation.x *= 0.9; a.elbow.rotation.x *= 0.9; });
+      z.legs.forEach((l, k) => { l.knee.rotation.x = THREE.MathUtils.damp(l.knee.rotation.x, 0.5 + k * 0.3, 4, dt); });
+      z.neck.rotation.x = THREE.MathUtils.damp(z.neck.rotation.x, 0.9, 4, dt);
+      z.jaw.rotation.x = 0.45;
+      if (!z.phys && z.deadT > 0.08 && z.deadT < 6) makeCorpse(z);
+      if (z.deadT > 6 && z.phys) { removeDynamic(z.phys); z.phys = null; }
+      if (z.deadT > 6) z.root.position.y -= dt * 0.25; // versinkt im Boden
+      if (z.deadT > 9.5) { const ci = corpses.indexOf(z); if (ci >= 0) corpses.splice(ci, 1); scene.remove(z.root); zombies.splice(i, 1); }
       continue;
     }
     z.groanT -= dt;
@@ -607,6 +732,15 @@ export function updateZombies(dt, head, opts = {}) {
         z.legs.forEach((l, k) => { l.hip.rotation.x = -Math.sin(t * Math.PI) * 1.2 + k * 0.3; l.knee.rotation.x = 1.0; });
       } else animateWalk(z, dt, speed);
       if (t >= 1) { z.state = 'walk'; z.root.position.y = 0; z.pathT = 0; }
+    } else if ((z.state === 'walk' || z.state === 'attack') && z.knockT > 0) {
+      // umgeworfen: fällt hin, bleibt kurz liegen, steht wieder auf
+      z.knockT -= dt;
+      const k = z.knockT;
+      const down = k > 1.6 ? (2.2 - k) / 0.6 : k > 0.7 ? 1 : k / 0.7;
+      z.body.rotation.x = 1.45 * z.knockBack * THREE.MathUtils.smoothstep(down, 0, 1);
+      z.body.position.y = 0.05 * down;
+      z.arms.forEach((a, i) => { a.shoulder.rotation.x = -0.4 - (i ? 0.6 : 0.2) * down; a.elbow.rotation.x = -0.3; });
+      if (z.knockT <= 0) { z.knockT = 0; z.body.rotation.x = 0.12; }
     } else if (z.state === 'walk' || z.state === 'attack') {
       const dist = Math.hypot(player.x - z.pos.x, player.z - z.pos.z);
       const reach = z.crawl ? 0.7 : 0.8;
@@ -617,6 +751,7 @@ export function updateZombies(dt, head, opts = {}) {
         animateAttack(z, dt);
         if (z.attackT <= 0) {
           z.attackT = 1.3;
+          z.attackVariant = Math.random() < 0.4 ? 1 : 0;
           SFX3D.swing(z.skull.getWorldPosition(tmpV2));
           const armsLeft = z.armLost.filter(x => !x).length;
           if (!opts.harmless && armsLeft > 0) onPlayerHit(z.T.dmg * (z.crawl ? 0.7 : 1) * (armsLeft === 2 ? 1 : 0.6), z);
@@ -642,11 +777,39 @@ export function updateZombies(dt, head, opts = {}) {
         if (d > 0.001 && d < 0.5) { const push = (0.5 - d) * 0.5; if (walkable(z.pos.x + dx / d * push, z.pos.z + dz / d * push)) { z.pos.x += dx / d * push; z.pos.z += dz / d * push; } }
       }
     }
+    // schwere Schritte (Brocken, Riese) und Stampf-Angriff des Riesen
+    if ((z.type === 'brute' || z.type === 'giant') && (z.state === 'walk' || z.state === 'outside' || z.state === 'enter') && !z.crawl) {
+      const stepPhase = Math.floor(z.phase / Math.PI);
+      if (stepPhase !== z.lastStep) { z.lastStep = stepPhase; SFX3D.step(z.root.position.clone(), z.type === 'giant' ? 1.8 : 1.2); if (z.type === 'giant' && onStomp) onStomp(z, false); }
+    }
+    if (z.type === 'giant' && (z.state === 'walk' || z.state === 'attack')) {
+      z.roarT = (z.roarT ?? 2) - dt;
+      if (z.roarT <= 0) { z.roarT = rand(7, 12); SFX3D.roar(z.skull.getWorldPosition(tmpV2)); }
+      z.stompT = (z.stompT ?? 4) - dt;
+      const dPl = Math.hypot(player.x - z.pos.x, player.z - z.pos.z);
+      if (z.stompT <= 0 && dPl < 2.8 && !(z.stagger > 0)) {
+        z.stompT = rand(5, 7);
+        shockwave(z.root.position.clone().setY(0.1));
+        burst(z.root.position.clone().setY(0.1), 0x5a5048, 20);
+        SFX3D.bang(z.root.position.clone());
+        if (onStomp) onStomp(z, true);
+        if (!opts.harmless && dPl < 2.6) onPlayerHit(12, z);
+      }
+    }
     // Kiefer schnappt auf und zu
     z.jawT += dt * (z.state === 'attack' ? 9 : 2.5);
     z.jaw.rotation.x = 0.15 + Math.max(0, Math.sin(z.jawT)) * (z.state === 'attack' ? 0.6 : 0.35);
     // Treffer-Reaktion: kurz nach hinten zucken
-    if (z.hurtT > 0) z.torso.rotation.x = -z.hurtT * 1.6; else z.torso.rotation.x *= 0.8;
+    if (z.hurtT > 0) { z.torso.rotation.x = -z.hurtT * 1.6; z.torso.rotation.y = z.hurtT * 1.4 * (z.hurtTwist || 0); }
+    else { z.torso.rotation.x *= 0.8; z.torso.rotation.y *= 0.8; }
+    if (z.headSnap > 0) { z.headSnap -= dt; z.head.rotation.x = -Math.max(0, z.headSnap) * 1.6; } else z.head.rotation.x *= 0.8;
+    z.recentDmg = Math.max(0, (z.recentDmg || 0) - dt * 120);
+    z.bumpT = Math.max(0, (z.bumpT || 0) - dt);
+    if (z.pendingBump) applyBump(z);
+    if (z.kin) {
+      if (z.crawl && !z.kinCrawl) { z.kinCrawl = true; resizeKinematic(z.kin, new THREE.Vector3(0.25, 0.18, 0.5), 0.18); }
+      setKinematicPose(z.kin, z.pos.x, z.root.position.y, z.pos.z, z.yaw);
+    }
     z.root.position.x = z.pos.x;
     z.root.position.z = z.pos.z;
     z.root.rotation.y = z.yaw;

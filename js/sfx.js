@@ -70,6 +70,19 @@ export const SFX = {
     tone(t, 80, 22, 1.2, 1.0);
     for (let i = 0; i < 6; i++) noise(t + 0.1 + Math.random() * 0.6, 0.05, 0.25, 'bandpass', 3000, 2000, 3); // Splitter
   },
+  thunder() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    noise(t, 0.35, 0.5, 'lowpass', 2500, 300);
+    noise(t + 0.1, 3.2, 0.7, 'lowpass', 400, 40);
+    tone(t + 0.05, 45, 28, 2.5, 0.35);
+  },
+  marker(kill) { // Treffer-Rückmeldung
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    if (kill) { tone(t, 420, 180, 0.12, 0.22, 'triangle'); noise(t, 0.05, 0.25, 'bandpass', 1500, 900, 3); }
+    else tone(t, 2600, 2400, 0.03, 0.08, 'square');
+  },
   pin() { if (!audioCtx) return; const t = audioCtx.currentTime; tone(t, 2400, 2600, 0.05, 0.15, 'triangle'); noise(t + 0.06, 0.04, 0.3, 'bandpass', 3500, 3000, 6); },
   tick() { if (!audioCtx) return; tone(audioCtx.currentTime, 1500, 1500, 0.03, 0.08, 'square'); },
   whoosh() { if (!audioCtx) return; noise(audioCtx.currentTime, 0.25, 0.25, 'bandpass', 700, 2200, 2); },
@@ -111,6 +124,22 @@ function panner(pos) {
   return p;
 }
 export const SFX3D = {
+  step(pos, heavy = 1) { // schwerer Schritt
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime, out = panner(pos);
+    noise(t, 0.12 * heavy, 0.35 * heavy, 'lowpass', 300 + 200 / heavy, 60, 1, out);
+    tone(t, 70 / heavy + 20, 30, 0.12 * heavy, 0.35 * heavy, 'sine', out);
+  },
+  roar(pos) { // Brüllen des Riesen
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime, out = panner(pos);
+    const osc = audioCtx.createOscillator(); osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(55, t); osc.frequency.linearRampToValueAtTime(42, t + 1.6);
+    const bp = audioCtx.createBiquadFilter(); bp.type = 'lowpass'; bp.frequency.value = 600;
+    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1.0, t + 0.2); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.7);
+    osc.connect(bp).connect(g).connect(out); osc.start(t); osc.stop(t + 1.8);
+    noise(t, 1.5, 0.4, 'bandpass', 500, 250, 2, out);
+  },
   groan(pos, pitch = 1) {
     if (!audioCtx) return;
     const t = audioCtx.currentTime, out = panner(pos), dur = 0.7 + Math.random() * 0.7;

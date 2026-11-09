@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addStaticBox, removeStatic } from './physics.js?v=17';
+import { addStaticBox, removeStatic } from './physics.js?v=18';
 
 // Raum-Modell: echte Wände, Tische und Stühle des Spielers.
 // Jede Fläche bekommt eine sichtbare Vorschau (im Einrichtungsmodus), einen unsichtbaren
@@ -104,6 +104,37 @@ const BACKDROP = {
   window: new THREE.MeshBasicMaterial({ map: gradientTex('#0d1626', '#04060a', '150,170,200'), side: THREE.BackSide, fog: false })
 };
 const corridorFloor = new THREE.MeshBasicMaterial({ color: 0x141210 });
+const lampMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, toneMapped: false });
+// kahle Bäume als Silhouette vor dem Nachthimmel (sichtbar vor allem bei Blitzen)
+const treeTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.strokeStyle = '#000'; ctx.fillStyle = '#000'; ctx.lineCap = 'round';
+  const branch = (x, y, len, ang, wdt, depth) => {
+    if (depth <= 0 || len < 4) return;
+    const x2 = x + Math.cos(ang) * len, y2 = y - Math.sin(ang) * len;
+    ctx.lineWidth = wdt; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x2, y2); ctx.stroke();
+    const n = 2 + (Math.random() < 0.4 ? 1 : 0);
+    for (let i = 0; i < n; i++) branch(x2, y2, len * (0.6 + Math.random() * 0.2), ang + (Math.random() - 0.5) * 1.3, wdt * 0.65, depth - 1);
+  };
+  for (let i = 0; i < 6; i++) branch(30 + i * 90 + Math.random() * 40, 256, 50 + Math.random() * 40, Math.PI / 2 + (Math.random() - 0.5) * 0.3, 9, 6);
+  ctx.beginPath(); ctx.moveTo(0, 256); // Horizont/Hügel
+  for (let x = 0; x <= 512; x += 16) ctx.lineTo(x, 232 + Math.sin(x * 0.02) * 10 + Math.random() * 4);
+  ctx.lineTo(512, 256); ctx.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const treeMat = new THREE.MeshBasicMaterial({ map: treeTex, transparent: true, depthWrite: false, fog: false });
+// Stimmung: Flackerlicht im Flur (doorK) und Blitze draußen vor dem Fenster (windowK), jeweils 0..1+
+export function setAtmosphere(doorK, windowK) {
+  BACKDROP.door.color.setRGB(1 + doorK * 1.6, 1 + doorK * 0.4, 1 + doorK * 0.3);
+  corridorFloor.color.setRGB(0.08 + doorK * 0.25, 0.07 + doorK * 0.04, 0.06 + doorK * 0.03);
+  lampMat.color.setRGB(0.3 + doorK * 0.7, 0.04 + doorK * 0.12, 0.02);
+  BACKDROP.window.color.setRGB(1 + windowK * 12, 1 + windowK * 13, 1 + windowK * 15);
+  mistMat.opacity = 0.55 - windowK * 0.35;
+}
 const mistMat = new THREE.MeshBasicMaterial({ color: 0x0a0c10, transparent: true, opacity: 0.55, depthWrite: false });
 const frameMat = new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.8 });
 const DEPTH = 5;
@@ -119,6 +150,14 @@ function buildBackdrop(s, g) {
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(0, -h / 2 + 0.002, -DEPTH / 2);
     back.add(floor);
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.08), lampMat); // Notlicht an der Flurdecke
+    lamp.position.set(0, h / 2 + 0.15, -2.2);
+    back.add(lamp);
+  }
+  if (s.type === 'window') {
+    const trees = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.6, h + 0.4), treeMat);
+    trees.position.z = -DEPTH + 0.05;
+    back.add(trees);
   }
   // Nebel-Schichten für Tiefe
   for (let i = 1; i <= 3; i++) {
