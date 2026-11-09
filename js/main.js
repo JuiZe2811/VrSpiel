@@ -1,15 +1,15 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=21';
+import { VERSION } from './version.js?v=22';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=21';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=21';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=21';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=21';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=21';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere } from './room.js?v=21';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx } from './effects.js?v=21';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie } from './zombies.js?v=21';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=22';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=22';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=22';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=22';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=22';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt } from './room.js?v=22';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx } from './effects.js?v=22';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure } from './zombies.js?v=22';
 
 // =============================================================================
 // Grundgerüst
@@ -628,6 +628,71 @@ const grenadeSlots = [-0.95, 0.95].map(phi => {
   return slot;
 });
 function refillGrenades() { for (const s of grenadeSlots) { s.available = true; s.obj.visible = true; } }
+// ---- Trommel-Affe (Lockvogel): aufziehbares Blechspielzeug mit Trommel ----------------
+const monkeyMats = {
+  fur: new THREE.MeshStandardMaterial({ color: 0x6b4423, roughness: 0.9 }),
+  face: new THREE.MeshStandardMaterial({ color: 0xe0b88a, roughness: 0.7 }),
+  eye: new THREE.MeshBasicMaterial({ color: 0x111111 }),
+  drum: new THREE.MeshStandardMaterial({ color: 0xc8202a, roughness: 0.4, metalness: 0.3 }),
+  drumTop: new THREE.MeshStandardMaterial({ color: 0xf2eee0, roughness: 0.6 }),
+  vest: new THREE.MeshStandardMaterial({ color: 0x2a4fb0, roughness: 0.6 }),
+  brass: new THREE.MeshStandardMaterial({ color: 0xd4a83a, roughness: 0.3, metalness: 1 }),
+  light: new THREE.MeshBasicMaterial({ color: 0xff3a3a, toneMapped: false })
+};
+function makeMonkey() {
+  const g = new THREE.Group();
+  const sph = (r, mat, x, y, z, sx = 1, sy = 1, sz = 1) => { const m = new THREE.Mesh(cachedGeo('mk' + r, () => new THREE.SphereGeometry(r, 14, 10)), mat); m.position.set(x, y, z); m.scale.set(sx, sy, sz); g.add(m); return m; };
+  sph(0.032, monkeyMats.vest, 0, 0.045, 0, 1, 1.15, 0.9);           // Körper mit Weste
+  sph(0.026, monkeyMats.fur, 0, 0.1, 0);                             // Kopf
+  sph(0.016, monkeyMats.face, 0, 0.094, 0.018, 1.1, 0.8, 0.7);       // Schnauze
+  for (const x of [-0.009, 0.009]) sph(0.0045, monkeyMats.eye, x, 0.108, 0.021);
+  for (const x of [-0.026, 0.026]) sph(0.011, monkeyMats.face, x, 0.104, 0, 0.5, 1, 1); // Ohren
+  for (const x of [-0.018, 0.018]) sph(0.012, monkeyMats.fur, x, 0.004, 0.01, 1, 0.7, 1.4); // Füße
+  // Trommel vor dem Bauch
+  const drum = new THREE.Mesh(cachedGeo('mkdrum', () => new THREE.CylinderGeometry(0.026, 0.026, 0.026, 18)), monkeyMats.drum);
+  drum.position.set(0, 0.04, 0.034);
+  g.add(drum);
+  const top = new THREE.Mesh(cachedGeo('mkdrumtop', () => new THREE.CylinderGeometry(0.0262, 0.0262, 0.004, 18)), monkeyMats.drumTop);
+  top.position.set(0, 0.054, 0.034);
+  g.add(top);
+  // Arme mit Trommelstöcken (bewegen sich beim Trommeln)
+  const arms = [];
+  for (const sx of [-1, 1]) {
+    const arm = new THREE.Group();
+    arm.position.set(sx * 0.03, 0.07, 0.006);
+    const a = new THREE.Mesh(cachedGeo('mkarm', () => new THREE.CapsuleGeometry(0.007, 0.03, 4, 8)), monkeyMats.fur);
+    a.rotation.x = 1.1; a.position.set(0, -0.008, 0.014);
+    arm.add(a);
+    const stick = new THREE.Mesh(cachedGeo('mkstick', () => new THREE.CylinderGeometry(0.002, 0.002, 0.04, 6)), monkeyMats.drumTop);
+    stick.rotation.x = 0.4; stick.position.set(-sx * 0.006, -0.012, 0.04);
+    arm.add(stick);
+    g.add(arm);
+    arms.push(arm);
+  }
+  // Aufziehschlüssel am Rücken + Warnlicht auf dem Kopf
+  const key = new THREE.Group();
+  key.position.set(0, 0.05, -0.03);
+  key.add(new THREE.Mesh(cachedGeo('mkkey1', () => new THREE.CylinderGeometry(0.003, 0.003, 0.02, 6).rotateX(Math.PI / 2)), monkeyMats.brass));
+  const bow = new THREE.Mesh(cachedGeo('mkkey2', () => new THREE.TorusGeometry(0.01, 0.003, 6, 12)), monkeyMats.brass);
+  bow.position.z = -0.012;
+  key.add(bow);
+  g.add(key);
+  const light = sph(0.006, monkeyMats.light, 0, 0.128, 0);
+  g.userData = { arms, key, light };
+  return g;
+}
+let monkeyCount = 1;
+const monkeySlot = (() => {
+  const mount = beltMount(1.55);
+  const m = makeMonkey();
+  m.position.set(0, -0.04, -0.03);
+  m.rotation.y = Math.PI;
+  mount.add(m);
+  const slot = { kind: 'monkey', mount, obj: m, available: true, refill: 0, radius: 0.13 };
+  beltSlots.push(slot);
+  return slot;
+})();
+function syncMonkeySlot() { monkeySlot.available = monkeyCount > 0; monkeySlot.obj.visible = monkeyCount > 0; boardDirty = true; }
 // einzelne Munition: Schrotpatrone, Revolverpatrone oder Armbrustbolzen
 function beltAmmoObj(def) {
   if (def.ammo === 'round') { const o = makeCartridge(true); o.scale.setScalar(1.4); return o; }
@@ -691,6 +756,7 @@ function updateBelt(dt) {
   for (const s of beltSlots) {
     if (s.available) continue;
     if (s.kind === 'grenade' && (state === 'playing' || state === 'countdown')) continue; // erst zur nächsten Welle
+    if (s.kind === 'monkey') continue; // nur über den Zähler
     s.refill -= dt;
     if (s.refill <= 0) { s.available = true; s.obj.visible = true; }
   }
@@ -701,6 +767,7 @@ function holdItem(h, type, obj, extra = {}) {
   obj.quaternion.setFromEuler(new THREE.Euler(-0.3, 0, 0));
   if (type === 'knife') { obj.position.set(0, -0.045, 0.015); obj.quaternion.identity(); }
   if (type === 'grenade') { obj.position.set(0, -0.03, -0.01); obj.quaternion.identity(); }
+  if (type === 'monkey') { obj.position.set(0, -0.06, -0.02); obj.quaternion.identity(); }
   if (type === 'plank') { obj.position.set(0, -0.03, -0.06); obj.quaternion.setFromEuler(new THREE.Euler(-0.2, 0, 0)); }
   h.ray.add(obj);
   h.held = Object.assign({ type, obj }, extra);
@@ -734,6 +801,7 @@ function tryBeltGrab(h) {
   best.available = false;
   best.obj.visible = false;
   best.refill = best.kind === 'knife' ? 2 : best.kind === 'grenade' ? 3 : 1.2;
+  if (best.kind === 'monkey') { monkeyCount--; holdItem(h, 'monkey', makeMonkey()); syncMonkeySlot(); return true; }
   if (best.kind === 'knife') holdItem(h, 'knife', makeKnife());
   else if (best.kind === 'grenade') holdItem(h, 'grenade', makeGrenade(), { slot: best });
   else if (best.kind === 'mag') holdItem(h, 'mag', makeMag(beltWeaponId), { weaponId: beltWeaponId, rounds: beltDef.capacity });
@@ -942,6 +1010,24 @@ function updateDust(dt) {
     if (a[k + 1] < 0) a[k + 1] += 2.6; else if (a[k + 1] > 2.6) a[k + 1] -= 2.6;
   }
   dustGeo.attributes.position.needsUpdate = true;
+}
+// ---- Leistung: höchstens so viele Zombies gleichzeitig; bei Rucklern automatisch Details reduzieren ----
+const MAX_ALIVE = 16;
+const perf = { ema: 0, slowT: 0, level: 0, okT: 0 };
+function autoPerf(raw) {
+  if (!settings.autoPerf || !renderer.xr.isPresenting || raw <= 0 || raw > 0.5) return;
+  const session = renderer.xr.getSession();
+  const target = 1 / ((session && session.frameRate) || 72);
+  perf.ema += (raw - perf.ema) * 0.05;
+  if (perf.ema > target * 1.3) { perf.slowT += raw; perf.okT = 0; } else { perf.slowT = Math.max(0, perf.slowT - raw); perf.okT += raw; }
+  if (perf.slowT > 2.5 && perf.level < 3) {
+    perf.level++;
+    perf.slowT = 0;
+    if (perf.level === 1) { dust.visible = false; fx.particles = Math.min(fx.particles, 0.6); }
+    if (perf.level === 2) setShadows(false);
+    if (perf.level === 3) { setEyeGlow(false); fx.particles = 0.4; sun.shadow.mapSize.set(512, 512); }
+    floatingText('Leistung angepasst', headPos.clone().add(new THREE.Vector3(0, -0.3, -1).applyQuaternion(getViewCamera().getWorldQuaternion(tmpQ))), '#9ad');
+  }
 }
 // Klangkulisse: Musik-Spannung und zufällige Gruselgeräusche aus der Umgebung
 function updateSoundscape(dt) {
@@ -1682,6 +1768,158 @@ function updateMachines(dt) {
 }
 
 // =============================================================================
+// Fallen: Elektro- und Feuerfalle auf dem Boden, per Hebel aktivieren (1000 Punkte)
+// =============================================================================
+const TRAPS = {
+  electric: { name: 'Elektrofalle', price: 1000, dur: 15, cool: 35, color: 0x7fd4ff },
+  fire: { name: 'Feuerfalle', price: 1000, dur: 15, cool: 35, color: 0xff7a1a }
+};
+const traps = [];
+const trapTex = {};
+function trapTexture(kind) {
+  if (trapTex[kind]) return trapTex[kind];
+  const t = panelTex(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#1b1c20'; ctx.fillRect(0, 0, w, h);
+    // Warnstreifen am Rand
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.rect(22, 22, w - 44, h - 44); ctx.clip('evenodd');
+    for (let i = -h; i < w + h; i += 28) { ctx.fillStyle = '#e8c21a'; ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 14, 0); ctx.lineTo(i + 14 - h, h); ctx.lineTo(i - h, h); ctx.fill(); }
+    ctx.restore();
+    if (kind === 'electric') { ctx.strokeStyle = '#4a7a99'; ctx.lineWidth = 3; for (let i = 40; i < w - 30; i += 22) { ctx.beginPath(); ctx.moveTo(i, 34); ctx.lineTo(i, h - 34); ctx.stroke(); ctx.beginPath(); ctx.moveTo(34, i); ctx.lineTo(w - 34, i); ctx.stroke(); } }
+    else { ctx.fillStyle = '#2a1206'; for (let x = 36; x < w - 36; x += 16) ctx.fillRect(x, 34, 9, h - 68); ctx.fillStyle = 'rgba(255,90,0,0.25)'; ctx.fillRect(30, 30, w - 60, h - 60); }
+  });
+  trapTex[kind] = t;
+  return t;
+}
+function clearTraps() {
+  for (const t of traps.splice(0)) { scene.remove(t.group); t.group.traverse(o => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); if (o.material && o.material !== machineDark && o.material !== machineChrome) o.material.dispose(); }); }
+}
+function buildTrap(pos, normal, kind) {
+  const T = TRAPS[kind];
+  const g = new THREE.Group();
+  g.position.copy(pos).setY(0);
+  g.rotation.y = Math.atan2(normal.x, normal.z);
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3), new THREE.MeshStandardMaterial({ map: trapTexture(kind), roughness: 0.6, metalness: 0.4 }));
+  plate.rotation.x = -Math.PI / 2;
+  plate.position.y = 0.006;
+  plate.receiveShadow = true;
+  g.add(plate);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), new THREE.MeshBasicMaterial({ map: wbGlowTex, color: T.color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.y = 0.01;
+  g.add(glow);
+  const posts = [];
+  if (kind === 'electric') {
+    for (const [x, z] of [[-0.62, -0.62], [0.62, -0.62], [-0.62, 0.62], [0.62, 0.62]]) {
+      const p0 = new THREE.Mesh(cachedGeo('trappost', () => new THREE.CylinderGeometry(0.025, 0.035, 0.35, 10)), machineDark);
+      p0.position.set(x, 0.175, z);
+      g.add(p0);
+      const cap = new THREE.Mesh(cachedGeo('trapcap', () => new THREE.SphereGeometry(0.035, 12, 8)), new THREE.MeshBasicMaterial({ color: 0x3a6a88, toneMapped: false }));
+      cap.position.set(x, 0.37, z);
+      g.add(cap);
+      posts.push(cap);
+    }
+  } else {
+    for (let i = 0; i < 6; i++) { const n = new THREE.Mesh(cachedGeo('trapnozzle', () => new THREE.CylinderGeometry(0.02, 0.03, 0.05, 8)), machineChrome); n.position.set(-0.5 + (i % 3) * 0.5, 0.025, i < 3 ? -0.4 : 0.4); g.add(n); }
+  }
+  // Hebel seitlich (zum Spieler hin) auf einem Pfosten
+  const lever = new THREE.Group();
+  lever.position.set(0.8, 0, 0.85);
+  const pole = new THREE.Mesh(cachedGeo('trappole', () => new THREE.BoxGeometry(0.06, 1.0, 0.06)), machineDark);
+  pole.position.y = 0.5;
+  lever.add(pole);
+  const box0 = new THREE.Mesh(cachedGeo('trapbox', () => new THREE.BoxGeometry(0.14, 0.2, 0.1)), machineChrome);
+  box0.position.y = 1.05;
+  lever.add(box0);
+  const lamp = new THREE.Mesh(cachedGeo('traplamp', () => new THREE.SphereGeometry(0.02, 10, 8)), new THREE.MeshBasicMaterial({ color: 0x3aff6a, toneMapped: false }));
+  lamp.position.set(0, 1.17, 0);
+  lever.add(lamp);
+  const arm = new THREE.Group();
+  arm.position.set(0, 1.05, 0.05);
+  const stick = new THREE.Mesh(cachedGeo('traparm', () => new THREE.BoxGeometry(0.025, 0.025, 0.2)), machineChrome);
+  stick.position.z = 0.1;
+  arm.add(stick);
+  const knob = new THREE.Mesh(cachedGeo('trapknob', () => new THREE.SphereGeometry(0.03, 12, 8)), new THREE.MeshStandardMaterial({ color: 0xc8202a, roughness: 0.4 }));
+  knob.position.z = 0.2;
+  arm.add(knob);
+  arm.rotation.x = -0.7;
+  lever.add(arm);
+  g.add(lever);
+  castShadows(g);
+  scene.add(g);
+  g.updateMatrixWorld(true);
+  const t = { kind, T, group: g, glow, posts, lamp, arm, knob, state: 'ready', t: 0, tick: 0, fxT: 0, center: g.position.clone(), yaw: g.rotation.y };
+  traps.push(t);
+}
+function setupTraps() {
+  clearTraps();
+  const own = surfacesOf('trap');
+  if (own.length) { for (const s0 of own) buildTrap(s0.pos, s0.normal, s0.kind || 'electric'); return; }
+  // automatisch: vor den ersten zwei Türen/Fenstern (innen)
+  openings().slice(0, 2).forEach((o, i) => buildTrap(o.mid.clone().addScaledVector(o.normal, 1.15).setY(0), o.normal.clone(), i % 2 ? 'fire' : 'electric'));
+}
+function knobPos(t) { return t.knob.getWorldPosition(new THREE.Vector3()); }
+function trapNear(p) { for (const t of traps) if (p.distanceTo(knobPos(t)) < 0.2) return t; return null; }
+function pullTrap(t, h) {
+  const where = knobPos(t).add(new THREE.Vector3(0, 0.3, 0));
+  if (t.state === 'active') return false;
+  if (t.state === 'cool') { floatingText(`Lädt noch ${Math.ceil(t.t)} s`, where, '#cccccc'); return false; }
+  if (!spend(t.T.price, where)) return false;
+  t.state = 'active';
+  t.t = t.T.dur;
+  SFX.clang();
+  if (h) pulse(h, 0.8, 120);
+  speak(t.T.name);
+  return true;
+}
+const inTrap = (t, x, z) => { const dx = x - t.center.x, dz = z - t.center.z, c = Math.cos(t.yaw), s0 = Math.sin(t.yaw); return Math.abs(dx * c - dz * s0) < 0.68 && Math.abs(dx * s0 + dz * c) < 0.68; };
+function updateTraps(dt) {
+  for (const t of traps) {
+    // Hebel-Stellung und Lampe
+    const down = t.state === 'active';
+    t.arm.rotation.x = THREE.MathUtils.damp(t.arm.rotation.x, down ? 0.7 : -0.7, 10, dt);
+    t.lamp.material.color.setHex(t.state === 'ready' ? 0x3aff6a : t.state === 'active' ? 0xffd21f : 0xff3a3a);
+    t.glow.material.opacity = THREE.MathUtils.damp(t.glow.material.opacity, down ? 0.8 + Math.sin(elapsed * 30) * 0.2 : t.state === 'ready' ? 0.12 : 0, 8, dt);
+    if (t.state === 'cool') { t.t -= dt; if (t.t <= 0) { t.state = 'ready'; SFX.click(1200, 0.3, 0.05); } continue; }
+    if (t.state !== 'active') continue;
+    t.t -= dt;
+    if (t.t <= 0) { t.state = 'cool'; t.t = t.T.cool; continue; }
+    // Effekte
+    t.fxT -= dt;
+    if (t.fxT <= 0) {
+      if (t.kind === 'electric') {
+        t.fxT = 0.09;
+        const a = t.posts[Math.floor(Math.random() * 4)].getWorldPosition(new THREE.Vector3()), b0 = t.posts[Math.floor(Math.random() * 4)].getWorldPosition(new THREE.Vector3());
+        if (a.distanceTo(b0) > 0.1) lightningLine(a, b0);
+        if (Math.random() < 0.3) SFX.zap();
+        for (const p of t.posts) p.material.color.setHex(Math.random() < 0.5 ? 0xbfefff : 0x3a6a88);
+      } else {
+        t.fxT = 0.04;
+        const lp = new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.05, (Math.random() - 0.5) * 1.2).applyAxisAngle(UP, t.yaw).add(t.center);
+        spawnFlamePart(lp, new THREE.Vector3((Math.random() - 0.5) * 0.3, 1.6 + Math.random(), (Math.random() - 0.5) * 0.3), flameMat, 0.7, 0.12);
+        if (Math.random() < 0.15) SFX.fire();
+      }
+    }
+    // Schaden
+    t.tick -= dt;
+    if (t.tick > 0) continue;
+    t.tick = 0.2;
+    for (const z of zombies) {
+      if (z.state === 'dead' || z.state === 'outside' || z.state === 'tear' || !inTrap(t, z.pos.x, z.pos.z)) continue;
+      const c = z.root.position.clone().setY(1);
+      if (t.kind === 'electric') {
+        lightningLine(t.posts[Math.floor(Math.random() * 4)].getWorldPosition(new THREE.Vector3()), c);
+        handleZombieHit(damageZombie(z.torso.children[1], c, new THREE.Vector3(0, 1, 0), 9999, true), c, '⚡ ');
+      } else {
+        if (!z.burnT) burning.add(z);
+        z.burnT = 3;
+        handleZombieHit(damageZombie(z.torso.children[1], c, new THREE.Vector3(0, 1, 0), 30, true), c, '🔥 ');
+      }
+    }
+    if (inRound() && gameMode !== 'training' && inTrap(t, headPos.x, headPos.z)) { playerHit(t.kind === 'electric' ? 6 : 4); }
+  }
+}
+
+// =============================================================================
 // Glückskiste: für 950 Punkte eine zufällige Waffe (auch die Wunderwaffe)
 // =============================================================================
 const BOX_PRICE = 950;
@@ -1747,10 +1985,23 @@ function boxPool() {
   const held = new Set(arsenal.filter(w => w.holder >= 0 || w.holstered || w === deskW).map(w => w.id));
   const ids = WEAPON_ORDER.filter(id => id !== 'pistol' && !held.has(id));
   const weights = ids.map(id => (id === 'plasma' ? 0.5 : WEAPON_DEFS[id].tier >= 3 ? 0.8 : 1));
+  if (monkeyCount < 3) { ids.push('monkey'); weights.push(2.2); } // Trommel-Affen (3 Stück)
   return { ids, weights };
 }
 function setBoxDisplay(id) {
   if (mbox.disp) mbox.group.remove(mbox.disp.holder);
+  if (id === 'monkey') {
+    const holder = new THREE.Group();
+    const m = makeMonkey();
+    m.scale.setScalar(2.2);
+    m.position.y = -0.1;
+    holder.add(m);
+    holder.position.set(0, mbox.s.height + 0.05, 0);
+    mbox.group.add(holder);
+    mbox.disp = { root: m, holder };
+    mbox.id = id;
+    return;
+  }
   const disp = buildWeapon(id);
   disp.root.scale.setScalar(Math.min(0.8, 0.7 / Math.max(0.3, disp.localBox.max.z - disp.localBox.min.z)));
   const holder = new THREE.Group();
@@ -1767,7 +2018,8 @@ function useBox(h) {
   if (mbox.state === 'offer') { // gezogene Waffe nehmen
     mbox.group.remove(mbox.disp.holder);
     mbox.disp = null;
-    giveWeapon(mbox.id, h);
+    if (mbox.id === 'monkey') { monkeyCount = 3; syncMonkeySlot(); SFX.bonus(); floatingText('🐒 x3 am Gürtel', where, '#ffd36a'); }
+    else giveWeapon(mbox.id, h);
     mbox.state = 'close';
     mbox.t = 0;
     return true;
@@ -1807,8 +2059,9 @@ function updateMysteryBox(dt) {
       mbox.state = 'offer';
       mbox.t = 0;
       SFX.bonus();
-      floatingText(WEAPON_DEFS[pick].name, mbox.top.clone().add(new THREE.Vector3(0, 0.8, 0)), pick === 'plasma' ? '#7dff9a' : '#9fe8ff');
-      speak(WEAPON_DEFS[pick].name);
+      const pname = pick === 'monkey' ? '3 Trommel-Affen' : WEAPON_DEFS[pick].name;
+      floatingText(pname, mbox.top.clone().add(new THREE.Vector3(0, 0.8, 0)), pick === 'plasma' ? '#7dff9a' : '#9fe8ff');
+      speak(pname);
     }
   } else if (mbox.state === 'offer') {
     if (mbox.disp) { mbox.disp.holder.rotation.y += dt * 0.8; mbox.disp.holder.position.y = mbox.s.height + 0.4 + Math.sin(elapsed * 2) * 0.03; }
@@ -1893,6 +2146,77 @@ function launchGrenade(g, vel, angVel) {
   const phys = addDynamic(g, localBoxOf(g), 0.45, { vel, angVel, onImpact: (v) => SFX.click(700, Math.min(0.4, v * 0.1), 0.05) });
   grenades.push({ obj: g, phys, fuse: 2.6, tick: 0 });
 }
+// Trommel-Affe werfen: landet, zieht sich auf, trommelt 8 s lang (alle Zombies kommen) und explodiert
+const monkeys = [];
+function throwMonkey(h) {
+  const m = h.held.obj;
+  h.held = null;
+  m.updateWorldMatrix(true, false);
+  m.matrixWorld.decompose(m.position, m.quaternion, tmpS);
+  h.ray.remove(m);
+  scene.add(m);
+  const v = h.vel.clone();
+  if (v.length() < 1.2 && m.position.distanceTo(monkeySlot.obj.getWorldPosition(tmpV)) < 0.22) { // zurück an den Gürtel
+    scene.remove(m);
+    monkeyCount++;
+    syncMonkeySlot();
+    return;
+  }
+  launchMonkey(m, v.multiplyScalar(1.3));
+}
+function launchMonkey(m, vel) {
+  m.scale.setScalar(1.5);
+  const phys = addDynamic(m, localBoxOf(m), 0.6, { vel, angVel: new THREE.Vector3(), angularDamping: 0.9, onImpact: (v) => SFX.thud(Math.min(0.4, v * 0.1)) });
+  monkeys.push({ obj: m, phys, t: 0, active: false, beat: 0 });
+  SFX.whoosh();
+}
+function updateMonkeys(dt) {
+  for (let i = monkeys.length - 1; i >= 0; i--) {
+    const mk = monkeys[i];
+    mk.t += dt;
+    const ud = mk.obj.userData;
+    if (!mk.active && mk.t > 0.9) {
+      // liegt still: aufrichten (aus der Physik nehmen) und loslegen
+      if (mk.phys) { removeDynamic(mk.phys); mk.phys = null; }
+      const y = heightAt(mk.obj.position.x, mk.obj.position.z);
+      mk.obj.position.y = y;
+      mk.obj.quaternion.setFromAxisAngle(UP, Math.atan2(headPos.x - mk.obj.position.x, headPos.z - mk.obj.position.z));
+      mk.active = true;
+      mk.t = 0;
+      setLure(mk.obj.position);
+      speak('Trommel-Affe!');
+    }
+    if (!mk.active) continue;
+    // Trommeln, Schlüssel dreht sich, Licht blinkt, Musik
+    const k = mk.t * 9;
+    ud.arms.forEach((a, j) => { a.rotation.x = Math.max(0, Math.sin(k + j * Math.PI)) * 0.9; });
+    ud.key.rotation.z += dt * 6;
+    ud.light.visible = Math.floor(mk.t * 6) % 2 === 0;
+    mk.obj.position.y = heightAt(mk.obj.position.x, mk.obj.position.z) + Math.abs(Math.sin(k * 0.5)) * 0.01;
+    mk.beat -= dt;
+    if (mk.beat <= 0) {
+      mk.beat = 60 / 160 / 2;
+      SFX3D.drum(mk.obj.position.clone().setY(0.4), Math.floor(mk.t * 5.33) % 4);
+    }
+    setLure(mk.obj.position);
+    if (mk.t > 8) { // Explosion
+      const pos = mk.obj.position.clone().setY(mk.obj.position.y + 0.3);
+      scene.remove(mk.obj);
+      monkeys.splice(i, 1);
+      if (!monkeys.some(o => o.active)) setLure(null);
+      SFX.explosion(1.2);
+      flashLight.position.copy(pos); flashLight.distance = 9; flashLight.intensity = 40;
+      burst(pos, 0xffb030, 34); burst(pos, 0x6b4423, 14);
+      shockwave(pos);
+      floorDecal(pos, 'scorch', 1.6);
+      for (const r of explosionDamage(pos, 3.8, 600)) handleZombieHit(r, r.zombie.skull.getWorldPosition(new THREE.Vector3()), '🐒 ');
+      const pd = headPos.distanceTo(pos);
+      for (const h of hands) pulse(h, Math.max(0.3, 1 - pd / 6), 300);
+      if (pd < 3 && gameMode !== 'training') playerHit(40 * (1 - pd / 3));
+    }
+  }
+}
+function clearMonkeys() { for (const mk of monkeys.splice(0)) { if (mk.phys) removeDynamic(mk.phys); scene.remove(mk.obj); } setLure(null); }
 function updateGrenades(dt) {
   for (let i = grenades.length - 1; i >= 0; i--) {
     const gr = grenades[i];
@@ -2039,14 +2363,15 @@ const SETTINGS_TABS = {
     { key: 'particles', label: 'Partikel', opts: [[0.5, 'Wenig'], [1, 'Normal'], [1.6, 'Viel']] },
     { key: 'dust', label: 'Staub in der Luft', opts: onOff },
     { key: 'popups', label: 'Punkte-Anzeigen', opts: onOff },
-    { key: 'eyeGlow', label: 'Leuchtende Zombie-Augen', opts: onOff }
+    { key: 'eyeGlow', label: 'Leuchtende Zombie-Augen', opts: onOff },
+    { key: 'autoPerf', label: 'Automatisch flüssig halten', opts: onOff }
   ] }
 };
 const SETTINGS_DEFAULT = {
   master: 9, sfx: 10, music: 6, voices: 10, announcer: 10, announcerVoice: 'deep',
   startPoints: 500, amount: 1, blood: 1, killcam: true, ambient: true, hitmarker: true,
   grip: 'hold', reload: 'real', assist: true, haptics: 1, wristHud: true, snapBelt: 1,
-  shadows: true, particles: 1, dust: true, popups: true, eyeGlow: true
+  shadows: true, particles: 1, dust: true, popups: true, eyeGlow: true, autoPerf: true
 };
 const settings = Object.assign({}, SETTINGS_DEFAULT, {
   // ältere Einzel-Einstellungen übernehmen
@@ -2169,6 +2494,7 @@ function releaseHand(h) {
   if (held.type === 'weapon') { dropWeapon(h); return; }
   if (held.type === 'knife') { throwKnife(h); return; }
   if (held.type === 'grenade') { throwGrenade(h); return; }
+  if (held.type === 'monkey') { throwMonkey(h); return; }
   if (held.type === 'plank' && nailPlank(h)) return;
   const obj = held.obj;
   obj.updateWorldMatrix(true, false);
@@ -2240,6 +2566,7 @@ function updateHandsXR(dt) {
       else if (tryBeltGrab(h)) { /* vom Gürtel */ }
       else if (h.point.distanceTo(plankPilePos) < 0.35) holdItem(h, 'plank', makePlankMesh(1.0)); // Brett vom Stapel
       else if (holster && inHolsterZone(h.point)) takeWeapon(holster, h); // aus dem Rückenholster
+      else if (trapNear(h.point)) pullTrap(trapNear(h.point), h); // Fallen-Hebel
       else if (machineNear(h.point)) useMachine(machineNear(h.point), h); // Automat / Aufrüster
       else if (boxNear(h.point)) useBox(h); // Glückskiste
       else if (wallbuyNear(h.point)) tryBuy(wallbuyNear(h.point), h); // Wandkauf
@@ -2501,6 +2828,7 @@ const TOOL_HELP = {
   bench: ['WAFFENSTÄNDER: Mit dem Laser auf den Boden zeigen und Abzug drücken', '(ziehen = Ausrichtung). Hier stehen die Waffen zu Beginn jeder Runde.'],
   door: ['TÜR: Laser oben an eine Türecke auf der Wand, Abzug halten,', 'zur anderen Ecke ziehen, loslassen. Unten = automatisch Boden.'],
   window: ['FENSTER: Laser an eine Fensterecke auf der Wand, Abzug halten,', 'zur gegenüberliegenden Ecke ziehen, loslassen.'],
+  trap: ['FALLE: Laser auf den Boden + Abzug (z. B. vor eine Tür). Der Hebel steht seitlich.', 'Abwechselnd Elektro- und Feuerfalle. Im Spiel: Hebel greifen = 1000 Punkte, 15 s aktiv.'],
   perk: ['AUTOMAT: Laser auf eine Wand + Abzug. Jeder neue Automat ist eine andere Sorte', '(Eisenhaut, Flinkhand, Schnellfeuer, Zweites Leben).'],
   upgrade: ['AUFRÜSTER: Laser auf eine Wand + Abzug. Dort werden Waffen für 5000 Punkte', 'aufgerüstet (doppelter Schaden, mehr Munition, Leucht-Tarnung).'],
   wallbuy: ['WANDKAUF: Mit dem Laser auf eine markierte Wand zeigen und Abzug drücken.', 'Dort hängt jede Runde eine zufällige Waffe zum Kaufen.'],
@@ -2520,7 +2848,7 @@ function refreshSetupPanel() {
       : setup.tool ? TOOL_HELP[setup.tool] : ['Wähle unten ein Werkzeug. Tipp: zuerst die Bodenhöhe prüfen, dann Wände,', 'Türen/Fenster, Möbel, Wandkäufe und die Glückskiste. Räume kannst du speichern.'];
     text(ctx, help[0], w / 2, 86, 20, '#cfd8e3');
     text(ctx, help[1], w / 2, 114, 20, '#cfd8e3');
-    text(ctx, `Wände ${count('wall')} · Türen ${count('door')} · Fenster ${count('window')} · Tische ${count('table')} · Stühle ${count('chair')} · Wandkäufe ${count('wallbuy')} · Kiste ${count('mbox') ? '✔' : '–'} · Automaten ${count('perk')} · Aufrüster ${count('upgrade') ? '✔' : '–'} · Ständer ${count('bench') ? '✔' : '–'}`, w / 2, 150, 18, '#9ad', 'center', true);
+    text(ctx, `Wände ${count('wall')} · Türen ${count('door')} · Fenster ${count('window')} · Tische ${count('table')} · Stühle ${count('chair')} · Wandkäufe ${count('wallbuy')} · Kiste ${count('mbox') ? '✔' : '–'} · Automaten ${count('perk')} · Fallen ${count('trap')} · Aufrüster ${count('upgrade') ? '✔' : '–'} · Ständer ${count('bench') ? '✔' : '–'}`, w / 2, 150, 18, '#9ad', 'center', true);
     text(ctx, `Boden ${floorOffset >= 0 ? '+' : ''}${(floorOffset * 100).toFixed(1)} cm${setup.align ? ` · Drehung ${Math.round(THREE.MathUtils.radToDeg(setup.align.angle))}°` : ''}`, w / 2, 174, 18, '#9ad', 'center', true);
     if (setup.msg) text(ctx, setup.msg, w / 2, 204, 22, '#ffcc33', 'center', true);
     text(ctx, `Version ${VERSION}`, w - 22, 26, 16, '#6b8ab0', 'right');
@@ -2548,10 +2876,11 @@ function refreshSetupPanel() {
       { id: 'align', label: '🧭 Ausrichten', font: 23, disabled: !room.surfaces.length, active: setup.tool === 'align', onClick: () => setTool('align') }
     ], 760, 30, 12),
     ...row(482, 56, [
-      { id: 'erase', label: '✂ Löschen', font: 27, active: setup.tool === 'erase', onClick: () => setTool('erase') },
-      { id: 'undo', label: '↶ Rückgängig', font: 27, onClick: undoSurface },
-      { id: 'clear', label: '🗑 Alles löschen', font: 27, onClick: () => { endAlign(); clearRoom(); syncBench(); setup.last = null; setup.pending = null; setup.msg = 'Alles gelöscht'; refreshSetupPanel(); } }
-    ], 760),
+      { id: 'trap', label: '⚡ Falle', font: 23, active: setup.tool === 'trap', onClick: () => setTool('trap') },
+      { id: 'erase', label: '✂ Löschen', font: 23, active: setup.tool === 'erase', onClick: () => setTool('erase') },
+      { id: 'undo', label: '↶ Zurück', font: 23, onClick: undoSurface },
+      { id: 'clear', label: '🗑 Alles', font: 23, onClick: () => { endAlign(); clearRoom(); syncBench(); setup.last = null; setup.pending = null; setup.msg = 'Alles gelöscht'; refreshSetupPanel(); } }
+    ], 760, 30, 12),
     ...row(552, 62, [{ id: 'done', label: '✔ Fertig – los geht’s', font: 34, onClick: finishSetup }], 760, 160)
   ]);
 }
@@ -2908,6 +3237,16 @@ function setupTriggerUp() {
   if (setup.tool === 'align') {
     setup.msg = alignToLine(d.start, d.cur);
     SFX.magIn();
+  } else if (setup.tool === 'trap') {
+    const n = headPos.clone().sub(d.start).setY(0);
+    if (n.lengthSq() < 1e-4) n.set(0, 0, 1);
+    n.normalize();
+    const kind = surfacesOf('trap').length % 2 ? 'fire' : 'electric';
+    const x = addWallbuy(d.start.clone().setY(0), n, 'trap', kind);
+    setup.last = x;
+    setup.msg = `${kind === 'fire' ? 'Feuerfalle' : 'Elektrofalle'} platziert`;
+    SFX.magIn();
+    saveRoom();
   } else if (setup.tool === 'mbox') {
     const yaw = len > 0.2 ? Math.atan2(-(d.cur.z - d.start.z), d.cur.x - d.start.x) : headYaw();
     const x = placeMysteryBoxSurface(len > 0.2 ? d.start.clone().add(d.cur).multiplyScalar(0.5) : d.start, yaw);
@@ -3253,7 +3592,11 @@ function startCountdown() {
   setupWallbuys();
   setupMysteryBox();
   setupMachines();
+  setupTraps();
   perks.clear();
+  clearMonkeys();
+  monkeyCount = 1;
+  syncMonkeySlot();
   const fd = freeDistance(headPos, inFront(1, 0, headPos.y + 0.6).sub(headPos), 3.2);
   board.place(Math.max(1.2, Math.min(3, fd - 0.2)), 0, 0.6);
   board.mesh.scale.setScalar(1.3);
@@ -3287,6 +3630,7 @@ function nextWave() {
 }
 function endRound(died = false) {
   state = 'over';
+  clearMonkeys();
   musicStop();
   killcamT = 0;
   clearZombies();
@@ -3384,7 +3728,7 @@ function updateGame(dt) {
   // Zombies nach und nach erscheinen lassen
   if (toSpawn > 0) {
     spawnT -= dt;
-    if (spawnT <= 0 && aliveCount() < Math.round((3 + wave) * Math.min(1.5, settings.amount))) {
+    if (spawnT <= 0 && aliveCount() < Math.min(MAX_ALIVE, Math.round((3 + wave) * Math.min(1.5, settings.amount)))) {
       const D = DIFFS[diffKey];
       const zn = spawnZombie(gameMode === 'training' ? 0 : wave, headPos, bossPending ? 'giant' : undefined, { hp: D.hp, speed: gameMode === 'training' ? 0.8 : D.speed });
       bossPending = false;
@@ -3457,7 +3801,7 @@ function refreshBoard() {
     ctx.fillStyle = playerHp > 50 ? '#3ad35a' : playerHp > 25 ? '#f0b020' : '#e02a2a';
     ctx.fillRect(bx, by, bw * Math.min(1, playerHp / maxHp()), 30);
     text(ctx, `❤ ${Math.ceil(playerHp)}${perks.size ? '   ' + [...perks].map(k => PERKS[k].icon).join(' ') : ''}`, w / 2, by + 16, 24, '#fff', 'center', true);
-    text(ctx, `💰 ${free() ? '∞' : points} · ${score} Punkte · Erledigt ${stats.kills} · 💣 ${grenadeSlots.filter(g => g.available).length}${holster ? ' · 🎒 ' + holster.def.name : ''}`, w / 2, 176, 26, '#cfd8e3', 'center', true);
+    text(ctx, `💰 ${free() ? '∞' : points} · ${score} Punkte · Erledigt ${stats.kills} · 💣 ${grenadeSlots.filter(g => g.available).length} · 🐒 ${monkeyCount}${holster ? ' · 🎒 ' + holster.def.name : ''}`, w / 2, 176, 26, '#cfd8e3', 'center', true);
     const act = [active.double > 0 ? `×2 Punkte ${Math.ceil(active.double)}s` : '', active.slowmo > 0 ? `⏳ Zeitlupe ${Math.ceil(active.slowmo)}s` : '', active.instakill > 0 ? `☠ Sofort-Tod ${Math.ceil(active.instakill)}s` : ''].filter(Boolean).join(' · ');
     if (act) text(ctx, act, w / 2, 214, 26, '#ffd21f', 'center', true);
   }, training ? row(238, 58, [{ id: 'end', label: '■ Training beenden', onClick: () => endRound(false) }], 768, 230) : []);
@@ -3751,6 +4095,15 @@ window.addEventListener('keydown', (e) => {
     for (const o of openings()) { if (missingPlanks(o) <= 0) continue; const d = o.mid.distanceTo(camera.position); if (d < bd) { bd = d; best = o; } }
     if (best) { addPlank(best); SFX.thunk(); if (inRound()) award(10); }
   }
+  if (e.key === 't' || e.key === 'T') { let best = null, bd = Infinity; for (const t of traps) { const d = t.center.distanceTo(camera.position); if (d < bd) { bd = d; best = t; } } if (best) pullTrap(best, null); }
+  if ((e.key === 'm' || e.key === 'M') && monkeyCount > 0) {
+    monkeyCount--; syncMonkeySlot();
+    raycaster.setFromCamera(mouseNdc, camera);
+    const m = makeMonkey();
+    m.position.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, 0.4);
+    scene.add(m);
+    launchMonkey(m, raycaster.ray.direction.clone().multiplyScalar(6).add(new THREE.Vector3(0, 2, 0)));
+  }
   if (e.key === 'g' || e.key === 'G') {
     const gs = grenadeSlots.find(x => x.available);
     if (gs) {
@@ -3881,7 +4234,9 @@ renderer.setAnimationLoop(() => {
   }
 });
 function frame() {
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const rawDt = clock.getDelta();
+  const dt = Math.min(rawDt, 0.05);
+  autoPerf(rawDt);
   elapsed += dt;
   const xr = renderer.xr.isPresenting;
   if (!xr) camera.rotation.set(lookPitch, lookYaw, 0, 'YXZ');
@@ -3923,6 +4278,8 @@ function frame() {
   updateMachines(dt);
   updateDust(dt);
   updateBolts(dt);
+  updateMonkeys(dt);
+  updateTraps(dt);
   updateFlames(worldDt);
   updateWallbuys();
   updateWeaponExpiry();
@@ -3959,5 +4316,5 @@ window.__game = {
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,
-  spawnWeapon, resetWeapons, settings, tryFire, arrows, machines, upg, perks, useMachine, get points() { return points; }, set points(v) { points = v; }, wallbuys, mbox, useBox, tryBuy, giveWeapon, get holster() { return holster; }, plasmas, setTool, setupTriggerDown, setupTriggerUp, alignToLine, loadSlot, saveSlot, serializeRoom, setupWallbuys, setupMysteryBox, surfaceAt, updateSetup, get benchRack() { return benchRack; }
+  get monkeyCount() { return monkeyCount; }, lure, traps, pullTrap, spawnWeapon, resetWeapons, settings, tryFire, arrows, machines, upg, perks, useMachine, get points() { return points; }, set points(v) { points = v; }, wallbuys, mbox, useBox, tryBuy, giveWeapon, get holster() { return holster; }, plasmas, setTool, setupTriggerDown, setupTriggerUp, alignToLine, loadSlot, saveSlot, serializeRoom, setupWallbuys, setupMysteryBox, surfaceAt, updateSetup, get benchRack() { return benchRack; }
 };

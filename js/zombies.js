@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=21';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=21';
-import { SFX3D } from './sfx.js?v=21';
-import { burst, addDebris, shockwave } from './effects.js?v=21';
-import { cachedGeo } from './util.js?v=21';
+import { room, surfacesOf, isOpening } from './room.js?v=22';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=22';
+import { SFX3D } from './sfx.js?v=22';
+import { burst, addDebris, shockwave } from './effects.js?v=22';
+import { cachedGeo } from './util.js?v=22';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -21,6 +21,9 @@ const UP = new THREE.Vector3(0, 1, 0);
 const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
 
 let hooks = { explode: null, spitHit: null, shatter: null };
+// Lockvogel: aktive Position, zu der alle Zombies laufen
+export const lure = { active: false, pos: new THREE.Vector3(), v: 0 };
+export function setLure(pos) { if (pos) { lure.pos.set(pos.x, 0, pos.z); if (!lure.active) lure.v++; lure.active = true; } else if (lure.active) { lure.active = false; lure.v++; for (const z of zombies) z.pathT = 0; } }
 export function setZombieHooks(h) { Object.assign(hooks, h); }
 export function initZombies(s, hitCallback, bumpCallback, stompCallback) { scene = s; onPlayerHit = hitCallback; if (bumpCallback) onBump = bumpCallback; if (stompCallback) onStomp = stompCallback; }
 
@@ -860,13 +863,17 @@ export function updateZombies(dt, head, opts = {}) {
       if (!z.spat && k > 0.6) { z.spat = true; launchSpit(z, head); }
       if (z.actionT <= 0) { z.state = 'walk'; z.neck.rotation.x = 0.25; }
     } else if (z.state === 'walk' || z.state === 'attack') {
-      const dist = Math.hypot(player.x - z.pos.x, player.z - z.pos.z);
-      const reach = z.crawl ? 0.7 : 0.8;
-      if (z.T.spit && !z.crawl && z.state === 'walk') {
+      // Lockvogel (Trommel-Affe): alle Zombies im Raum laufen zu ihm statt zum Spieler
+      const lured = lure.active;
+      const tgt = lured ? lure.pos : player;
+      if (lured && z.lureV !== lure.v) { z.lureV = lure.v; z.pathT = 0; }
+      const dist = Math.hypot(tgt.x - z.pos.x, tgt.z - z.pos.z);
+      const reach = lured ? 0.55 : z.crawl ? 0.7 : 0.8;
+      if (z.T.spit && !z.crawl && z.state === 'walk' && !lured) {
         z.spitT = (z.spitT ?? rand(1.5, 3)) - dt;
         if (z.spitT <= 0 && dist > 1.8 && dist < 6.5 && clearLine(z.pos, player)) { z.spitT = rand(4, 6.5); z.state = 'spit'; z.actionT = 0.9; z.spat = false; SFX3D.groan(z.skull.getWorldPosition(tmpV2), 1.4); continue; }
       }
-      if (z.T.explode && dist < 1.1 && !z.crawl) {
+      if (z.T.explode && dist < 1.1 && !z.crawl && !lured) {
         // Platzer: bläht sich auf und explodiert neben dem Spieler
         z.fuseT = (z.fuseT ?? 0.9) - dt;
         const sw = 1 + (0.9 - z.fuseT) * 0.35;
@@ -876,7 +883,7 @@ export function updateZombies(dt, head, opts = {}) {
       }
       if (dist < reach) {
         z.state = 'attack';
-        faceTowards(z, player, dt, 8);
+        faceTowards(z, tgt, dt, 8);
         if (!(z.stagger > 0)) z.attackT -= dt; // taumelnd kein Angriff
         animateAttack(z, dt);
         if (z.attackT <= 0) {
@@ -885,16 +892,16 @@ export function updateZombies(dt, head, opts = {}) {
           SFX3D.swing(z.skull.getWorldPosition(tmpV2));
           if (Math.random() < 0.6) SFX3D.growl(z.skull.getWorldPosition(tmpV2), z.type);
           const armsLeft = z.armLost.filter(x => !x).length;
-          if (!opts.harmless && armsLeft > 0) onPlayerHit(z.T.dmg * (z.crawl ? 0.7 : 1) * (armsLeft === 2 ? 1 : 0.6), z);
+          if (!opts.harmless && armsLeft > 0 && !lured) onPlayerHit(z.T.dmg * (z.crawl ? 0.7 : 1) * (armsLeft === 2 ? 1 : 0.6), z);
         }
       } else {
         z.state = 'walk';
         z.attackT = Math.min(z.attackT, 0.5);
         z.pathT -= dt;
-        if ((z.pathT <= 0 || !z.path || !z.path.length) && planBudget > 0) { planBudget--; z.path = findPath(z.pos, player); z.pathT = rand(0.5, 0.9); }
-        if (!z.path) z.path = [player.clone()];
+        if ((z.pathT <= 0 || !z.path || !z.path.length) && planBudget > 0) { planBudget--; z.path = findPath(z.pos, tgt); z.pathT = rand(0.5, 0.9); }
+        if (!z.path) z.path = [tgt.clone()];
         while (z.path.length > 1 && z.path[0].distanceTo(tmpV.set(z.pos.x, 0, z.pos.z)) < 0.2) z.path.shift();
-        const next = z.path[0] || player;
+        const next = z.path[0] || tgt;
         faceTowards(z, next, dt);
         moveTowards(z, next, speed, dt);
         animateWalk(z, dt, speed);

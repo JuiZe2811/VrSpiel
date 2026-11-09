@@ -5,6 +5,28 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 22 – Trommel-Affe, Fallen & flüssiges Spielen
+
+**🐒 Trommel-Affe (Lockvogel)**
+- Ein aufziehbarer Blech-Affe mit Trommel hängt am Gürtel (rechts hinten). Greifen, werfen – er landet, richtet sich auf, trommelt laut und blinkt.
+- **8 Sekunden lang laufen alle Zombies im Raum zu ihm** statt zu dir und schlagen auf ihn ein. Dann **explodiert** er und reißt alles in der Nähe mit.
+- Jede Runde startest du mit 1 Affen. In der Glückskiste gibt es mit etwas Glück **3 Trommel-Affen** (statt einer Waffe).
+- PC: Taste **M**.
+
+**⚡🔥 Fallen mit Hebel**
+- **Elektrofalle**: Bodenplatte mit vier Polen, Blitze springen zwischen den Polen – jeder Zombie, der drüberläuft, stirbt sofort.
+- **Feuerfalle**: Flammen schießen aus dem Gitter, Zombies fangen Feuer und brennen weiter.
+- Aktivieren: den **Hebel** neben der Falle greifen (Griff-Taste) – kostet 1000 Punkte, 15 Sekunden aktiv, danach 35 Sekunden Abkühlung (Lampe: grün = bereit, gelb = aktiv, rot = lädt).
+- Vorsicht: Wer selbst in der aktiven Falle steht, nimmt Schaden.
+- Im Raumbau mit dem Werkzeug **⚡ Falle** auf den Boden setzen (abwechselnd Elektro/Feuer). Ohne eigene Fallen stehen automatisch zwei vor deinen ersten Türen/Fenstern.
+- PC: Taste **T** (nächste Falle).
+
+**Flüssig auch in späten Runden**
+- Höchstens 16 Zombies gleichzeitig im Raum – die Wellen werden länger statt voller.
+- Höchstens 8 Zombie-Stimmen gleichzeitig.
+- **Automatisch flüssig halten** (Einstellungen → Grafik, standardmäßig an): Wenn die Quest Bilder verliert, werden stufenweise Staub, Partikel, Schatten und Augenleuchten reduziert.
+- Getestet über 22 Wellen am Stück: kein Speicherzuwachs, keine Fehler.
+
 ## Neu in Version 21 – Sound, Stimmen, Einstellungen & 6 neue Waffen
 
 **Komplett neuer Sound** (alles live erzeugt, keine Audiodateien)
@@ -176,6 +198,7 @@ Alles geht per **Laser** – du musst nichts berühren. Menü: Zeigestrahl + Abz
 | ✂ Löschen | Auf eine Fläche zeigen (wird rot) + Abzug |
 | 🥤 Automat | Laser auf eine Wand + Abzug. Jeder neue Automat ist eine andere Sorte |
 | ⚙ Aufrüster | Laser auf eine Wand + Abzug (nur einer pro Raum) |
+| ⚡ Falle | Laser auf den Boden + Abzug – abwechselnd Elektro- und Feuerfalle, Hebel steht seitlich |
 | 💾 Räume … | 5 Speicherplätze zum Speichern/Laden + „Letzten Raum laden“ |
 | 🧭 Ausrichten | Geladene Karte an den echten Raum anlegen: Linie am Boden an einer echten Wand entlang ziehen (rastet ein), optional eine zweite an einer Querwand. Stick ◀ ▶ drehen, ▲▼ schieben |
 
@@ -263,7 +286,7 @@ Punkte: Treffer +10, erledigt +100, Kopfschuss +150, überlebte Welle +50 × Wel
 
 `python3 -m http.server` im Ordner starten und `http://localhost:8000` öffnen (mit einem Beispielraum).
 1–9 Waffe · Linksklick schießen / Knöpfe · rechte Maustaste ziehen = umschauen · Leertaste = Visier ·
-R nachladen · V Feuermodus · F Messer werfen · G Granate · P Brett annageln · B Wandkauf · K Glückskiste · J Automat · U Aufrüster · Enter Start · Mausrad Zoom.
+R nachladen · V Feuermodus · F Messer werfen · G Granate · P Brett annageln · B Wandkauf · K Glückskiste · J Automat · U Aufrüster · M Trommel-Affe · T Falle · Enter Start · Mausrad Zoom.
 
 ## Technik
 

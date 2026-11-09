@@ -235,8 +235,12 @@ function panner(pos, bus = null, rev = 0.25) {
   return p;
 }
 // Zombie-Stimme: Sägezahn durch Vokal-Formanten (a/o/u) mit Pitch-Bewegung und Zittern
+let activeVoices = 0;
 const VOWELS = { a: [700, 1150, 2400], o: [450, 800, 2500], u: [320, 750, 2300], e: [500, 1700, 2500], aa: [850, 1250, 2600] };
 function voice(pos, { f0 = 90, f1 = 70, dur = 1, vowel = 'o', v = 0.7, rough = 0.3, wobble = 6, q = 6 } = {}) {
+  if (activeVoices >= 8) return; // nicht zu viele gleichzeitig (Leistung + Klarheit)
+  activeVoices++;
+  setTimeout(() => { activeVoices--; }, dur * 1000 + 100);
   const t = audioCtx.currentTime, out = panner(pos, voiceBus, 0.3);
   const osc = audioCtx.createOscillator();
   osc.type = 'sawtooth';
@@ -303,6 +307,15 @@ export const SFX3D = {
   hurt(pos, type = 'walker') {
     if (!audioCtx) return;
     voice(pos, { f0: type === 'brute' || type === 'giant' ? 90 : ri(150, 210), f1: ri(90, 120), dur: 0.25, vowel: 'e', v: 0.45, rough: 0.6, wobble: 20 });
+  },
+  // Trommel-Affe: Blechtrommel + Spieluhr-Melodie (laut, damit man ihn überall hört)
+  drum(pos, beat) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime, out = panner(pos, null, 0.3);
+    noise(t, 0.08, 0.7, 'bandpass', beat % 2 ? 1800 : 900, 600, 2, out);
+    tone(t, beat % 2 ? 260 : 180, 120, 0.1, 0.4, 'triangle', out);
+    const mel = [784, 659, 784, 988];
+    tone(t, mel[beat % 4], mel[beat % 4], 0.18, 0.12, 'square', out);
   },
   crack(pos) { // Brett wird abgerissen
     if (!audioCtx) return;

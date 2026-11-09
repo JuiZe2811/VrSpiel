@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addStaticBox, removeStatic } from './physics.js?v=21';
+import { addStaticBox, removeStatic } from './physics.js?v=22';
 
 // Raum-Modell: echte Wände, Tische und Stühle des Spielers.
 // Jede Fläche bekommt eine sichtbare Vorschau (im Einrichtungsmodus), einen unsichtbaren
@@ -8,11 +8,11 @@ import { addStaticBox, removeStatic } from './physics.js?v=21';
 export const WALL_HEIGHT = 2.5;
 export const room = { surfaces: [], group: new THREE.Group(), edit: false, desktop: false };
 
-const COLORS = { wall: 0x3a8bff, table: 0xff9d2e, chair: 0x46d17a, bench: 0x8a6a45, door: 0xc0702a, window: 0x4dd0ff, wallbuy: 0xffd21f, mbox: 0xb26bff, perk: 0xff4fa0, upgrade: 0x9a5cff };
-const NAMES = { wall: 'Wand', table: 'Tisch', chair: 'Stuhl', bench: 'Waffenständer', door: 'Tür', window: 'Fenster', wallbuy: 'Wandkauf', mbox: 'Glückskiste', perk: 'Automat', upgrade: 'Aufrüster' };
+const COLORS = { wall: 0x3a8bff, table: 0xff9d2e, chair: 0x46d17a, bench: 0x8a6a45, door: 0xc0702a, window: 0x4dd0ff, wallbuy: 0xffd21f, mbox: 0xb26bff, perk: 0xff4fa0, upgrade: 0x9a5cff, trap: 0xff5a1f };
+const NAMES = { wall: 'Wand', table: 'Tisch', chair: 'Stuhl', bench: 'Waffenständer', door: 'Tür', window: 'Fenster', wallbuy: 'Wandkauf', mbox: 'Glückskiste', perk: 'Automat', upgrade: 'Aufrüster', trap: 'Falle' };
 // an der Wand angebrachte Plätze (Position + Wandrichtung)
-export const isWallMount = (s) => s.type === 'wallbuy' || s.type === 'perk' || s.type === 'upgrade';
-const MARKER_SIZE = { wallbuy: [0.8, 0.35, 1.35], perk: [0.62, 1.75, 0.875], upgrade: [0.9, 1.2, 0.6] };
+export const isWallMount = (s) => s.type === 'wallbuy' || s.type === 'perk' || s.type === 'upgrade' || s.type === 'trap';
+const MARKER_SIZE = { wallbuy: [0.8, 0.35, 1.35], perk: [0.62, 1.75, 0.875], upgrade: [0.9, 1.2, 0.6], trap: [1.4, 1.4, 0.01] };
 export const isOpening = (s) => s.type === 'door' || s.type === 'window';
 export const surfaceName = (t) => NAMES[t];
 const occluderMat = new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide });
@@ -55,6 +55,7 @@ function buildMarker(s) {
   g.position.copy(s.pos).addScaledVector(s.normal, 0.01);
   if (s.type !== 'wallbuy') g.position.y = my;
   g.lookAt(g.position.clone().add(s.normal));
+  if (s.type === 'trap') { g.position.copy(s.pos).setY(0.012); g.rotation.set(-Math.PI / 2, 0, Math.atan2(s.normal.x, s.normal.z)); }
   const visual = new THREE.Mesh(geo, visualMaterial(s.type));
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: COLORS[s.type] }));
   g.add(visual, edges);
@@ -399,7 +400,7 @@ export function deserializeRoom(data, angle = 0, pivot = new THREE.Vector3(), of
   for (const d of data) (d.type === 'door' || d.type === 'window' ? rest : walls).push(d);
   for (const d of walls) {
     if (d.type === 'wall') addWall(P(d.a), P(d.b), P(d.inside), d.height);
-    else if (d.type === 'wallbuy' || d.type === 'perk' || d.type === 'upgrade') addWallbuy(P(d.pos), D(d.normal), d.type, d.kind || null);
+    else if (d.type === 'wallbuy' || d.type === 'perk' || d.type === 'upgrade' || d.type === 'trap') addWallbuy(P(d.pos), D(d.normal), d.type, d.kind || null);
     else addBox(d.type, P(d.p1), P(d.p2), d.yaw + angle);
   }
   for (const d of rest) addOpening(d.type, P(d.a), P(d.b), P(d.inside), d.bottom, d.top);
