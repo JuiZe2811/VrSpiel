@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=37';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=37';
-import { SFX3D } from './sfx.js?v=37';
-import { burst, addDebris, shockwave } from './effects.js?v=37';
-import { cachedGeo } from './util.js?v=37';
+import { room, surfacesOf, isOpening } from './room.js?v=38';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=38';
+import { SFX3D } from './sfx.js?v=38';
+import { burst, addDebris, shockwave } from './effects.js?v=38';
+import { cachedGeo } from './util.js?v=38';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=37';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=38';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -458,6 +458,8 @@ export function clearPlanks() {
   for (const o of openings()) o.planks = [];
 }
 export const plankMeshes = () => planks.map(p => p.board);
+// für den Boss: ein Brett abreißen (true, wenn noch eins da war)
+export function tearPlankFor(o, pos) { if (!o.planks || !o.planks.length) return false; tearPlank(o, pos); return true; }
 function tearPlank(o, zombiePos) {
   const p = o.planks.pop();
   if (!p) return;

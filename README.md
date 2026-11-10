@@ -5,6 +5,12 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 38 – Der Boss kommt durchs Fenster
+
+- Der Boss erscheint jetzt wie die Zombies **draußen vor einem zufälligen Fenster** (gibt es keins, vor einer Tür). Er läuft hin, **reißt die Bretter ab**, **steigt geduckt herein** und brüllt. Erst dann nimmt er dich ins Visier und greift an. Vorher konnte er hinter der Wand erscheinen und dort hängen bleiben.
+- Während er draußen steht und die Bretter abreißt, kannst du ihn schon beschießen.
+- Der Teleport-Angriff landet nur noch auf freien Stellen im Raum, nie mehr hinter einer Wand.
+
 ## Neu in Version 37 – Zombies finden den Weg, Rotpunkt statt Zielfernrohr, Holzhammer
 
 **Wegfindung der Zombies:**

@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss } from './zombies.js?v=37';
-import { burst, shockwave, puff, sparks } from './effects.js?v=37';
-import { SFX, SFX3D } from './sfx.js?v=37';
-import { makePanel } from './util.js?v=37';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=37';
-import './weaponkit.js?v=37';
-import { roomOccluders } from './room.js?v=37';
+import { zombies, walkable, registerBoss, openings, tearPlankFor } from './zombies.js?v=38';
+import { burst, shockwave, puff, sparks } from './effects.js?v=38';
+import { SFX, SFX3D } from './sfx.js?v=38';
+import { makePanel } from './util.js?v=38';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=38';
+import './weaponkit.js?v=38';
+import { roomOccluders } from './room.js?v=38';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
@@ -63,9 +63,14 @@ export function spawnBoss(level, head, diffHp = 1) {
   // Grundhaltung: Arme aus der T-Pose nach unten
   setBone(B, 'LeftArm', rot(AZ, -1.2)); B.base.LeftArm = bones.LeftArm.quaternion.clone();
   setBone(B, 'RightArm', rot(AZ, 1.2)); B.base.RightArm = bones.RightArm.quaternion.clone();
-  // Platz: ca. 3 m vor dem Spieler, möglichst frei
+  // Auftritt wie die Zombies: draußen vor einem zufälligen Fenster (sonst Tür), Bretter abreißen, hereinsteigen.
+  // Erst danach greift er an. Ohne Fenster/Türen: steigt in der Nähe aus dem Boden.
+  const ops = openings();
+  const wins = ops.filter(o => o.type === 'window');
+  const opening = (wins.length ? wins : ops)[Math.floor(Math.random() * (wins.length || ops.length))] || null;
   const pos = new THREE.Vector3();
-  for (let k = 0; k < 24; k++) {
+  if (opening) pos.copy(opening.mid).addScaledVector(opening.normal, -3.2).setY(0);
+  else for (let k = 0; k < 24; k++) {
     const a = (k / 24) * Math.PI * 2, d = 2.6 + (k % 3) * 0.4;
     pos.set(head.x + Math.sin(a) * d, 0, head.z - Math.cos(a) * d);
     if (walkable(pos.x, pos.z)) break;
@@ -76,7 +81,7 @@ export function spawnBoss(level, head, diffHp = 1) {
     root, body, hips: bones.Hips, torso: bones.Spine1, neck: bones.Neck, head: bones.Head, skull: bones.Head, jaw: new THREE.Object3D(),
     arms: [], legs: [], legLost: [false, false], armLost: [false, false], legHp: [999, 999], armHp: [999, 999],
     hp, maxHp: hp, state: 'intro', pos: pos.clone(), yaw: 0, speed: 0.75 + 0.08 * level, phase: 0, hurtT: 0, deadT: 0,
-    B, mats, mode: 'intro', t: 0, cool: 2.5, last: null, attackHit: false, rage: false, aimPt: head.clone(), flashT: 0
+    B, mats, mode: opening ? 'approach' : 'intro', opening, t: 0, cool: 2.5, last: null, attackHit: false, rage: false, aimPt: head.clone(), flashT: 0
   };
   // Waffe(n) – ab Stufe 9 wechselt er zwischen mehreren
   z.guns = gunsFor(level).map(def => { const w = buildWeapon(def.id); w.root.scale.setScalar(S); w.root.visible = false; scene.add(w.root); return { def, w }; });
@@ -304,6 +309,11 @@ function moveBoss(z, target, speed, dt) {
   if (walkable(nx, z.pos.z)) z.pos.x = nx; else if (walkable(z.pos.x, nz)) z.pos.z = nz; else return true; // Wand
   return false;
 }
+function clearPath(a, b) { // jede Stelle auf der Strecke begehbar?
+  const d = hyp(b.x - a.x, b.z - a.z), n = Math.max(1, Math.ceil(d / 0.08));
+  for (let i = 1; i <= n; i++) if (!walkable(a.x + (b.x - a.x) * i / n, a.z + (b.z - a.z) * i / n)) return false;
+  return true;
+}
 function face(z, target, dt, rate = 6) {
   const want = Math.atan2(target.x - z.pos.x, target.z - z.pos.z);
   const d = Math.atan2(Math.sin(want - z.yaw), Math.cos(want - z.yaw));
@@ -407,7 +417,7 @@ function updateBoss(z, dt, head, opts) {
   // Zielpunkt folgt dem Kopf des Spielers mit Verzögerung – wer sich bewegt, weicht aus
   const track = Math.min(5, 2.2 + z.level * 0.25) * (z.rage ? 1.3 : 1);
   z.aimPt.lerp(_aimT.set(head.x, head.y - 0.12, head.z), Math.min(1, dt * track));
-  const aiming = (z.mode === 'wind' || z.mode === 'attack') && z.atk && z.atk.id === 'shoot';
+  const aiming = (z.mode === 'wind' || z.mode === 'attack') && z.atk && z.atk.id === 'shoot'; // (erst nach dem Hereinsteigen)
   // Wut-Modus ab Stufe 3 bei wenig Leben
   if (!z.rage && z.level >= 3 && z.hp < z.maxHp * 0.35) {
     z.rage = true;
@@ -419,7 +429,38 @@ function updateBoss(z, dt, head, opts) {
   const G = z.gun.def;
   const dist = hyp(player.x - z.pos.x, player.z - z.pos.z);
   let pose = {};
-  if (z.mode === 'intro') {
+  // ---- Auftritt: zum Fenster laufen, Bretter abreißen, hereinsteigen (noch kein Angriff) ----
+  if (z.mode === 'approach' || z.mode === 'tear' || z.mode === 'enter') {
+    const o = z.opening;
+    const stand = o.mid.clone().addScaledVector(o.normal, -0.55).setY(0);
+    const inside = o.mid.clone().addScaledVector(o.normal, 0.7).setY(0);
+    if (z.mode === 'approach') {
+      const d = hyp(stand.x - z.pos.x, stand.z - z.pos.z);
+      const step = Math.min(d, z.speed * 1.1 * dt);
+      if (d > 0.02) { z.pos.x += (stand.x - z.pos.x) / d * step; z.pos.z += (stand.z - z.pos.z) / d * step; }
+      face(z, stand, dt);
+      z.phase += dt * 6 * z.speed;
+      pose = { walk: 1 };
+      if (z.stepT === undefined || (z.stepT -= dt) <= 0) { z.stepT = 0.42; SFX3D.step(z.root.position.clone(), 1.3); }
+      if (d < 0.05) { z.mode = 'tear'; z.t = 0; z.tearT = 0.6; }
+    } else if (z.mode === 'tear') {
+      face(z, inside, dt, 8);
+      z.tearT -= dt;
+      pose = { rArm: Math.max(0, Math.sin(z.t * 6)) , lean: 0.25 };
+      if (z.tearT <= 0) {
+        z.tearT = 0.55;
+        if (!tearPlankFor(o, z.pos)) { z.mode = 'enter'; z.t = 0; z.enterFrom = z.pos.clone(); SFX3D.roar(z.root.position.clone().setY(1.6)); }
+        else SFX3D.growl(z.root.position.clone().setY(1.6), 'brute');
+      }
+    } else { // hereinsteigen (bei Fenstern geduckt)
+      const k = Math.min(1, z.t / 1.3);
+      z.pos.lerpVectors(z.enterFrom, inside, k);
+      face(z, inside, dt, 8);
+      z.phase += dt * 5;
+      pose = { walk: 0.6, crouch: o.type === 'window' ? Math.sin(k * Math.PI) * 0.6 : 0, lean: o.type === 'window' ? 0.4 * Math.sin(k * Math.PI) : 0 };
+      if (k >= 1) { z.mode = 'intro'; z.t = 0; }
+    }
+  } else if (z.mode === 'intro') {
     pose = { armsUp: Math.max(0, Math.sin(Math.min(1, z.t / 1.6) * Math.PI)) };
     face(z, player, dt);
     if (z.t > 1.8) { z.mode = 'move'; z.t = 0; }
@@ -475,7 +516,8 @@ function updateBoss(z, dt, head, opts) {
         // hinter den Spieler (Richtung, in die er gerade nicht schaut, ist ungefähr „hinter“ vom Boss aus gesehen)
         const dir = flat(player).sub(flat(z.pos)).normalize();
         const tgt = player.clone().addScaledVector(dir, 1.3);
-        if (walkable(tgt.x, tgt.z)) z.pos.copy(tgt); else { const side = new THREE.Vector3(-dir.z, 0, dir.x); const t2 = player.clone().addScaledVector(side, 1.3); if (walkable(t2.x, t2.z)) z.pos.copy(t2); }
+        // nur auf freie Stellen im Raum (Weg vom Spieler dorthin darf keine Wand kreuzen)
+        if (clearPath(player, tgt)) z.pos.copy(tgt); else { const side = new THREE.Vector3(-dir.z, 0, dir.x); const t2 = player.clone().addScaledVector(side, 1.3), t3 = player.clone().addScaledVector(side, -1.3); if (clearPath(player, t2)) z.pos.copy(t2); else if (clearPath(player, t3)) z.pos.copy(t3); }
         z.root.position.set(z.pos.x, 0, z.pos.z);
         z.root.scale.setScalar(1);
         puff(z.root.position.clone().setY(1), 0x444444, 0.5, 0.8, 0.4, 0.8);
