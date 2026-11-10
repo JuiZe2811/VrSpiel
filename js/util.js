@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Hilfsfunktionen: Text-Panels, Materialien, Geometrie-Bausteine
 export function makePanel(widthM, heightM, pxPerM = 600) {
@@ -137,3 +138,41 @@ export function sphere(r, mat, s, y, x = 0) {
   return m;
 }
 
+
+// Leistung: alle festen Teile einer Waffe mit gleichem Material zu einem Mesh zusammenfassen
+// (bewegliche Teile wie Verschluss, Trommel, Magazin, Zielfernrohr-Linsen bleiben einzeln)
+export function mergeStatic(root, parts) {
+  const skip = new Set();
+  for (const v of Object.values(parts || {})) if (v && v.isMesh) skip.add(v); // einzeln angesprochene Meshes behalten
+  // in jeder (auch beweglichen) Gruppe die direkten Kinder je Material zusammenfassen
+  const nodes = [];
+  root.traverse(o => { if (!o.isMesh && !o.isSprite) nodes.push(o); });
+  for (const n of nodes) mergeChildren(n, skip);
+}
+function mergeChildren(model, skip) {
+  const groups = new Map();
+  for (const m of [...model.children]) {
+    if (!m.isMesh || skip.has(m) || m.material.transparent || Array.isArray(m.material) || m.renderOrder !== 0 || Object.keys(m.userData).length || m.children.length) continue;
+    if (!groups.has(m.material)) groups.set(m.material, []);
+    groups.get(m.material).push(m);
+  }
+  for (const [mat, list] of groups) {
+    if (list.length < 2) continue;
+    const geos = [];
+    for (const m of list) {
+      m.updateMatrix();
+      let g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k);
+      if (!g.attributes.normal) g.computeVertexNormals();
+      if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      g.applyMatrix4(m.matrix);
+      geos.push(g);
+    }
+    const merged = mergeGeometries(geos, false);
+    for (const g of geos) g.dispose();
+    if (!merged) continue;
+    for (const m of list) model.remove(m);
+    const mm = new THREE.Mesh(merged, mat);
+    model.add(mm);
+  }
+}

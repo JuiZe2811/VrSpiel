@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { addStaticBox, removeStatic } from './physics.js?v=29';
+import { addStaticBox, removeStatic } from './physics.js?v=30';
+import { mergeStatic } from './util.js?v=30';
 
 // Raum-Modell: echte Wände, Tische und Stühle des Spielers.
 // Jede Fläche bekommt eine sichtbare Vorschau (im Einrichtungsmodus), einen unsichtbaren
@@ -207,6 +208,7 @@ function buildBackdrop(s, g) {
   piece(t, h + t, hw + t / 2, t / 2);
   piece(w + 2 * t, t, 0, hh + t / 2);
   if (s.type === 'window') { piece(w + 2 * t + 0.08, t, 0, -hh - t / 2); }
+  mergeStatic(back, null); // Leistung: feste Teile zusammenfassen
   g.add(back);
   s.backdrop = back;
 }

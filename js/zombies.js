@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=29';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=29';
-import { SFX3D } from './sfx.js?v=29';
-import { burst, addDebris, shockwave } from './effects.js?v=29';
-import { cachedGeo } from './util.js?v=29';
+import { room, surfacesOf, isOpening } from './room.js?v=30';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=30';
+import { SFX3D } from './sfx.js?v=30';
+import { burst, addDebris, shockwave } from './effects.js?v=30';
+import { cachedGeo } from './util.js?v=30';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -83,7 +84,7 @@ function faceTex(base, variant) {
   });
 }
 const SKIN_COLORS = ['#5f6e4c', '#6c6d55', '#7a7464', '#55654b', '#7d6c60'];
-const SKINS = SKIN_COLORS.map(c => { const t = skinTex(c); return new THREE.MeshStandardMaterial({ map: t, bumpMap: t, bumpScale: 1.2, roughness: 0.7, envMapIntensity: 0.35 }); });
+const SKINS = SKIN_COLORS.map(c => { const t = skinTex(c); const m = new THREE.MeshStandardMaterial({ map: t, bumpMap: t, bumpScale: 1.2, roughness: 0.7, envMapIntensity: 0.35 }); m.userData.tint = new THREE.Color(c); m.userData.region = 0; return m; });
 const FACES = SKIN_COLORS.map((c, i) => new THREE.MeshStandardMaterial({ map: faceTex(c, i % 3), roughness: 0.75, envMapIntensity: 0.35 }));
 // ---- Gesichter von Freunden (Fotos, nur lokal auf dem Gerät gespeichert) ----------------------
 const FRIEND_FACES = [];
@@ -128,15 +129,19 @@ export function setFriendFaces(urls, share) {
     img.src = u;
   }
 }
-const SHIRTS = ['#5b5145', '#3f4d5c', '#6b3b33', '#4c5b3c', '#7a7262', '#2b2b2b', '#8a8a80'].map(c => new THREE.MeshStandardMaterial({ map: clothTex(c), roughness: 0.95, envMapIntensity: 0.3 }));
-const PANTS = ['#2c3340', '#3d3226', '#28302a', '#45403a'].map(c => new THREE.MeshStandardMaterial({ map: clothTex(c), roughness: 0.95, envMapIntensity: 0.3 }));
+const clothMat = (c) => { const m = new THREE.MeshStandardMaterial({ map: clothTex(c), roughness: 0.95, envMapIntensity: 0.3 }); m.userData.tint = new THREE.Color(c); m.userData.region = 1; return m; };
+const SHIRTS = ['#5b5145', '#3f4d5c', '#6b3b33', '#4c5b3c', '#7a7262', '#2b2b2b', '#8a8a80'].map(clothMat);
+const PANTS = ['#2c3340', '#3d3226', '#28302a', '#45403a'].map(clothMat);
 const EYES = [0xffe14a, 0xff2a1a, 0xe8f4ff].map(c => new THREE.MeshBasicMaterial({ color: c, toneMapped: false }));
 // Leuchten um die Augen (sieht man vor allem im dunklen Flur)
 const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d'); const gr = g.createRadialGradient(16, 16, 1, 16, 16, 15); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 32, 32); return new THREE.CanvasTexture(c); })();
 const EYE_GLOW = [0xffe14a, 0xff2a1a, 0xbfe0ff, 0x7dff4a].map(c => new THREE.SpriteMaterial({ map: glowTex, color: c, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-export function setEyeGlow(on) { EYE_GLOW.slice(0, 3).forEach(m => { m.opacity = on ? 0.55 : 0; }); }
+let woundsMax = 4;
+export function setWoundsMax(n) { woundsMax = n; }
+let eyeGlowOn = true;
+export function setEyeGlow(on) { eyeGlowOn = on; EYE_GLOW.slice(0, 3).forEach(m => { m.opacity = on ? 0.55 : 0; }); }
 // Gift-Zombies: grünliche Haut, leuchtende Beulen
-const TOXIC_SKIN = (() => { const t = skinTex('#6d7a3a'); return new THREE.MeshStandardMaterial({ map: t, bumpMap: t, bumpScale: 1.5, roughness: 0.55, envMapIntensity: 0.4 }); })();
+const TOXIC_SKIN = (() => { const t = skinTex('#6d7a3a'); const m = new THREE.MeshStandardMaterial({ map: t, bumpMap: t, bumpScale: 1.5, roughness: 0.55, envMapIntensity: 0.4 }); m.userData.tint = new THREE.Color('#6d7a3a'); m.userData.region = 0; return m; })();
 const pustuleMat = new THREE.MeshStandardMaterial({ color: 0x9cff3a, emissive: 0x5aff1a, emissiveIntensity: 0.9, roughness: 0.3 });
 const acidMat = new THREE.MeshBasicMaterial({ color: 0x8dff3a, toneMapped: false });
 // Einschusswunden, die am Zombie bleiben
@@ -150,8 +155,8 @@ const boneMat = new THREE.MeshStandardMaterial({ color: 0xcfc6a8, roughness: 0.7
 const woundMat = new THREE.MeshStandardMaterial({ color: 0x5a0606, roughness: 0.5 });
 const stumpMat = woundMat;
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
-const capGeo = (r, len) => cachedGeo(`zc${r}|${len}`, () => new THREE.CapsuleGeometry(r, len, 4, 10));
-const sphGeo = (r) => cachedGeo(`zs${r}`, () => new THREE.SphereGeometry(r, 16, 12));
+const capGeo = (r, len) => cachedGeo(`zc${r}|${len}`, () => new THREE.CapsuleGeometry(r, len, 3, 8)); // wenige Polygone (Leistung)
+const sphGeo = (r) => cachedGeo(`zs${r}`, () => new THREE.SphereGeometry(r, r > 0.03 ? 14 : 8, r > 0.03 ? 10 : 6));
 const coneGeo = cachedGeo('zclaw', () => new THREE.ConeGeometry(0.008, 0.06, 5));
 const hairGeo = cachedGeo('zhair', () => new THREE.SphereGeometry(0.108, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.45));
 const stumpGeo = cachedGeo('zstump', () => new THREE.SphereGeometry(0.05, 8, 6));
@@ -220,6 +225,7 @@ function buildZombie(type) {
   const glowMat = toxic ? EYE_GLOW[3] : EYE_GLOW[EYES.indexOf(eyeMat)];
   for (const sx of [-1, 1]) if (!friend && Math.random() > 0.12) {
     head.add(mesh(sphGeo(0.014), toxic ? acidMat : eyeMat, sx * 0.034, 0.118, 0.077));
+    if (!eyeGlowOn) continue; // Leuchten nur, wenn eingeschaltet (spart Zeichenaufrufe)
     const gl = new THREE.Sprite(glowMat);
     gl.position.set(sx * 0.034, 0.118, 0.085);
     gl.scale.setScalar(0.06);
@@ -282,6 +288,112 @@ function buildZombie(type) {
   const thick = 0.6 + 0.4 * T.width;
   if (thick > 1.01) { for (const l of legs) l.hip.scale.set(thick, 1, thick); for (const a of arms) a.shoulder.scale.z = thick; }
   return { root, body, hips, torso, neck, head, skull, jaw, arms, legs, belly };
+}
+
+// ---- Leistung: alle Körperteile zu EINEM Skinned-Mesh zusammenfassen -------------------------
+// Statt ~30 Einzelteilen (= 30 Zeichenaufrufe pro Auge) wird jeder Zombie als ein Körper gezeichnet.
+// Die bisherigen Gruppen (Hüfte, Arme, Knie …) bleiben als Knochen erhalten – Animationen, Umfallen
+// und abfallende Gliedmaßen funktionieren unverändert.
+const ATLAS = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  // Bereich 0 (links oben): Haut – Poren, Adern, Schmutz, Blut (hell, wird mit der Hautfarbe eingefärbt)
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 700; i++) { ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.12})`; ctx.fillRect(Math.random() * 128, Math.random() * 128, 2, 2); }
+  for (let i = 0; i < 40; i++) { ctx.fillStyle = Math.random() < 0.35 ? `rgba(150,0,0,${0.5 + Math.random() * 0.4})` : `rgba(0,0,0,${Math.random() * 0.35})`; ctx.beginPath(); ctx.ellipse(Math.random() * 128, Math.random() * 128, 1 + Math.random() * 5, 1 + Math.random() * 4, Math.random() * 3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.strokeStyle = 'rgba(60,20,70,0.45)';
+  for (let i = 0; i < 8; i++) { ctx.beginPath(); let x = Math.random() * 128, y = Math.random() * 128; ctx.moveTo(x, y); for (let k = 0; k < 4; k++) { x += (Math.random() - 0.5) * 16; y += Math.random() * 12; ctx.lineTo(x, y); } ctx.stroke(); }
+  // Bereich 1 (rechts oben): Stoff – Webstruktur, Risse, Flecken
+  for (let y = 0; y < 128; y += 3) { ctx.fillStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.06})`; ctx.fillRect(128, y, 128, 1); }
+  for (let i = 0; i < 60; i++) { ctx.fillStyle = Math.random() < 0.3 ? `rgba(140,0,0,${0.4 + Math.random() * 0.5})` : `rgba(0,0,0,${Math.random() * 0.35})`; ctx.beginPath(); ctx.ellipse(128 + Math.random() * 128, Math.random() * 128, 1 + Math.random() * 6, 1 + Math.random() * 5, Math.random() * 3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, 256, 128); ctx.clip();
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(128 + Math.random() * 128, Math.random() * 128); ctx.lineTo(128 + Math.random() * 128, Math.random() * 128); ctx.stroke(); }
+  ctx.restore();
+  // Bereich 2 (unten): einfarbig weiß (für Knochen, Wunden, Augen …)
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+export const ZOMBIE_MAT = new THREE.MeshLambertMaterial({ map: ATLAS, vertexColors: true });
+const PART_CODES = { torso: 1, head: 2, armL: 3, armR: 4, legL: 5, legR: 6 };
+const PART_NAMES = [null, 'torso', 'head', 'armL', 'armR', 'legL', 'legR'];
+export let skinningOn = true;
+export function setSkinning(on) { skinningOn = on; }
+function skinify(z) {
+  if (!skinningOn) { z.hitTorso = z.torso.children[1]; return; }
+  const root = z.root;
+  const pos0 = root.position.clone(), rot0 = root.rotation.clone(), sc0 = root.scale.clone();
+  root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.scale.set(1, 1, 1);
+  root.updateMatrixWorld(true);
+  const bones = [];
+  root.traverse(o => { if (!o.isMesh && !o.isSprite && o !== root) bones.push(o); });
+  const pieces = [], partOf = [];
+  const keep = (m) => m === z.skull || m === z.belly || m.parent === z.skull || m.userData.keep;
+  const merged = [];
+  root.traverse(m => {
+    if (!m.isMesh || keep(m)) return;
+    const bone = m.parent;
+    const bi = bones.indexOf(bone);
+    if (bi < 0) return;
+    const g = new THREE.BufferGeometry();
+    const src = m.geometry;
+    g.setAttribute('position', src.attributes.position.clone());
+    g.setAttribute('normal', src.attributes.normal.clone());
+    g.setAttribute('uv', src.attributes.uv.clone());
+    g.setIndex(src.index.clone());
+    g.applyMatrix4(m.matrixWorld);
+    const n = g.attributes.position.count;
+    const mat = m.material;
+    const col = mat.userData.tint || mat.color || new THREE.Color(1, 1, 1);
+    const region = mat.userData.region ?? 2;
+    const colors = new Float32Array(n * 3), si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+    const uv = g.attributes.uv;
+    for (let i = 0; i < n; i++) {
+      colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
+      si[i * 4] = bi; sw[i * 4] = 1;
+      if (region === 2) uv.setXY(i, 0.5, 0.25);
+      else uv.setXY(i, (region === 1 ? 0.5 : 0) + 0.01 + uv.getX(i) * 0.48, 0.51 + uv.getY(i) * 0.48);
+      partOf.push(PART_CODES[m.userData.part] || 0);
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+    g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+    pieces.push(g);
+    merged.push(m);
+  });
+  const geo = mergeGeometries(pieces, false);
+  for (const g of pieces) g.dispose();
+  for (const m of merged) m.parent.remove(m);
+  const mesh = new THREE.SkinnedMesh(geo, ZOMBIE_MAT);
+  root.add(mesh);
+  root.updateMatrixWorld(true);
+  mesh.bind(new THREE.Skeleton(bones));
+  mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.8, 0), 1.3);
+  mesh.castShadow = true;
+  // Treffer: welches Körperteil wurde getroffen? (über den Eckpunkt des getroffenen Dreiecks)
+  const parts = Uint8Array.from(partOf);
+  const proxies = {};
+  const holder = { torso: z.torso, head: z.head, armL: z.arms[0].shoulder, armR: z.arms[1].shoulder, legL: z.legs[0].hip, legR: z.legs[1].hip };
+  for (const [name, bone] of Object.entries(holder)) { const o = new THREE.Object3D(); o.userData.part = name; o.userData.zombie = z; o.userData.proxy = true; bone.add(o); proxies[name] = o; }
+  const orig = THREE.SkinnedMesh.prototype.raycast;
+  mesh.raycast = function (rc, out) {
+    const start = out.length;
+    orig.call(this, rc, out);
+    for (let i = start; i < out.length; i++) {
+      const name = PART_NAMES[parts[out[i].face.a]];
+      if (!name || !proxies[name]) { out.splice(i, 1); i--; continue; }
+      // abgefallene Gliedmaßen treffen nicht mehr
+      if ((name === 'armL' && z.armLost[0]) || (name === 'armR' && z.armLost[1]) || (name === 'legL' && z.legLost[0]) || (name === 'legR' && z.legLost[1])) { out.splice(i, 1); i--; continue; }
+      out[i].object = proxies[name];
+    }
+  };
+  mesh.userData.part = 'skinned';
+  mesh.userData.zombie = z;
+  z.skinned = mesh;
+  z.proxies = proxies;
+  z.hitTorso = proxies.torso;
+  root.position.copy(pos0); root.rotation.copy(rot0); root.scale.copy(sc0);
 }
 
 // ---- Bretter vor Türen und Fenstern -------------------------------------------
@@ -486,11 +598,12 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
   if (type === 'crawler') { // ohne Beine: kriecht von Anfang an
     zombie.crawl = true;
     zombie.legLost = [true, true];
-    for (const l of zombie.legs) l.hip.visible = false;
+    for (const l of zombie.legs) { l.hip.visible = false; l.hip.scale.setScalar(0.0001); }
   }
   zombie.root.position.x = zombie.pos.x;
   zombie.root.position.z = zombie.pos.z;
   zombie.root.traverse(o => { if (o.isMesh && o.userData.part) o.userData.zombie = zombie; });
+  skinify(zombie);
   // unsichtbarer Körper: geworfene Dinge prallen ab und treffen den Zombie
   zombie.kin = addKinematicBox(new THREE.Vector3(0.2 * T.width * scale, 0.8 * scale, 0.16 * scale), 0.8 * scale, (other, v, p) => bumpZombie(zombie, other, v, p));
   zombie.kinCrawl = false;
@@ -507,7 +620,7 @@ export function clearZombies() {
   zombies.length = 0;
   corpses.length = 0;
   clearSpits();
-  for (const l of limbs) { removeDynamic(l.phys); if (l.obj.parent) l.obj.parent.remove(l.obj); }
+  for (const l of limbs) { removeDynamic(l.phys); l.obj.scale.setScalar(0.0001); l.obj.updateMatrixWorld(true); if (l.obj.parent) l.obj.parent.remove(l.obj); }
   limbs.length = 0;
 }
 export const aliveCount = () => zombies.filter(z => z.state !== 'dead').length;
@@ -530,8 +643,9 @@ function detach(z, group, kind, sideIndex) {
   stump.position.copy(group.position);
   group.parent.add(stump);
   scene.attach(group);
-  group.traverse(o => { if (o.isMesh) o.userData.part = null; });
-  const phys = addDynamic(group, localBoxOf(group), 3, { vel: new THREE.Vector3(rand(-1, 1), 1, rand(-1, 1)), angVel: new THREE.Vector3(rand(-5, 5), rand(-5, 5), rand(-5, 5)) });
+  group.traverse(o => { if (o.isMesh || o.userData.proxy) o.userData.part = null; });
+  const box = z.skinned ? (kind === 'arm' ? new THREE.Box3(new THREE.Vector3(-0.05, -0.62, -0.06), new THREE.Vector3(0.05, 0, 0.06)) : new THREE.Box3(new THREE.Vector3(-0.07, -0.88, -0.07), new THREE.Vector3(0.07, 0, 0.1))).applyMatrix4(new THREE.Matrix4().makeScale(z.scale, z.scale, z.scale)) : localBoxOf(group);
+  const phys = addDynamic(group, box, 3, { vel: new THREE.Vector3(rand(-1, 1), 1, rand(-1, 1)), angVel: new THREE.Vector3(rand(-5, 5), rand(-5, 5), rand(-5, 5)) });
   limbs.push({ obj: group, phys, t: 8 });
   if (kind === 'arm') z.armLost[sideIndex] = true;
   else z.legLost[sideIndex] = true;
@@ -591,7 +705,23 @@ export function damageZombie(mesh, point, dir, dmg, quiet = false) {
 }
 // Einschussloch + Blutspur bleiben am getroffenen Körperteil
 function addWound(z, mesh, point) {
-  if ((z.wounds || 0) >= 6 || !mesh.geometry) return;
+  if ((z.wounds || 0) >= (woundsMax) ) return;
+  if (!mesh.geometry && mesh.userData.proxy) { // Skinned-Körper: Loch am Knochen befestigen
+    z.wounds = (z.wounds || 0) + 1;
+    const bone = mesh.parent;
+    bone.updateWorldMatrix(true, false);
+    const local = bone.worldToLocal(point.clone());
+    const n = new THREE.Vector3(local.x, 0, local.z);
+    if (n.lengthSq() < 1e-6) n.set(0, 0, 1);
+    n.normalize();
+    const hole = new THREE.Mesh(holeGeo, holeMat);
+    hole.position.copy(local).addScaledVector(n, 0.004);
+    hole.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    hole.scale.setScalar(0.9 + Math.random() * 0.5);
+    bone.add(hole);
+    return;
+  }
+  if (!mesh.geometry) return;
   z.wounds = (z.wounds || 0) + 1;
   mesh.updateWorldMatrix(true, false);
   const local = mesh.worldToLocal(point.clone());
@@ -669,7 +799,7 @@ function applyBump(z) {
   const dir = new THREE.Vector3(other.velocity.x, 0, other.velocity.z);
   if (dir.lengthSq() < 1e-4) dir.set(z.pos.x - p.x, 0, z.pos.z - p.z);
   dir.normalize();
-  const res = damageZombie(z.torso.children[1], p, dir, dmg);
+  const res = damageZombie(z.hitTorso || z.torso.children[1], p, dir, dmg);
   if (res) { res.bump = true; onBump(res, p); }
 }
 // Leiche: wird zum Physik-Körper und kippt in Fallrichtung um
@@ -1073,7 +1203,7 @@ export function updateZombies(dt, head, opts = {}) {
   }
   for (let i = limbs.length - 1; i >= 0; i--) {
     limbs[i].t -= dt;
-    if (limbs[i].t <= 0) { removeDynamic(limbs[i].phys); scene.remove(limbs[i].obj); limbs.splice(i, 1); }
+    if (limbs[i].t <= 0) { removeDynamic(limbs[i].phys); limbs[i].obj.scale.setScalar(0.0001); limbs[i].obj.updateMatrixWorld(true); scene.remove(limbs[i].obj); limbs.splice(i, 1); }
   }
 }
 

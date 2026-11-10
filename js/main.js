@@ -1,16 +1,16 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=29';
+import { VERSION } from './version.js?v=30';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=29';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=29';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=29';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=29';
-import { facesButtonVisible, setFaces } from './faces.js?v=29';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=29';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=29';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=29';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime } from './zombies.js?v=29';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=30';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=30';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=30';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=30';
+import { facesButtonVisible, setFaces } from './faces.js?v=30';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=30';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=30';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=30';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=30';
 
 // =============================================================================
 // Grundgerüst
@@ -28,7 +28,8 @@ const scene = new THREE.Scene();
 const desktopBackground = new THREE.Color(0x30343c);
 const scopeBackground = new THREE.Color(0x2b3a31);
 scene.background = desktopBackground;
-scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const envTex = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environment = envTex;
 scene.add(room.group);
 initEffects(scene);
 initZombies(scene, (dmg, z) => playerHit(dmg, z), (res, p) => handleZombieHit(res, p, '🎯 '), (z, big) => onGiantStomp(z, big));
@@ -36,12 +37,13 @@ initZombies(scene, (dmg, z) => playerHit(dmg, z), (res, p) => handleZombieHit(re
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 200);
 camera.position.set(0, 1.6, 0);
 scene.add(camera);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x666677, 1.2));
+const hemi = new THREE.HemisphereLight(0xffffff, 0x666677, 1.2);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(1, 3, 2);
 scene.add(sun, sun.target);
 // Echte Schatten: Zombies & Waffen werfen Schatten auf den echten Boden (unsichtbarer "Schattenfänger")
-let shadowFrame = 0;
+let shadowFrame = 0, boardT = 0;
 let shadowsOn = (() => { try { return localStorage.getItem('vrspiel-schatten') !== 'false'; } catch { return true; } })();
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -51,7 +53,8 @@ Object.assign(sun.shadow.camera, { left: -4.5, right: 4.5, top: 4.5, bottom: -4.
 sun.shadow.bias = -0.0006;
 sun.shadow.normalBias = 0.02;
 sun.castShadow = shadowsOn;
-const shadowFloor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.42, depthWrite: false }));
+// Schattenfläche folgt dem Spieler (kleinere Fläche = weniger Rechenaufwand)
+const shadowFloor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.ShadowMaterial({ opacity: 0.42, depthWrite: false }));
 shadowFloor.rotation.x = -Math.PI / 2;
 shadowFloor.position.y = 0.002;
 shadowFloor.receiveShadow = true;
@@ -1026,18 +1029,28 @@ function updateDust(dt) {
 // ---- Leistung: höchstens so viele Zombies gleichzeitig; bei Rucklern automatisch Details reduzieren ----
 // Leistungsprofile: Auflösung, Foveated Rendering, Schatten-Takt, Zombie-Obergrenze
 const QUALITY = {
-  quality: { scale: 1.0, fov: 0.5, shadowEvery: 1, maxAlive: 16, shadowMap: 1024 },
-  balanced: { scale: 0.9, fov: 1, shadowEvery: 2, maxAlive: 14, shadowMap: 1024 },
-  fast: { scale: 0.75, fov: 1, shadowEvery: 3, maxAlive: 12, shadowMap: 512 }
+  quality: { scale: 1.0, fov: 0.5, shadowEvery: 1, maxAlive: 16, shadowMap: 1024, wounds: 5, soft: true, env: true },
+  balanced: { scale: 0.9, fov: 1, shadowEvery: 2, maxAlive: 14, shadowMap: 1024, wounds: 3, soft: false, env: false },
+  fast: { scale: 0.75, fov: 1, shadowEvery: 3, maxAlive: 12, shadowMap: 512, wounds: 0, soft: false, env: false }
 };
 const Q = () => QUALITY[settings.quality] || QUALITY.balanced;
 let MAX_ALIVE = 16;
 function applyQuality() {
   const q = Q();
   MAX_ALIVE = q.maxAlive;
+  setWoundsMax(q.wounds);
   if (sun.shadow.mapSize.x !== q.shadowMap) { sun.shadow.mapSize.set(q.shadowMap, q.shadowMap); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
   if (!renderer.xr.isPresenting) renderer.xr.setFramebufferScaleFactor(q.scale); // wirkt beim nächsten VR-Start
   try { renderer.xr.setFoveation(q.fov); } catch { /* nicht unterstützt */ }
+  // Schattenart und Umgebungsspiegelungen (beides kostet bei jedem Pixel Rechenzeit)
+  const type = q.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+  const env = q.env ? envTex : null;
+  if (renderer.shadowMap.type !== type || scene.environment !== env) {
+    renderer.shadowMap.type = type;
+    scene.environment = env;
+    hemi.intensity = q.env ? 1.2 : 1.55; // ohne Spiegelungen etwas mehr Grundlicht
+    scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.needsUpdate = true; }); });
+  }
 }
 const perf = { ema: 0, slowT: 0, level: 0, okT: 0 };
 function autoPerf(raw) {
@@ -1355,7 +1368,7 @@ function flameShot(from, dir, dmg, up) {
     if (!z.burnT) burning.add(z);
     z.burnT = up ? 6 : 4;
     z.burnUp = up;
-    handleZombieHit(damageZombie(z.torso.children[1], c, dir, dmg, true), c, '🔥 ');
+    handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, dir, dmg, true), c, '🔥 ');
   }
 }
 function frostShot(from, dir, dmg, up) {
@@ -1364,8 +1377,8 @@ function frostShot(from, dir, dmg, up) {
   lightningLine(from, from.clone().addScaledVector(dir, 6), frostLineMat);
   for (const { z, c } of zombiesInCone(from, dir, up ? 9 : 7, up ? 0.3 : 0.22)) {
     const was = z.frozenT > 0;
-    if (!was) { handleZombieHit(damageZombie(z.torso.children[1], c, dir, dmg), c, '❄ '); if (z.state !== 'dead') { freezeZombie(z, up ? 7 : 5); floatingText('Eingefroren!', c.clone().setY(2), '#bfe8ff'); } }
-    else handleZombieHit(damageZombie(z.torso.children[1], c, dir, dmg), c, '❄ ');
+    if (!was) { handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, dir, dmg), c, '❄ '); if (z.state !== 'dead') { freezeZombie(z, up ? 7 : 5); floatingText('Eingefroren!', c.clone().setY(2), '#bfe8ff'); } }
+    else handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, dir, dmg), c, '❄ ');
   }
 }
 function updateFlames(dt) {
@@ -1389,7 +1402,7 @@ function updateFlames(dt) {
     if (z.burnTick <= 0) {
       z.burnTick = 0.5;
       const c = z.root.position.clone().setY(1);
-      handleZombieHit(damageZombie(z.torso.children[1], c, new THREE.Vector3(0, -1, 0), z.burnUp ? 16 : 9, true), c, '🔥 ');
+      handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, new THREE.Vector3(0, -1, 0), z.burnUp ? 16 : 9, true), c, '🔥 ');
       if (Math.random() < 0.3) SFX.fire();
     }
     if (z.burnT <= 0) { burning.delete(z); z.burnT = 0; }
@@ -1438,7 +1451,7 @@ function teslaStrike(from, hit, dir, dmg, jumps) {
     const p = z.skull.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, -0.25, 0));
     lightningLine(last, p);
     const d = p.clone().sub(last).normalize();
-    handleZombieHit(damageZombie(z.torso.children[1], p, d, dmg / (1 + n * 0.15)), p, '⚡ ');
+    handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), p, d, dmg / (1 + n * 0.15)), p, '⚡ ');
     last = p;
     n++;
     let best = null, bd = 3.5;
@@ -1571,6 +1584,7 @@ function setupWallbuys() {
     const glow = new THREE.Mesh(cachedGeo('wbglow', () => new THREE.PlaneGeometry(1.25, 0.75)), new THREE.MeshBasicMaterial({ map: wbGlowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
     glow.position.z = -0.004;
     g.add(glow);
+    mergeStatic(g, { glow, label: label.mesh });
     castShadows(holder);
     wallbuys.push({ s, id, def, group: g, holder, label, glow, phase: Math.random() * 6 });
   });
@@ -1767,6 +1781,7 @@ function buildPerkMachine(spot, kind) {
   g.add(glow);
   castShadows(g);
   scene.add(g);
+  mergeStatic(g, { btn, glow });
   g.updateMatrixWorld(true);
   machines.push({ type: 'perk', kind, group: g, normal: spot.normal.clone(), front: g.localToWorld(new THREE.Vector3(0, 1.0, 0.25)), btn, glow, phase: Math.random() * 6 });
 }
@@ -1802,6 +1817,7 @@ function buildUpgrader(spot) {
   g.add(glow);
   castShadows(g);
   scene.add(g);
+  mergeStatic(g, { glow, g0: gears[0], g1: gears[1], slot });
   g.updateMatrixWorld(true);
   const m = { type: 'upgrade', group: g, normal: spot.normal.clone(), front: g.localToWorld(new THREE.Vector3(0, 0.92, 0.32)), slotPos: g.localToWorld(new THREE.Vector3(0, 0.92, 0.0)), gears, glow, slotMat, phase: 0 };
   machines.push(m);
@@ -2068,11 +2084,11 @@ function updateTraps(dt) {
       const c = z.root.position.clone().setY(1);
       if (t.kind === 'electric') {
         lightningLine(t.posts[Math.floor(Math.random() * 4)].getWorldPosition(new THREE.Vector3()), c);
-        handleZombieHit(damageZombie(z.torso.children[1], c, new THREE.Vector3(0, 1, 0), 9999, true), c, '⚡ ');
+        handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, new THREE.Vector3(0, 1, 0), 9999, true), c, '⚡ ');
       } else {
         if (!z.burnT) burning.add(z);
         z.burnT = 3;
-        handleZombieHit(damageZombie(z.torso.children[1], c, new THREE.Vector3(0, 1, 0), 30, true), c, '🔥 ');
+        handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, new THREE.Vector3(0, 1, 0), 30, true), c, '🔥 ');
       }
     }
     if (inRound() && gameMode !== 'training' && inTrap(t, headPos.x, headPos.z)) { playerHit(t.kind === 'electric' ? 6 : 4); }
@@ -2135,8 +2151,7 @@ function setupMysteryBox() {
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.22, 3, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0x6fd8ff, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
   beam.position.y = H + 1.5;
   g.add(beam);
-  const glow = new THREE.PointLight(0x6fd8ff, 1.2, 2.5);
-  glow.position.y = H + 0.3;
+  const glow = new THREE.Object3D(); // (früher Punktlicht – kostet zu viel Leistung)
   g.add(glow);
   castShadows(g);
   scene.add(g);
@@ -4482,6 +4497,11 @@ renderer.setAnimationLoop(() => {
   }
 });
 function frame() {
+  const _t0 = performance.now();
+  try { frameInner(); } finally { const d = performance.now() - _t0; profStat.sum += d; profStat.n++; profStat.max = Math.max(profStat.max, d); }
+}
+const profStat = { sum: 0, n: 0, max: 0 };
+function frameInner() {
   const rawDt = clock.getDelta();
   const dt = Math.min(rawDt, 0.05);
   autoPerf(rawDt);
@@ -4493,6 +4513,7 @@ function frame() {
   for (const h of hands) h.ray.updateMatrixWorld(true);
   if (shadowsOn) { // Schattenkamera folgt dem Spieler
     sun.target.position.set(headPos.x, 0, headPos.z);
+    shadowFloor.position.x = headPos.x; shadowFloor.position.z = headPos.z;
     sun.position.set(headPos.x + 1.6, 5, headPos.z + 2.2);
     sun.target.updateMatrixWorld();
     shadowFrame = (shadowFrame + 1) % Q().shadowEvery;
@@ -4551,7 +4572,8 @@ function frame() {
   updateEffects(worldDt);
   updateDebris(worldDt);
   updateHud(dt);
-  if (boardDirty && board.visible) { refreshBoard(); boardDirty = false; }
+  boardT -= dt;
+  if (boardDirty && board.visible && boardT <= 0) { refreshBoard(); boardDirty = false; boardT = 0.2; }
   scene.updateMatrixWorld();
   redDot.visible = false;
   scopeRendered = false;
@@ -4566,5 +4588,6 @@ window.__game = {
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,
+  profile: async (ms) => { profStat.sum = profStat.n = profStat.max = 0; await new Promise(r => setTimeout(r, ms)); return { jsMsAvg: +(profStat.sum / Math.max(1, profStat.n)).toFixed(2), jsMsMax: +profStat.max.toFixed(1), frames: profStat.n }; },
   setFaces, get monkeyCount() { return monkeyCount; }, lure, traps, pullTrap, roundFx, upgradeWeapon, set wave(v) { wave = v; }, set toSpawn(v) { toSpawn = v; }, spawnWeapon, resetWeapons, settings, tryFire, arrows, machines, upg, perks, useMachine, get points() { return points; }, set points(v) { points = v; }, wallbuys, mbox, useBox, tryBuy, giveWeapon, get holster() { return holster; }, plasmas, setTool, setupTriggerDown, setupTriggerUp, alignToLine, loadSlot, saveSlot, serializeRoom, setupWallbuys, setupMysteryBox, surfaceAt, updateSetup
 };

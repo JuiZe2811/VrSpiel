@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { makePanel } from './util.js?v=29';
-import { heightAt } from './room.js?v=29';
-import { SFX } from './sfx.js?v=29';
+import { makePanel } from './util.js?v=30';
+import { heightAt } from './room.js?v=30';
+import { SFX } from './sfx.js?v=30';
 
 // Kurzlebige Effekte: Leuchtspuren, Partikel, Punkte-Text, Einschusslöcher, Hülsen
 let scene;
@@ -61,26 +61,51 @@ const particleGeo = new THREE.BoxGeometry(0.02, 0.02, 0.02);
 // Einstellungen: Blut (0 aus, 1 normal, 2 extra), Partikelmenge, Punkte-Anzeigen
 export const fx = { blood: 1, particles: 1, popups: true };
 const isBlood = (c) => { const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255; return r > 60 && g < 25 && b < 25; };
+// Partikel: ein einziges Punkt-System (1 Zeichenaufruf für alle Splitter, Blut, Funken)
+const PMAX = 700;
+const pPos = new Float32Array(PMAX * 3), pCol = new Float32Array(PMAX * 3), pVel = new Float32Array(PMAX * 3), pLife = new Float32Array(PMAX), pMax = new Float32Array(PMAX);
+let pNext = 0, pPoints = null;
+function ensurePoints() {
+  if (pPoints) return;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pPos, 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('color', new THREE.BufferAttribute(pCol, 3).setUsage(THREE.DynamicDrawUsage));
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.beginPath(); x.arc(8, 8, 7, 0, Math.PI * 2); x.fill();
+  pPoints = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.022, vertexColors: true, map: new THREE.CanvasTexture(c), alphaTest: 0.5, sizeAttenuation: true }));
+  pPoints.frustumCulled = false;
+  for (let i = 0; i < PMAX; i++) pPos[i * 3 + 1] = -100;
+  scene.add(pPoints);
+}
+const tmpC = new THREE.Color();
 export function burst(point, color, count) {
   count = Math.round(count * fx.particles * (isBlood(color) ? fx.blood : 1));
   if (count <= 0) return;
-  const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
+  ensurePoints();
+  tmpC.set(color);
   for (let i = 0; i < count; i++) {
-    const p = new THREE.Mesh(particleGeo, mat);
-    p.position.copy(point);
+    const k = pNext; pNext = (pNext + 1) % PMAX;
+    pPos[k * 3] = point.x; pPos[k * 3 + 1] = point.y; pPos[k * 3 + 2] = point.z;
     const v = new THREE.Vector3().randomDirection().multiplyScalar(THREE.MathUtils.randFloat(1, 3));
-    scene.add(p);
-    effects.push({
-      obj: p, life: 0.7, maxLife: 0.7, keepGeo: true, dispose: i === count - 1 ? () => mat.dispose() : null,
-      update(dt, k) {
-        v.y -= 6 * dt;
-        p.position.addScaledVector(v, dt);
-        p.rotation.x += dt * 8; p.rotation.y += dt * 6;
-        p.scale.setScalar(k);
-        mat.opacity = k;
-      }
-    });
+    pVel[k * 3] = v.x; pVel[k * 3 + 1] = v.y; pVel[k * 3 + 2] = v.z;
+    pCol[k * 3] = tmpC.r; pCol[k * 3 + 1] = tmpC.g; pCol[k * 3 + 2] = tmpC.b;
+    pLife[k] = pMax[k] = 0.7;
   }
+}
+function updateParticles(dt) {
+  if (!pPoints) return;
+  let any = false;
+  for (let k = 0; k < PMAX; k++) {
+    if (pLife[k] <= 0) continue;
+    any = true;
+    pLife[k] -= dt;
+    if (pLife[k] <= 0) { pPos[k * 3 + 1] = -100; continue; }
+    pVel[k * 3 + 1] -= 6 * dt;
+    pPos[k * 3] += pVel[k * 3] * dt; pPos[k * 3 + 1] += pVel[k * 3 + 1] * dt; pPos[k * 3 + 2] += pVel[k * 3 + 2] * dt;
+    if (pPos[k * 3 + 1] < 0.005) { pPos[k * 3 + 1] = 0.005; pVel[k * 3] *= 0.5; pVel[k * 3 + 2] *= 0.5; pVel[k * 3 + 1] = 0; }
+  }
+  if (any || pPoints.visible) { pPoints.geometry.attributes.position.needsUpdate = true; pPoints.geometry.attributes.color.needsUpdate = true; }
+  pPoints.visible = any;
 }
 
 export function floatingText(text, point, color) {
@@ -123,6 +148,7 @@ export function bulletHole(mesh, local) {
 }
 
 export function updateEffects(dt) {
+  updateParticles(dt);
   for (let i = effects.length - 1; i >= 0; i--) {
     const e = effects[i];
     e.life -= dt;

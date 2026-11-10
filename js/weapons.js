@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=29';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo, mergeStatic } from './util.js?v=30';
 
 // Waffen: Daten, Modelle, Munition
 export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'sniper'];
@@ -402,6 +402,7 @@ export function buildWeapon(id) {
     return o;
   };
   BUILDERS[def.builder || id](model, parts, sock, def);
+  mergeStatic(model, parts);
   const sc = def.scale || 1;
   model.scale.setScalar(sc);
   model.position.set(0, -def.grip[1] * sc, def.grip[0] * sc);
@@ -452,7 +453,7 @@ export function makeGrenade() {
   g.userData.ring = ring;
   return g;
 }
-export const makeMag = (id) => BUILDERS[(WEAPON_DEFS[id].magBuilder || id) + 'Mag'](WEAPON_DEFS[id]);
+export const makeMag = (id) => { const g = BUILDERS[(WEAPON_DEFS[id].magBuilder || id) + 'Mag'](WEAPON_DEFS[id]); mergeStatic(g, null); return g; };
 export const MASS = new Proxy({ pistol: 0.9, smg: 2.6, shotgun: 3.3, sniper: 5.5 }, { get: (t, k) => t[k] ?? (WEAPON_DEFS[k] && WEAPON_DEFS[k].mass) ?? 3 });
 
 // Vollständige Waffe inkl. Munitionszustand

@@ -5,6 +5,17 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 30 – Große Leistungs-Optimierung
+
+Gemessen mit 14 Zombies im Raum: **Zeichenaufrufe pro Bild von 768 auf ~200 gesenkt**, Bildrate im Test fast verdoppelt.
+
+- **Zombies als ein Körper**: Jeder Zombie bestand aus ~30 Einzelteilen (= 30 Zeichenaufrufe pro Auge). Jetzt wird der ganze Körper als **ein Skinned-Mesh** gezeichnet; die Gelenke (Hüfte, Knie, Arme, Kopf) sind Knochen. Animationen, Todesanimationen, abfallende Arme/Beine und Trefferzonen (Kopf ×3, Beine, Arme) funktionieren wie vorher. Pro Zombie bleiben ~3 Zeichenaufrufe. Einfacheres Licht-Material und weniger Polygone für die Zombies.
+- **Waffen** werden beim Bauen pro Material zusammengefasst (Pistole 32 → 13 Teile), auch in beweglichen Teilen wie Schlitten und Magazinen.
+- **Partikel** (Blut, Splitter, Funken) sind jetzt **ein einziges Punkt-System** statt hunderter Einzelobjekte.
+- **Tür-/Fensterhintergründe, Automaten, Aufrüster und Wandkauf-Tafeln** werden ebenfalls zusammengefasst.
+- Die Glückskiste hat kein eigenes Licht mehr (jedes Licht verteuert jedes Pixel), die Anzeigetafel wird höchstens 5× pro Sekunde neu gezeichnet.
+- Leistungsprofile (Grafik → Leistung): *Ausgewogen* und *Flüssig* verwenden jetzt einfachere Schatten und **keine Umgebungsspiegelungen** (dafür etwas mehr Grundlicht); die Schattenfläche folgt dem Spieler statt 40 × 40 m groß zu sein. Einschusslöcher: Schön 5, Ausgewogen 3, Flüssig keine.
+
 ## Neu in Version 29 – Größere Gesichter, aufgeräumter Gürtel, begrenzte Munition, Rücken für jede Waffe
 
 **Gesichter noch größer**
