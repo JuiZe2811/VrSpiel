@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=34';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=34';
-import { SFX3D } from './sfx.js?v=34';
-import { burst, addDebris, shockwave } from './effects.js?v=34';
-import { cachedGeo } from './util.js?v=34';
+import { room, surfacesOf, isOpening } from './room.js?v=35';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=35';
+import { SFX3D } from './sfx.js?v=35';
+import { burst, addDebris, shockwave } from './effects.js?v=35';
+import { cachedGeo } from './util.js?v=35';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=34';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=35';
+const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -418,7 +419,8 @@ export function makePlankMesh(len) {
   const board = new THREE.Mesh(cachedGeo(`plank${len.toFixed(2)}`, () => new THREE.BoxGeometry(len, 0.13, 0.025)), pick(plankMat));
   board.userData.plank = true;
   g.add(board);
-  for (const sx of [-1, 1]) { const nail = new THREE.Mesh(cachedGeo('nail', () => new THREE.CylinderGeometry(0.006, 0.006, 0.01, 6)), nailMat); nail.rotation.x = Math.PI / 2; nail.position.set(sx * (len / 2 - 0.05), 0, 0.014); g.add(nail); }
+  // beide Nägel als EIN Mesh (Leistung: ein Zeichenaufruf weniger pro Brett)
+  g.add(new THREE.Mesh(cachedGeo(`nails${len.toFixed(2)}`, () => mergeGeometries([-1, 1].map(sx => new THREE.CylinderGeometry(0.006, 0.006, 0.01, 6).rotateX(Math.PI / 2).translate(sx * (len / 2 - 0.05), 0, 0.014)))), nailMat));
   g.userData.board = board;
   return g;
 }
@@ -509,7 +511,11 @@ export function buildNav(head) {
 const cellOf = (x, z) => [Math.floor((x - nav.minX) / nav.cell), Math.floor((z - nav.minZ) / nav.cell)];
 const inGrid = (i, j) => i >= 0 && j >= 0 && i < nav.w && j < nav.h;
 const isFreeCell = (i, j) => inGrid(i, j) && !nav.blocked[j * nav.w + i];
-export function walkable(x, z) { if (!nav.blocked) return true; const [i, j] = cellOf(x, z); return !inGrid(i, j) || !nav.blocked[j * nav.w + i]; }
+export function walkable(x, z) { // ohne Hilfs-Arrays (wird sehr oft pro Bild aufgerufen)
+  if (!nav.blocked) return true;
+  const i = Math.floor((x - nav.minX) / nav.cell), j = Math.floor((z - nav.minZ) / nav.cell);
+  return !inGrid(i, j) || !nav.blocked[j * nav.w + i];
+}
 function nearestFree(i, j) {
   if (isFreeCell(i, j)) return [i, j];
   for (let r = 1; r < 12; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
@@ -527,10 +533,10 @@ function findPath(from, to) {
   if (!gScore || gScore.length !== N) { gScore = new Float32Array(N); fScore = new Float32Array(N); came = new Int32Array(N); closed = new Uint8Array(N); heapArr = new Int32Array(N * 4); }
   gScore.fill(Infinity); came.fill(-1); closed.fill(0);
   let size = 0;
-  const push = (k) => { let i = size++; heapArr[i] = k; while (i > 0) { const p = (i - 1) >> 1; if (fScore[heapArr[p]] <= fScore[heapArr[i]]) break; [heapArr[p], heapArr[i]] = [heapArr[i], heapArr[p]]; i = p; } };
-  const pop = () => { const top = heapArr[0]; heapArr[0] = heapArr[--size]; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < size && fScore[heapArr[l]] < fScore[heapArr[m]]) m = l; if (r < size && fScore[heapArr[r]] < fScore[heapArr[m]]) m = r; if (m === i) break; [heapArr[m], heapArr[i]] = [heapArr[i], heapArr[m]]; i = m; } return top; };
+  const push = (k) => { let i = size++; heapArr[i] = k; while (i > 0) { const p = (i - 1) >> 1; if (fScore[heapArr[p]] <= fScore[heapArr[i]]) break; const t = heapArr[p]; heapArr[p] = heapArr[i]; heapArr[i] = t; i = p; } };
+  const pop = () => { const top = heapArr[0]; heapArr[0] = heapArr[--size]; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < size && fScore[heapArr[l]] < fScore[heapArr[m]]) m = l; if (r < size && fScore[heapArr[r]] < fScore[heapArr[m]]) m = r; if (m === i) break; const t = heapArr[m]; heapArr[m] = heapArr[i]; heapArr[i] = t; i = m; } return top; };
   const gx = g[0], gy = g[1];
-  gScore[start] = 0; fScore[start] = Math.hypot(s[0] - gx, s[1] - gy); push(start);
+  gScore[start] = 0; fScore[start] = hyp(s[0] - gx, s[1] - gy); push(start);
   let found = start === goal;
   while (size > 0 && !found) {
     if (size >= heapArr.length - 8) break;
@@ -547,7 +553,7 @@ function findPath(from, to) {
       const nk = nj * W + ni;
       if (closed[nk]) continue;
       const ng = gScore[cur] + (di && dj ? 1.414 : 1);
-      if (ng < gScore[nk]) { gScore[nk] = ng; fScore[nk] = ng + Math.hypot(ni - gx, nj - gy); came[nk] = cur; push(nk); }
+      if (ng < gScore[nk]) { gScore[nk] = ng; fScore[nk] = ng + hyp(ni - gx, nj - gy); came[nk] = cur; push(nk); }
     }
   }
   if (!found) return [to.clone()];
@@ -587,7 +593,14 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
   const zombie = {
     ...z, type, T, scale, hp: T.hp * hpScale(wave) * (opts.hp || 1), maxHp: T.hp * hpScale(wave) * (opts.hp || 1), dmgK: Math.min(1.6, 1 + wave * 0.025), legHp: [60, 60].map(v => v * T.hp / 100), armHp: [45, 45].map(v => v * T.hp / 100), legLost: [false, false], armLost: [false, false],
     state: 'outside', pos: new THREE.Vector3(), yaw: 0, speed: Math.min(1.8, (rand(0.42, 0.58) + Math.min(wave, 16) * 0.035) * T.speed * (opts.speed || 1) * (type === 'walker' && wave >= 6 && Math.random() < Math.min(0.45, (wave - 5) * 0.05) ? 1.6 : 1)), phase: Math.random() * 6, jawT: Math.random() * 6,
-    path: null, pathT: 0, attackT: 1, actionT: 0, deadT: 0, hurtT: 0, groanT: rand(1, 4), opening: null, enterT: 0, crawl: false, fallDir: 1, headless: false
+    path: null, pathT: 0, attackT: 1, actionT: 0, deadT: 0, hurtT: 0, groanT: rand(1, 4), opening: null, enterT: 0, crawl: false, fallDir: 1, headless: false,
+    // Leistung: alle später benutzten Felder gleich hier anlegen (gleiche Objekt-Form für alle Zombies,
+    // Zahlenfelder bleiben Zahlen) – sonst erzeugt jede Änderung pro Bild neuen Speicher-Müll und es ruckelt
+    stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
+    headSnap: 0, hurtTwist: 1, knockT: 0, knockBack: 0, frozenT: 0, burnT: 0, burnTick: 0, burnUp: false, roarT: 2, stompT: 4, smokeT: 0, landT: 0, spinDir: 0,
+    lureV: -1, slot: 0, attackVariant: 0, exploded: false, gibbed: false, landed: false, spat: false, kinCrawl: false, freed: false,
+    hurtDir: new THREE.Vector3(0, 0, 1), enterFrom: null, fallVec: null, d0: null, deathStyle: '', ice: null, kin: null, phys: null, proxies: null,
+    skinned: null, hitTorso: null, pendingBump: null, monster: null
   };
   const ops = openings();
   if (ops.length) {
@@ -783,7 +796,7 @@ export function explosionDamage(center, radius, maxDmg) {
   const results = [];
   for (const z of zombies) {
     if (z.state === 'dead') continue;
-    const d = Math.hypot(z.pos.x - center.x, z.pos.z - center.z, Math.max(0, center.y - 1.0) * 0.5);
+    const d = hyp(z.pos.x - center.x, z.pos.z - center.z, Math.max(0, center.y - 1.0) * 0.5);
     const f = 1 - d / radius;
     if (f <= 0) continue;
     const dir = new THREE.Vector3(z.pos.x - center.x, 0, z.pos.z - center.z).normalize();
@@ -894,10 +907,10 @@ function animateDeath(z, dt) {
   } else if (st === 'knees') {
     // auf die Knie sacken, dann nach vorne kippen
     const kneel = ease(t / 0.45), tip = ease((t - 0.45) / 0.55);
-    z.legs.forEach(l => { l.hip.rotation.x = -1.3 * kneel * (1 - tip * 0.6); l.knee.rotation.x = 2.1 * kneel * (1 - tip * 0.5); });
+    for (let _k = 0; _k < z.legs.length; _k++) { const l = z.legs[_k]; l.hip.rotation.x = -1.3 * kneel * (1 - tip * 0.6); l.knee.rotation.x = 2.1 * kneel * (1 - tip * 0.5); }
     z.body.position.y = lerp(d0.y, -0.36 * z.scale, kneel) * (1 - tip) + 0.03 * tip;
     z.body.rotation.x = lerp(d0.rx, 1.45, tip * tip);
-    z.arms.forEach(a => { a.shoulder.rotation.x = lerp(-0.4, -0.2, tip); a.elbow.rotation.x = -0.6; });
+    for (let _k = 0; _k < z.arms.length; _k++) { const a = z.arms[_k]; a.shoulder.rotation.x = lerp(-0.4, -0.2, tip); a.elbow.rotation.x = -0.6; }
     fallK = tip;
   } else {
     // getroffen zurücktaumeln, dann wie ein Brett umfallen (beschleunigt)
@@ -905,8 +918,8 @@ function animateDeath(z, dt) {
     z.torso.rotation.x = -0.35 * fd * stag * (1 - kk);
     z.body.rotation.x = lerp(d0.rx, fd * 1.5, kk);
     z.body.position.y = lerp(d0.y, 0.04, kk);
-    z.legs.forEach((l, j) => { l.knee.rotation.x = 0.5 * kk + j * 0.15; l.hip.rotation.x = (fd > 0 ? -0.3 : 0.4) * kk; });
-    z.arms.forEach((a, j) => { a.shoulder.rotation.x = fd < 0 ? lerp(-0.6, -2.7, kk) + Math.sin(t * 14 + j) * 0.2 * (1 - kk) : lerp(-0.6, -1.4, kk); a.shoulder.rotation.z = (j ? -1 : 1) * 0.5 * kk; a.elbow.rotation.x = 0.2; });
+    for (let j = 0; j < z.legs.length; j++) { const l = z.legs[j]; l.knee.rotation.x = 0.5 * kk + j * 0.15; l.hip.rotation.x = (fd > 0 ? -0.3 : 0.4) * kk; }
+    for (let j = 0; j < z.arms.length; j++) { const a = z.arms[j]; a.shoulder.rotation.x = fd < 0 ? lerp(-0.6, -2.7, kk) + Math.sin(t * 14 + j) * 0.2 * (1 - kk) : lerp(-0.6, -1.4, kk); a.shoulder.rotation.z = (j ? -1 : 1) * 0.5 * kk; a.elbow.rotation.x = 0.2; }
     if (st === 'spin') z.root.rotation.y = d0.ry + 1.8 * ease(t / 0.8) * (z.spinDir || (z.spinDir = Math.random() < 0.5 ? -1 : 1));
     fallK = kk;
   }
@@ -957,31 +970,31 @@ function moveTowards(z, target, speed, dt, checkNav = true) {
 function animateWalk(z, dt, speed) {
   z.phase += dt * speed * 5.5 / z.scale;
   const s = Math.sin(z.phase), c = Math.cos(z.phase);
-  const limp = z.legHp.map(h => h < 30);
+  const limp0 = z.legHp[0] < 30, limp1 = z.legHp[1] < 30; // (ohne Hilfs-Arrays/Closures: weniger Speicher-Müll pro Bild)
   if (z.crawl) {
     // liegt auf dem Bauch: Körper nach vorne gekippt, Füße hinter dem Standpunkt
     z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, 1.45, 6, dt);
     z.body.position.y = THREE.MathUtils.damp(z.body.position.y, 0.06, 6, dt);
     z.body.position.z = THREE.MathUtils.damp(z.body.position.z, -0.85, 6, dt);
-    z.arms.forEach((a, i) => { a.shoulder.rotation.x = -2.6 + (i ? s : -s) * 0.5; a.elbow.rotation.x = -0.4; });
-    z.legs.forEach((l, i) => { l.hip.rotation.x = 0.1 + (i ? -s : s) * 0.15; l.knee.rotation.x = 0.3; });
+    for (let i = 0; i < 2; i++) { const a = z.arms[i], l = z.legs[i]; a.shoulder.rotation.x = -2.6 + (i ? s : -s) * 0.5; a.elbow.rotation.x = -0.4; l.hip.rotation.x = 0.1 + (i ? -s : s) * 0.15; l.knee.rotation.x = 0.3; }
     return;
   }
   z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, 0.12, 6, dt);
   z.body.position.y = THREE.MathUtils.damp(z.body.position.y, 0, 6, dt);
-  z.legs.forEach((l, i) => {
-    const ph = i ? -s : s, amp = limp[i] ? 0.15 : 0.5;
+  for (let i = 0; i < 2; i++) {
+    const l = z.legs[i], lp = i ? limp1 : limp0;
+    const ph = i ? -s : s, amp = lp ? 0.15 : 0.5;
     l.hip.rotation.x = ph * amp;
-    l.knee.rotation.x = Math.max(0, (i ? c : -c)) * (limp[i] ? 0.2 : 0.7);
-  });
-  z.hips.position.y = 0.86 - Math.abs(s) * 0.03 - (limp[0] || limp[1] ? Math.max(0, limp[0] ? s : -s) * 0.08 : 0);
-  z.body.rotation.z = (limp[0] ? -0.12 : limp[1] ? 0.12 : 0) + s * 0.05;
+    l.knee.rotation.x = Math.max(0, (i ? c : -c)) * (lp ? 0.2 : 0.7);
+  }
+  z.hips.position.y = 0.86 - Math.abs(s) * 0.03 - (limp0 || limp1 ? Math.max(0, limp0 ? s : -s) * 0.08 : 0);
+  z.body.rotation.z = (limp0 ? -0.12 : limp1 ? 0.12 : 0) + s * 0.05;
   if (z.type === 'runner') {
     // Renner: nach vorne gebeugt, Arme pumpen
     z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, 0.38, 6, dt);
-    z.arms.forEach((a, i) => { a.shoulder.rotation.x = -0.35 + (i ? -s : s) * 0.9; a.shoulder.rotation.z = a.side * -0.15; a.elbow.rotation.x = -1.2; });
+    for (let i = 0; i < 2; i++) { const a = z.arms[i]; a.shoulder.rotation.x = -0.35 + (i ? -s : s) * 0.9; a.shoulder.rotation.z = a.side * -0.15; a.elbow.rotation.x = -1.2; }
   } else {
-    z.arms.forEach((a, i) => { a.shoulder.rotation.x = -1.35 + (i ? s : -s) * 0.12; a.shoulder.rotation.z = (a.side) * -0.08; a.elbow.rotation.x = -0.2; });
+    for (let i = 0; i < 2; i++) { const a = z.arms[i]; a.shoulder.rotation.x = -1.35 + (i ? s : -s) * 0.12; a.shoulder.rotation.z = (a.side) * -0.08; a.elbow.rotation.x = -0.2; }
   }
   if (z.type === 'brute' || z.type === 'giant') { // schwerfällig: stärkeres Wanken
     z.body.rotation.z += s * 0.08;
@@ -998,23 +1011,23 @@ function animateTear(z, dt) {
   z.phase += dt * 6;
   const s = Math.sin(z.phase);
   z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, 0.25, 6, dt);
-  z.arms.forEach((a, i) => { a.shoulder.rotation.x = -1.6 + (i ? s : -s) * 0.6; a.elbow.rotation.x = -0.3 - Math.max(0, i ? -s : s) * 0.8; });
-  z.legs.forEach(l => { l.hip.rotation.x *= 0.9; l.knee.rotation.x *= 0.9; });
+  for (let i = 0; i < z.arms.length; i++) { const a = z.arms[i]; a.shoulder.rotation.x = -1.6 + (i ? s : -s) * 0.6; a.elbow.rotation.x = -0.3 - Math.max(0, i ? -s : s) * 0.8; }
+  for (let _k = 0; _k < z.legs.length; _k++) { const l = z.legs[_k]; l.hip.rotation.x *= 0.9; l.knee.rotation.x *= 0.9; }
 }
 function animateAttack(z, dt) {
   const t = 1 - Math.max(0, z.attackT) / 1.3; // 0..1 Schlagphase
   const swing = Math.sin(Math.min(1, t * 1.6) * Math.PI);
   if (z.attackVariant === 1 && !z.crawl) {
     // Biss: packt zu und stößt mit dem Kopf nach vorne
-    z.arms.forEach(a => { a.shoulder.rotation.x = -1.5; a.shoulder.rotation.z = a.side * 0.35; a.elbow.rotation.x = -0.9; });
+    for (let _k = 0; _k < z.arms.length; _k++) { const a = z.arms[_k]; a.shoulder.rotation.x = -1.5; a.shoulder.rotation.z = a.side * 0.35; a.elbow.rotation.x = -0.9; }
     z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, 0.15 + swing * 0.45, 10, dt);
     z.neck.rotation.x = 0.25 + swing * 0.5;
   } else {
-    z.arms.forEach((a, i) => { a.shoulder.rotation.x = -1.2 - swing * 1.2 * (i ? 1 : 0.6); a.elbow.rotation.x = -0.6 + swing * 0.5; a.shoulder.rotation.z = 0; });
+    for (let i = 0; i < z.arms.length; i++) { const a = z.arms[i]; a.shoulder.rotation.x = -1.2 - swing * 1.2 * (i ? 1 : 0.6); a.elbow.rotation.x = -0.6 + swing * 0.5; a.shoulder.rotation.z = 0; }
     z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, z.crawl ? 1.45 : 0.2 + swing * 0.2, 8, dt);
     z.neck.rotation.x = THREE.MathUtils.damp(z.neck.rotation.x, 0.25, 8, dt);
   }
-  z.legs.forEach(l => { l.hip.rotation.x *= 0.85; l.knee.rotation.x *= 0.85; });
+  for (let _k = 0; _k < z.legs.length; _k++) { const l = z.legs[_k]; l.hip.rotation.x *= 0.85; l.knee.rotation.x *= 0.85; }
 }
 
 export function updateZombies(dt, head, opts = {}) {
@@ -1034,204 +1047,207 @@ export function updateZombies(dt, head, opts = {}) {
     if (hooks.explode) hooks.explode(at, results, z);
   }
   updateSpits(dt, head, opts);
-  for (let i = zombies.length - 1; i >= 0; i--) {
-    const z = zombies[i];
-    if (!z) continue; // Liste kann sich während des Updates ändern
-    if (z.T.boss) { if (bossHooks.update) bossHooks.update(z, dt, head, opts); continue; }
-    z.hurtT = Math.max(0, z.hurtT - dt);
-    if (z.stagger > 0) z.stagger -= dt;
-    if (z.state === 'dead') {
-      z.deadT += dt;
-      // erschlafft: Arme sinken, Knie knicken, Kopf fällt
-      z.arms.forEach(a => { a.shoulder.rotation.x *= 0.9; a.elbow.rotation.x *= 0.9; });
-      z.legs.forEach((l, k) => { l.knee.rotation.x = THREE.MathUtils.damp(l.knee.rotation.x, 0.5 + k * 0.3, 4, dt); });
-      z.neck.rotation.x = THREE.MathUtils.damp(z.neck.rotation.x, 0.9, 4, dt);
-      z.jaw.rotation.x = 0.45;
-      if (z.gibbed) { if (z.deadT > 0.5) { scene.remove(z.root); freeZombie(z); zombies.splice(i, 1); } continue; } // zerplatzt: keine Leiche
-      if (animateDeath(z, dt)) { scene.remove(z.root); freeZombie(z); zombies.splice(i, 1); }
-      continue;
-    }
-    if (z.frozenT > 0) { // erstarrt
-      z.frozenT -= dt;
-      if (z.frozenT <= 0 && z.ice) z.ice.visible = false;
-      continue;
-    }
-    z.groanT -= dt;
-    if (z.groanT <= 0) { z.groanT = rand(2.5, 6); SFX3D.groan(z.skull.getWorldPosition(tmpV2), 1 / z.scale, z.type); }
-    let speed = z.speed * (z.crawl ? 0.35 : z.legHp.some(h => h < 30) ? 0.55 : 1);
-    if (z.stagger > 0 && (z.state === 'walk' || z.state === 'attack')) speed = 0; // taumelt
-    const o = z.opening;
-    if (z.state === 'rise') {
-      z.root.position.y = Math.min(0, z.root.position.y + dt * 0.9);
-      faceTowards(z, player, dt);
-      z.arms.forEach((a, k) => { a.shoulder.rotation.x = -2.6 + Math.sin(z.phase += dt * 3) * 0.3 * (k ? 1 : -1); });
-      if (z.root.position.y >= 0) z.state = 'walk';
-    } else if (z.state === 'outside') {
-      // vor die Öffnung laufen (außerhalb des Raums)
-      const stand = o.mid.clone().addScaledVector(o.normal, -0.45 - z.slot * 0.6).addScaledVector(o.right, (z.slot % 2 ? 0.25 : -0.25) * Math.min(1, z.slot)).setY(0);
-      faceTowards(z, stand.clone().addScaledVector(o.normal, 1), dt);
-      if (moveTowards(z, stand, speed, dt, false)) {
-        z.state = 'tear';
-        z.actionT = rand(1.2, 2);
-      }
-      animateWalk(z, dt, speed);
-    } else if (z.state === 'tear') {
-      faceTowards(z, z.pos.clone().addScaledVector(o.normal, 1), dt);
-      animateTear(z, dt);
-      // nur der vorderste reißt Bretter ab, die anderen warten
-      const front = !zombies.some(q => q !== z && q.opening === o && q.state === 'tear' && q.slot < z.slot);
-      if (!front) {
-        const stand = o.mid.clone().addScaledVector(o.normal, -0.45 - z.slot * 0.6).setY(0);
-        if (z.slot > 0 && zombies.every(q => q === z || q.opening !== o || q.state !== 'tear' || q.slot >= z.slot - 1)) z.slot = Math.max(0, z.slot - 1);
-        moveTowards(z, stand, speed, dt, false);
-      } else {
-        z.slot = 0;
-        moveTowards(z, o.mid.clone().addScaledVector(o.normal, -0.45).setY(0), speed, dt, false);
-        z.actionT -= dt;
-        if (z.actionT <= 0) {
-          if (o.planks && o.planks.length) {
-            if (Math.random() < 0.5) SFX3D.bang(o.mid.clone().setY(1.2));
-            tearPlank(o, z.pos);
-            z.actionT = rand(1.4, 2.4);
-          } else {
-            z.state = 'enter';
-            z.enterT = 0;
-            z.enterFrom = z.pos.clone();
-          }
-        }
-      }
-    } else if (z.state === 'enter') {
-      // durch die Tür gehen bzw. durchs Fenster klettern
-      const inside = o.mid.clone().addScaledVector(o.normal, 0.55).setY(0);
-      const dur = o.type === 'window' ? 2.2 : 1.2 / Math.max(0.3, speed);
-      z.enterT += dt / dur;
-      const t = Math.min(1, z.enterT);
-      z.pos.lerpVectors(z.enterFrom, inside, t);
-      faceTowards(z, inside.clone().addScaledVector(o.normal, 1), dt);
-      if (o.type === 'window') {
-        z.root.position.y = Math.sin(t * Math.PI) * (o.bottom + 0.05) + Math.max(0, 1 - t * 3) * 0;
-        z.body.rotation.x = Math.sin(t * Math.PI) * 1.2;
-        z.arms.forEach((a, k) => { a.shoulder.rotation.x = -2.2 + Math.sin(t * 12 + k) * 0.4; });
-        z.legs.forEach((l, k) => { l.hip.rotation.x = -Math.sin(t * Math.PI) * 1.2 + k * 0.3; l.knee.rotation.x = 1.0; });
-      } else animateWalk(z, dt, speed);
-      if (t >= 1) { z.state = 'walk'; z.root.position.y = 0; z.pathT = 0; if (z.type === 'runner') SFX3D.scream(z.skull.getWorldPosition(tmpV2)); }
-    } else if ((z.state === 'walk' || z.state === 'attack') && z.knockT > 0) {
-      // umgeworfen: fällt hin, bleibt kurz liegen, steht wieder auf
-      z.knockT -= dt;
-      const k = z.knockT;
-      const down = k > 1.6 ? (2.2 - k) / 0.6 : k > 0.7 ? 1 : k / 0.7;
-      z.body.rotation.x = 1.45 * z.knockBack * THREE.MathUtils.smoothstep(down, 0, 1);
-      z.body.position.y = 0.05 * down;
-      z.arms.forEach((a, i) => { a.shoulder.rotation.x = -0.4 - (i ? 0.6 : 0.2) * down; a.elbow.rotation.x = -0.3; });
-      if (z.knockT <= 0) { z.knockT = 0; z.body.rotation.x = 0.12; }
-    } else if (z.state === 'spit') {
-      // Spucker: bleibt stehen, holt aus und spuckt Säure
-      z.actionT -= dt;
-      faceTowards(z, player, dt, 8);
-      const k = 1 - Math.max(0, z.actionT) / 0.9;
-      z.neck.rotation.x = k < 0.55 ? 0.25 - k * 1.4 : 0.25 + (k - 0.55) * 2.2;
-      z.jaw.rotation.x = 0.2 + k * 0.7;
-      if (!z.spat && k > 0.6) { z.spat = true; launchSpit(z, head); }
-      if (z.actionT <= 0) { z.state = 'walk'; z.neck.rotation.x = 0.25; }
-    } else if (z.state === 'walk' || z.state === 'attack') {
-      // Lockvogel (Trommel-Affe): alle Zombies im Raum laufen zu ihm statt zum Spieler
-      const lured = lure.active;
-      const tgt = lured ? lure.pos : player;
-      if (lured && z.lureV !== lure.v) { z.lureV = lure.v; z.pathT = 0; }
-      const dist = Math.hypot(tgt.x - z.pos.x, tgt.z - z.pos.z);
-      const reach = lured ? 0.55 : z.crawl ? 0.7 : 0.8;
-      if (z.T.spit && !z.crawl && z.state === 'walk' && !lured) {
-        z.spitT = (z.spitT ?? rand(1.5, 3)) - dt;
-        if (z.spitT <= 0 && dist > 1.8 && dist < 6.5 && clearLine(z.pos, player)) { z.spitT = rand(4, 6.5); z.state = 'spit'; z.actionT = 0.9; z.spat = false; SFX3D.groan(z.skull.getWorldPosition(tmpV2), 1.4); continue; }
-      }
-      if (z.T.explode && dist < 1.1 && !z.crawl && !lured) {
-        // Platzer: bläht sich auf und explodiert neben dem Spieler
-        z.fuseT = (z.fuseT ?? 0.9) - dt;
-        const sw = 1 + (0.9 - z.fuseT) * 0.35;
-        if (z.belly) z.belly.scale.set(1.25 * sw, 1.15 * sw, 1.2 * sw);
-        if (Math.random() < dt * 12) burst(z.skull.getWorldPosition(tmpV2), 0x8dff3a, 2);
-        if (z.fuseT <= 0) { z.hp = 0; kill(z, new THREE.Vector3(0, 0, 1)); continue; }
-      }
-      if (dist < reach) {
-        z.state = 'attack';
-        faceTowards(z, tgt, dt, 8);
-        if (!(z.stagger > 0)) z.attackT -= dt; // taumelnd kein Angriff
-        animateAttack(z, dt);
-        if (z.attackT <= 0) {
-          z.attackT = 1.3;
-          z.attackVariant = Math.random() < 0.4 ? 1 : 0;
-          SFX3D.swing(z.skull.getWorldPosition(tmpV2));
-          if (Math.random() < 0.6) SFX3D.growl(z.skull.getWorldPosition(tmpV2), z.type);
-          const armsLeft = z.armLost.filter(x => !x).length;
-          if (!opts.harmless && armsLeft > 0 && !lured) onPlayerHit(z.T.dmg * (z.dmgK || 1) * (z.crawl ? 0.7 : 1) * (armsLeft === 2 ? 1 : 0.6), z);
-        }
-      } else {
-        z.state = 'walk';
-        z.attackT = Math.min(z.attackT, 0.5);
-        z.pathT -= dt;
-        if ((z.pathT <= 0 || !z.path || !z.path.length) && planBudget > 0) { planBudget--; z.path = findPath(z.pos, tgt); z.pathT = rand(0.5, 0.9); }
-        if (!z.path) z.path = [tgt.clone()];
-        while (z.path.length > 1 && z.path[0].distanceTo(tmpV.set(z.pos.x, 0, z.pos.z)) < 0.2) z.path.shift();
-        const next = z.path[0] || tgt;
-        faceTowards(z, next, dt);
-        moveTowards(z, next, speed, dt);
-        animateWalk(z, dt, speed);
-      }
-    }
-    // Abstand zu anderen Zombies
-    if (z.state === 'walk' || z.state === 'attack') {
-      for (const q of zombies) {
-        if (q === z || q.state === 'dead' || (q.state !== 'walk' && q.state !== 'attack')) continue;
-        const dx = z.pos.x - q.pos.x, dz = z.pos.z - q.pos.z, d = Math.hypot(dx, dz);
-        if (d > 0.001 && d < 0.5) { const push = (0.5 - d) * 0.5; if (walkable(z.pos.x + dx / d * push, z.pos.z + dz / d * push)) { z.pos.x += dx / d * push; z.pos.z += dz / d * push; } }
-      }
-    }
-    // schwere Schritte (Brocken, Riese) und Stampf-Angriff des Riesen
-    if ((z.type === 'brute' || z.type === 'giant') && (z.state === 'walk' || z.state === 'outside' || z.state === 'enter') && !z.crawl) {
-      const stepPhase = Math.floor(z.phase / Math.PI);
-      if (stepPhase !== z.lastStep) { z.lastStep = stepPhase; SFX3D.step(z.root.position.clone(), z.type === 'giant' ? 1.8 : 1.2); if (z.type === 'giant' && onStomp) onStomp(z, false); }
-    }
-    else if (z.state === 'walk' && !z.crawl) { // schlurfende Schritte
-      const stepPhase = Math.floor(z.phase / Math.PI);
-      if (stepPhase !== z.lastStep) { z.lastStep = stepPhase; if (Math.random() < 0.35) SFX3D.shuffle(z.root.position.clone()); }
-    }
-    if (z.type === 'giant' && (z.state === 'walk' || z.state === 'attack')) {
-      z.roarT = (z.roarT ?? 2) - dt;
-      if (z.roarT <= 0) { z.roarT = rand(7, 12); SFX3D.roar(z.skull.getWorldPosition(tmpV2)); }
-      z.stompT = (z.stompT ?? 4) - dt;
-      const dPl = Math.hypot(player.x - z.pos.x, player.z - z.pos.z);
-      if (z.stompT <= 0 && dPl < 2.8 && !(z.stagger > 0)) {
-        z.stompT = rand(5, 7);
-        shockwave(z.root.position.clone().setY(0.1));
-        burst(z.root.position.clone().setY(0.1), 0x5a5048, 20);
-        SFX3D.bang(z.root.position.clone());
-        if (onStomp) onStomp(z, true);
-        if (!opts.harmless && dPl < 2.6) onPlayerHit(12, z);
-      }
-    }
-    // Kiefer schnappt auf und zu
-    z.jawT += dt * (z.state === 'attack' ? 9 : 2.5);
-    z.jaw.rotation.x = 0.15 + Math.max(0, Math.sin(z.jawT)) * (z.state === 'attack' ? 0.6 : 0.35);
-    // Treffer-Reaktion: kurz nach hinten zucken
-    if (z.hurtT > 0) { z.torso.rotation.x = -z.hurtT * 1.6; z.torso.rotation.y = z.hurtT * 1.4 * (z.hurtTwist || 0); }
-    else { z.torso.rotation.x *= 0.8; z.torso.rotation.y *= 0.8; }
-    if (z.headSnap > 0) { z.headSnap -= dt; z.head.rotation.x = -Math.max(0, z.headSnap) * 1.6; } else z.head.rotation.x *= 0.8;
-    z.recentDmg = Math.max(0, (z.recentDmg || 0) - dt * 120);
-    z.bumpT = Math.max(0, (z.bumpT || 0) - dt);
-    if (z.pendingBump) applyBump(z);
-    if (z.kin) {
-      if (z.crawl && !z.kinCrawl) { z.kinCrawl = true; resizeKinematic(z.kin, new THREE.Vector3(0.25, 0.18, 0.5), 0.18); }
-      setKinematicPose(z.kin, z.pos.x, z.root.position.y, z.pos.z, z.yaw);
-    }
-    z.root.position.x = z.pos.x;
-    z.root.position.z = z.pos.z;
-    z.root.rotation.y = z.yaw;
-  }
-  for (const z of zombies) if (z.monster) syncMonster(z); // Monster-Modell des Riesen folgt der fertigen Haltung
+  for (let i = zombies.length - 1; i >= 0; i--) updateOne(i, dt, head, opts, player);
+  for (let k = 0; k < zombies.length; k++) if (zombies[k].monster) syncMonster(zombies[k]); // Monster-Modell des Riesen folgt der fertigen Haltung
   for (let i = limbs.length - 1; i >= 0; i--) {
     limbs[i].t -= dt;
     if (limbs[i].t <= 0) { removeDynamic(limbs[i].phys); limbs[i].obj.scale.setScalar(0.0001); limbs[i].obj.updateMatrixWorld(true); scene.remove(limbs[i].obj); limbs.splice(i, 1); }
   }
+}
+// Ein Zombie pro Aufruf (Leistung: kleine Funktion → wird vom Browser optimiert; die große Schleife wurde es nie)
+function updateOne(i, dt, head, opts, player) {
+  const z = zombies[i];
+  if (!z) return; // Liste kann sich während des Updates ändern
+  if (z.T.boss) { if (bossHooks.update) bossHooks.update(z, dt, head, opts); return; }
+  z.hurtT = Math.max(0, z.hurtT - dt);
+  if (z.stagger > 0) z.stagger -= dt;
+  if (z.state === 'dead') {
+    z.deadT += dt;
+    // erschlafft: Arme sinken, Knie knicken, Kopf fällt
+    for (let _k = 0; _k < z.arms.length; _k++) { const a = z.arms[_k]; a.shoulder.rotation.x *= 0.9; a.elbow.rotation.x *= 0.9; }
+    for (let k = 0; k < z.legs.length; k++) { const l = z.legs[k]; l.knee.rotation.x = THREE.MathUtils.damp(l.knee.rotation.x, 0.5 + k * 0.3, 4, dt); }
+    z.neck.rotation.x = THREE.MathUtils.damp(z.neck.rotation.x, 0.9, 4, dt);
+    z.jaw.rotation.x = 0.45;
+    if (z.gibbed) { if (z.deadT > 0.5) { scene.remove(z.root); freeZombie(z); zombies.splice(i, 1); } return; } // zerplatzt: keine Leiche
+    if (animateDeath(z, dt)) { scene.remove(z.root); freeZombie(z); zombies.splice(i, 1); }
+    return;
+  }
+  if (z.frozenT > 0) { // erstarrt
+    z.frozenT -= dt;
+    if (z.frozenT <= 0 && z.ice) z.ice.visible = false;
+    return;
+  }
+  z.groanT -= dt;
+  if (z.groanT <= 0) { z.groanT = rand(2.5, 6); SFX3D.groan(z.skull.getWorldPosition(tmpV2), 1 / z.scale, z.type); }
+  let speed = z.speed * (z.crawl ? 0.35 : z.legHp[0] < 30 || z.legHp[1] < 30 ? 0.55 : 1);
+  if (z.stagger > 0 && (z.state === 'walk' || z.state === 'attack')) speed = 0; // taumelt
+  const o = z.opening;
+  if (z.state === 'rise') {
+    z.root.position.y = Math.min(0, z.root.position.y + dt * 0.9);
+    faceTowards(z, player, dt);
+    for (let k = 0; k < z.arms.length; k++) { const a = z.arms[k]; a.shoulder.rotation.x = -2.6 + Math.sin(z.phase += dt * 3) * 0.3 * (k ? 1 : -1); }
+    if (z.root.position.y >= 0) z.state = 'walk';
+  } else if (z.state === 'outside') {
+    // vor die Öffnung laufen (außerhalb des Raums)
+    const stand = o.mid.clone().addScaledVector(o.normal, -0.45 - z.slot * 0.6).addScaledVector(o.right, (z.slot % 2 ? 0.25 : -0.25) * Math.min(1, z.slot)).setY(0);
+    faceTowards(z, stand.clone().addScaledVector(o.normal, 1), dt);
+    if (moveTowards(z, stand, speed, dt, false)) {
+      z.state = 'tear';
+      z.actionT = rand(1.2, 2);
+    }
+    animateWalk(z, dt, speed);
+  } else if (z.state === 'tear') {
+    faceTowards(z, z.pos.clone().addScaledVector(o.normal, 1), dt);
+    animateTear(z, dt);
+    // nur der vorderste reißt Bretter ab, die anderen warten
+    const front = !zombies.some(q => q !== z && q.opening === o && q.state === 'tear' && q.slot < z.slot);
+    if (!front) {
+      const stand = o.mid.clone().addScaledVector(o.normal, -0.45 - z.slot * 0.6).setY(0);
+      if (z.slot > 0 && zombies.every(q => q === z || q.opening !== o || q.state !== 'tear' || q.slot >= z.slot - 1)) z.slot = Math.max(0, z.slot - 1);
+      moveTowards(z, stand, speed, dt, false);
+    } else {
+      z.slot = 0;
+      moveTowards(z, o.mid.clone().addScaledVector(o.normal, -0.45).setY(0), speed, dt, false);
+      z.actionT -= dt;
+      if (z.actionT <= 0) {
+        if (o.planks && o.planks.length) {
+          if (Math.random() < 0.5) SFX3D.bang(o.mid.clone().setY(1.2));
+          tearPlank(o, z.pos);
+          z.actionT = rand(1.4, 2.4);
+        } else {
+          z.state = 'enter';
+          z.enterT = 0;
+          z.enterFrom = z.pos.clone();
+        }
+      }
+    }
+  } else if (z.state === 'enter') {
+    // durch die Tür gehen bzw. durchs Fenster klettern
+    const inside = o.mid.clone().addScaledVector(o.normal, 0.55).setY(0);
+    const dur = o.type === 'window' ? 2.2 : 1.2 / Math.max(0.3, speed);
+    z.enterT += dt / dur;
+    const t = Math.min(1, z.enterT);
+    z.pos.lerpVectors(z.enterFrom, inside, t);
+    faceTowards(z, inside.clone().addScaledVector(o.normal, 1), dt);
+    if (o.type === 'window') {
+      z.root.position.y = Math.sin(t * Math.PI) * (o.bottom + 0.05) + Math.max(0, 1 - t * 3) * 0;
+      z.body.rotation.x = Math.sin(t * Math.PI) * 1.2;
+      for (let k = 0; k < z.arms.length; k++) { const a = z.arms[k]; a.shoulder.rotation.x = -2.2 + Math.sin(t * 12 + k) * 0.4; }
+      for (let k = 0; k < z.legs.length; k++) { const l = z.legs[k]; l.hip.rotation.x = -Math.sin(t * Math.PI) * 1.2 + k * 0.3; l.knee.rotation.x = 1.0; }
+    } else animateWalk(z, dt, speed);
+    if (t >= 1) { z.state = 'walk'; z.root.position.y = 0; z.pathT = 0; if (z.type === 'runner') SFX3D.scream(z.skull.getWorldPosition(tmpV2)); }
+  } else if ((z.state === 'walk' || z.state === 'attack') && z.knockT > 0) {
+    // umgeworfen: fällt hin, bleibt kurz liegen, steht wieder auf
+    z.knockT -= dt;
+    const k = z.knockT;
+    const down = k > 1.6 ? (2.2 - k) / 0.6 : k > 0.7 ? 1 : k / 0.7;
+    z.body.rotation.x = 1.45 * z.knockBack * THREE.MathUtils.smoothstep(down, 0, 1);
+    z.body.position.y = 0.05 * down;
+    for (let i = 0; i < z.arms.length; i++) { const a = z.arms[i]; a.shoulder.rotation.x = -0.4 - (i ? 0.6 : 0.2) * down; a.elbow.rotation.x = -0.3; }
+    if (z.knockT <= 0) { z.knockT = 0; z.body.rotation.x = 0.12; }
+  } else if (z.state === 'spit') {
+    // Spucker: bleibt stehen, holt aus und spuckt Säure
+    z.actionT -= dt;
+    faceTowards(z, player, dt, 8);
+    const k = 1 - Math.max(0, z.actionT) / 0.9;
+    z.neck.rotation.x = k < 0.55 ? 0.25 - k * 1.4 : 0.25 + (k - 0.55) * 2.2;
+    z.jaw.rotation.x = 0.2 + k * 0.7;
+    if (!z.spat && k > 0.6) { z.spat = true; launchSpit(z, head); }
+    if (z.actionT <= 0) { z.state = 'walk'; z.neck.rotation.x = 0.25; }
+  } else if (z.state === 'walk' || z.state === 'attack') {
+    // Lockvogel (Trommel-Affe): alle Zombies im Raum laufen zu ihm statt zum Spieler
+    const lured = lure.active;
+    const tgt = lured ? lure.pos : player;
+    if (lured && z.lureV !== lure.v) { z.lureV = lure.v; z.pathT = 0; }
+    const dist = hyp(tgt.x - z.pos.x, tgt.z - z.pos.z);
+    const reach = lured ? 0.55 : z.crawl ? 0.7 : 0.8;
+    if (z.T.spit && !z.crawl && z.state === 'walk' && !lured) {
+      z.spitT = (z.spitT ?? rand(1.5, 3)) - dt;
+      if (z.spitT <= 0 && dist > 1.8 && dist < 6.5 && clearLine(z.pos, player)) { z.spitT = rand(4, 6.5); z.state = 'spit'; z.actionT = 0.9; z.spat = false; SFX3D.groan(z.skull.getWorldPosition(tmpV2), 1.4); return; }
+    }
+    if (z.T.explode && dist < 1.1 && !z.crawl && !lured) {
+      // Platzer: bläht sich auf und explodiert neben dem Spieler
+      z.fuseT = (z.fuseT ?? 0.9) - dt;
+      const sw = 1 + (0.9 - z.fuseT) * 0.35;
+      if (z.belly) z.belly.scale.set(1.25 * sw, 1.15 * sw, 1.2 * sw);
+      if (Math.random() < dt * 12) burst(z.skull.getWorldPosition(tmpV2), 0x8dff3a, 2);
+      if (z.fuseT <= 0) { z.hp = 0; kill(z, new THREE.Vector3(0, 0, 1)); return; }
+    }
+    if (dist < reach) {
+      z.state = 'attack';
+      faceTowards(z, tgt, dt, 8);
+      if (!(z.stagger > 0)) z.attackT -= dt; // taumelnd kein Angriff
+      animateAttack(z, dt);
+      if (z.attackT <= 0) {
+        z.attackT = 1.3;
+        z.attackVariant = Math.random() < 0.4 ? 1 : 0;
+        SFX3D.swing(z.skull.getWorldPosition(tmpV2));
+        if (Math.random() < 0.6) SFX3D.growl(z.skull.getWorldPosition(tmpV2), z.type);
+        const armsLeft = z.armLost.filter(x => !x).length;
+        if (!opts.harmless && armsLeft > 0 && !lured) onPlayerHit(z.T.dmg * (z.dmgK || 1) * (z.crawl ? 0.7 : 1) * (armsLeft === 2 ? 1 : 0.6), z);
+      }
+    } else {
+      z.state = 'walk';
+      z.attackT = Math.min(z.attackT, 0.5);
+      z.pathT -= dt;
+      if ((z.pathT <= 0 || !z.path || !z.path.length) && planBudget > 0) { planBudget--; z.path = findPath(z.pos, tgt); z.pathT = rand(0.5, 0.9); }
+      if (!z.path) z.path = [tgt.clone()];
+      while (z.path.length > 1 && z.path[0].distanceTo(tmpV.set(z.pos.x, 0, z.pos.z)) < 0.2) z.path.shift();
+      const next = z.path[0] || tgt;
+      faceTowards(z, next, dt);
+      moveTowards(z, next, speed, dt);
+      animateWalk(z, dt, speed);
+    }
+  }
+  // Abstand zu anderen Zombies
+  if (z.state === 'walk' || z.state === 'attack') {
+    for (let k = 0; k < zombies.length; k++) { // (Index-Schleife: kein Iterator-Müll)
+      const q = zombies[k];
+      if (q === z || q.state === 'dead' || (q.state !== 'walk' && q.state !== 'attack')) continue;
+      const dx = z.pos.x - q.pos.x, dz = z.pos.z - q.pos.z, d = hyp(dx, dz);
+      if (d > 0.001 && d < 0.5) { const push = (0.5 - d) * 0.5; if (walkable(z.pos.x + dx / d * push, z.pos.z + dz / d * push)) { z.pos.x += dx / d * push; z.pos.z += dz / d * push; } }
+    }
+  }
+  // schwere Schritte (Brocken, Riese) und Stampf-Angriff des Riesen
+  if ((z.type === 'brute' || z.type === 'giant') && (z.state === 'walk' || z.state === 'outside' || z.state === 'enter') && !z.crawl) {
+    const stepPhase = Math.floor(z.phase / Math.PI);
+    if (stepPhase !== z.lastStep) { z.lastStep = stepPhase; SFX3D.step(z.root.position.clone(), z.type === 'giant' ? 1.8 : 1.2); if (z.type === 'giant' && onStomp) onStomp(z, false); }
+  }
+  else if (z.state === 'walk' && !z.crawl) { // schlurfende Schritte
+    const stepPhase = Math.floor(z.phase / Math.PI);
+    if (stepPhase !== z.lastStep) { z.lastStep = stepPhase; if (Math.random() < 0.35) SFX3D.shuffle(z.root.position.clone()); }
+  }
+  if (z.type === 'giant' && (z.state === 'walk' || z.state === 'attack')) {
+    z.roarT = (z.roarT ?? 2) - dt;
+    if (z.roarT <= 0) { z.roarT = rand(7, 12); SFX3D.roar(z.skull.getWorldPosition(tmpV2)); }
+    z.stompT = (z.stompT ?? 4) - dt;
+    const dPl = hyp(player.x - z.pos.x, player.z - z.pos.z);
+    if (z.stompT <= 0 && dPl < 2.8 && !(z.stagger > 0)) {
+      z.stompT = rand(5, 7);
+      shockwave(z.root.position.clone().setY(0.1));
+      burst(z.root.position.clone().setY(0.1), 0x5a5048, 20);
+      SFX3D.bang(z.root.position.clone());
+      if (onStomp) onStomp(z, true);
+      if (!opts.harmless && dPl < 2.6) onPlayerHit(12, z);
+    }
+  }
+  // Kiefer schnappt auf und zu
+  z.jawT += dt * (z.state === 'attack' ? 9 : 2.5);
+  z.jaw.rotation.x = 0.15 + Math.max(0, Math.sin(z.jawT)) * (z.state === 'attack' ? 0.6 : 0.35);
+  // Treffer-Reaktion: kurz nach hinten zucken
+  if (z.hurtT > 0) { z.torso.rotation.x = -z.hurtT * 1.6; z.torso.rotation.y = z.hurtT * 1.4 * (z.hurtTwist || 0); }
+  else { z.torso.rotation.x *= 0.8; z.torso.rotation.y *= 0.8; }
+  if (z.headSnap > 0) { z.headSnap -= dt; z.head.rotation.x = -Math.max(0, z.headSnap) * 1.6; } else z.head.rotation.x *= 0.8;
+  z.recentDmg = Math.max(0, (z.recentDmg || 0) - dt * 120);
+  z.bumpT = Math.max(0, (z.bumpT || 0) - dt);
+  if (z.pendingBump) applyBump(z);
+  if (z.kin) {
+    if (z.crawl && !z.kinCrawl) { z.kinCrawl = true; resizeKinematic(z.kin, new THREE.Vector3(0.25, 0.18, 0.5), 0.18); }
+    setKinematicPose(z.kin, z.pos.x, z.root.position.y, z.pos.z, z.yaw);
+  }
+  z.root.position.x = z.pos.x;
+  z.root.position.z = z.pos.z;
+  z.root.rotation.y = z.yaw;
 }
 
 // ---- Spucker: Säure-Klumpen (fliegen im Bogen, man kann ausweichen) ----------------------

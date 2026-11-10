@@ -1,17 +1,18 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=34';
+import { VERSION } from './version.js?v=35';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=34';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=34';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=34';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=34';
-import { facesButtonVisible, setFaces } from './faces.js?v=34';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=34';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=34';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=34';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=34';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL } from './boss.js?v=34';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=35';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=35';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=35';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=35';
+import { facesButtonVisible, setFaces } from './faces.js?v=35';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=35';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=35';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=35';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=35';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL } from './boss.js?v=35';
+const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
 // Grundgerüst
@@ -26,6 +27,7 @@ renderer.xr.enabled = true;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
+scene.matrixWorldAutoUpdate = false; // Leistung: Matrizen werden einmal pro Bild in frameInner aktualisiert (nicht nochmal in jedem render)
 const desktopBackground = new THREE.Color(0x30343c);
 const scopeBackground = new THREE.Color(0x2b3a31);
 scene.background = desktopBackground;
@@ -278,14 +280,14 @@ function inHolsterZone(p) {
   const side = new THREE.Vector3(-f.z, 0, f.x);
   const base = headPos.clone().addScaledVector(f, -0.1).add(new THREE.Vector3(0, -0.12, 0));
   const rel = p.clone().sub(headPos);
-  const behind = rel.dot(f) < 0.05 && p.y > headPos.y - 0.45 && p.y < headPos.y + 0.25 && Math.hypot(rel.x, rel.z) < 0.5;
+  const behind = rel.dot(f) < 0.05 && p.y > headPos.y - 0.45 && p.y < headPos.y + 0.25 && hyp(rel.x, rel.z) < 0.5;
   return behind || p.distanceTo(base.clone().addScaledVector(side, 0.18)) < 0.34 || p.distanceTo(base.clone().addScaledVector(side, -0.18)) < 0.34;
 }
 // Hüft-Holster der Pistole: großzügig um den Platz an der rechten Hüfte bzw. seitlich am Gürtel
 function nearHipHolster(p) {
   if (!pistolSlot) return false;
   if (p.distanceTo(pistolSlot.obj.getWorldPosition(tmpV)) < 0.3) return true;
-  const dy = p.y - belt.position.y, dr = Math.hypot(p.x - belt.position.x, p.z - belt.position.z);
+  const dy = p.y - belt.position.y, dr = hyp(p.x - belt.position.x, p.z - belt.position.z);
   return Math.abs(dy) < 0.22 && dr < BELT_R + 0.25 && dr > BELT_R - 0.1;
 }
 function releaseGrab(h) {
@@ -651,6 +653,7 @@ function makeMonkey() {
   key.add(bow);
   g.add(key);
   const light = sph(0.006, monkeyMats.light, 0, 0.128, 0);
+  mergeStatic(g, { light }); // Leistung: Teile mit gleichem Material zusammenfassen (Arme und Schlüssel bleiben beweglich)
   g.userData = { arms, key, light };
   return g;
 }
@@ -797,7 +800,7 @@ function beltSlotFor(h) {
   if (best) return best;
   const armed = heldWeapon(otherHand(h));
   const dy = Math.abs(h.point.y - belt.position.y);
-  const dr = Math.hypot(h.point.x - belt.position.x, h.point.z - belt.position.z);
+  const dr = hyp(h.point.x - belt.position.x, h.point.z - belt.position.z);
   if (armed && dy < 0.22 && dr < BELT_R + 0.25) {
     for (const s of beltSlots) {
       if (!s.available || s.kind === 'knife' || s.kind === 'grenade') continue;
@@ -867,14 +870,14 @@ function aimAssist(pos, vel) {
   let best = null, bestAng = 0.26;
   for (const c of cands) {
     const to = c.clone().sub(pos);
-    const d = Math.hypot(to.x, to.z);
+    const d = hyp(to.x, to.z);
     if (d < 0.5 || d > 14) continue;
     const ang = flat.angleTo(new THREE.Vector3(to.x, 0, to.z).normalize());
     if (ang < bestAng) { bestAng = ang; best = c; }
   }
   if (!best) return vel;
   const to = best.clone().sub(pos);
-  const d = Math.hypot(to.x, to.z), hgt = to.y, g = 9.81;
+  const d = hyp(to.x, to.z), hgt = to.y, g = 9.81;
   const v = THREE.MathUtils.clamp(vel.length(), 7, 15);
   const disc = v ** 4 - g * (g * d * d + 2 * hgt * v * v);
   if (disc < 0) return vel;
@@ -963,7 +966,7 @@ function updatePowerups(dt) {
     pu.obj.visible = pu.t < 16 || Math.floor(pu.t * 8) % 2 === 0;
     let take = false;
     if (renderer.xr.isPresenting) take = hands.some(h => h.src && h.point.distanceTo(pu.obj.position) < 0.3);
-    else take = Math.hypot(camera.position.x - pu.obj.position.x, camera.position.z - pu.obj.position.z) < 1.0;
+    else take = hyp(camera.position.x - pu.obj.position.x, camera.position.z - pu.obj.position.z) < 1.0;
     if (take) collectPowerup(pu);
     else if (pu.t > 20) { scene.remove(pu.obj); pu.obj.material.dispose(); powerups.splice(i, 1); }
   }
@@ -1055,20 +1058,44 @@ function applyQuality() {
   }
 }
 const perf = { ema: 0, slowT: 0, level: 0, okT: 0 };
+// Bildrate der Brille (Quest: 72/90/120 Hz). Höher = flüssiger.
+function applyFrameRate() {
+  const session = renderer.xr.getSession && renderer.xr.getSession();
+  if (!session || !session.updateTargetFrameRate || !session.supportedFrameRates) return;
+  const rates = [...session.supportedFrameRates].sort((a, b) => a - b);
+  const want = settings.frameRate > 72 && perf.lowHz ? 72 : settings.frameRate;
+  const best = rates.filter(r => r <= want + 0.5).pop() || rates[0];
+  if (best && Math.abs((session.frameRate || 0) - best) > 0.5) session.updateTargetFrameRate(best).catch(() => {});
+}
+// Automatisch flüssig halten – nur VORÜBERGEHEND (nichts wird dauerhaft abgeschaltet):
+// zuerst Bildrate auf 72 Hz, dann Staub, dann Schatten, dann Augenleuchten. Läuft es wieder lange gut,
+// kommen die Details Schritt für Schritt zurück.
 function autoPerf(raw) {
   if (!settings.autoPerf || !renderer.xr.isPresenting || raw <= 0 || raw > 0.5) return;
   const session = renderer.xr.getSession();
   const target = 1 / ((session && session.frameRate) || 72);
   perf.ema += (raw - perf.ema) * 0.05;
   if (perf.ema > target * 1.3) { perf.slowT += raw; perf.okT = 0; } else { perf.slowT = Math.max(0, perf.slowT - raw); perf.okT += raw; }
-  if (perf.slowT > 2.5 && perf.level < 3) {
-    perf.level++;
+  if (perf.slowT > 2.5) {
     perf.slowT = 0;
-    if (perf.level === 1) { dust.visible = false; fx.particles = Math.min(fx.particles, 0.6); }
-    if (perf.level === 2) setShadows(false);
-    if (perf.level === 3) { setEyeGlow(false); fx.particles = 0.4; sun.shadow.mapSize.set(512, 512); }
-    floatingText('Leistung angepasst', headPos.clone().add(new THREE.Vector3(0, -0.3, -1).applyQuaternion(getViewCamera().getWorldQuaternion(tmpQ))), '#9ad');
+    perf.ema = target;
+    if (!perf.lowHz && session && (session.frameRate || 72) > 73) { perf.lowHz = true; applyFrameRate(); return; }
+    if (perf.level >= 3) return;
+    perf.level++;
+    applyPerfLevel();
+  } else if (perf.okT > 25 && perf.level > 0) { // lange flüssig: eine Stufe zurück
+    perf.okT = 0;
+    perf.level--;
+    applyPerfLevel();
   }
+}
+function applyPerfLevel() {
+  const L = perf.level;
+  dust.visible = settings.dust && L < 1;
+  fx.particles = L >= 3 ? Math.min(settings.particles, 0.4) : L >= 1 ? Math.min(settings.particles, 0.6) : settings.particles;
+  const sh = settings.shadows && L < 2;
+  sun.castShadow = sh; shadowFloor.visible = sh; shadowsOn = sh; // nicht gespeichert
+  setEyeGlow(settings.eyeGlow && L < 3);
 }
 // ---- Rundenwechsel: große Zahl im Raum – bekommt Risse, blutet, zerspringt, neue Zahl knallt herein ----
 const roundFx = { p: makePanel(1.6, 0.8, 500), t: 0, active: false, from: 0, to: 1, bonus: 0, slammed: false, shards: [], cracks: [], drips: [] };
@@ -1255,7 +1282,7 @@ function lowAmmo() { return hands.some(h => { const w = heldWeapon(h); return w 
 function updateSoundscape(dt) {
   if (state === 'playing') {
     let near = 0;
-    for (const z of zombies) if (z.state !== 'dead' && z.state !== 'outside') near += Math.max(0, 1 - Math.hypot(z.pos.x - headPos.x, z.pos.z - headPos.z) / 5);
+    for (const z of zombies) if (z.state !== 'dead' && z.state !== 'outside') near += Math.max(0, 1 - hyp(z.pos.x - headPos.x, z.pos.z - headPos.z) / 5);
     const k = THREE.MathUtils.clamp(0.15 + near * 0.3 + (playerHp < 40 ? 0.35 : 0) + (waveBreak > 0 ? -0.2 : 0), 0, 1);
     musicUpdate(dt, k);
   }
@@ -1594,13 +1621,13 @@ function freeWallSpots(n, y, avoid = [], minSep = 1.2, angles = [Math.PI * 0.5, 
   const spots = [];
   const ops = surfacesOf('door', 'window');
   const walls = surfacesOf('wall').filter(w => w.width > 1.3).sort(() => Math.random() - 0.5);
-  const taken = (pos) => [...avoid, ...spots.map(o => o.pos)].some(q => Math.hypot(q.x - pos.x, q.z - pos.z) < minSep);
+  const taken = (pos) => [...avoid, ...spots.map(o => o.pos)].some(q => hyp(q.x - pos.x, q.z - pos.z) < minSep);
   for (let pass = 0; pass < 3 && spots.length < n; pass++) {
     for (const w of walls) {
       for (let k = 0; k < 8 && spots.length < n; k++) {
         const u = THREE.MathUtils.randFloat(0.65, w.width - 0.65);
         const pos = w.a.clone().addScaledVector(w.right, u).setY(y);
-        if (ops.some(o => Math.hypot(o.mid.x - pos.x, o.mid.z - pos.z) < o.width / 2 + 0.75)) continue;
+        if (ops.some(o => hyp(o.mid.x - pos.x, o.mid.z - pos.z) < o.width / 2 + 0.75)) continue;
         if (taken(pos)) continue;
         spots.push({ pos, normal: w.normal.clone() });
         break;
@@ -2365,8 +2392,8 @@ function nailPlank(h) {
   addPlank(t.o);
   // drei Hammerschläge
   for (let i = 0; i < 3; i++) later(i * 0.14, () => { SFX.thunk(); pulse(h, 0.6, 30); });
-  if (inRound()) award(10);
-  floatingText('🔨 +10', t.slot.pos.clone().addScaledVector(t.o.normal, 0.1), '#ffd28a');
+  const got = awardPlank();
+  floatingText(got ? '🔨 +10' : '🔨', t.slot.pos.clone().addScaledVector(t.o.normal, 0.1), '#ffd28a');
   return true;
 }
 
@@ -2561,7 +2588,7 @@ function updateMedkits(dt) {
     m.obj.visible = m.t < 25 || Math.floor(m.t * 8) % 2 === 0;
     let take = false;
     if (renderer.xr.isPresenting) take = hands.some(h => h.src && h.point.distanceTo(m.obj.position) < 0.25);
-    else take = Math.hypot(camera.position.x - m.obj.position.x, camera.position.z - m.obj.position.z) < 1.0;
+    else take = hyp(camera.position.x - m.obj.position.x, camera.position.z - m.obj.position.z) < 1.0;
     if (take) collectMedkit(m);
     else if (m.t > 30) { scene.remove(m.obj); medkits.splice(i, 1); }
   }
@@ -2628,6 +2655,7 @@ const SETTINGS_TABS = {
     { key: 'particles', label: 'Partikel', opts: [[0.5, 'Wenig'], [1, 'Normal'], [1.6, 'Viel']] },
     { key: 'dust', label: 'Staub in der Luft', opts: onOff },
     { key: 'eyeGlow', label: 'Leuchtende Zombie-Augen', opts: onOff },
+    { key: 'frameRate', label: 'Bildrate (Brille)', opts: [[72, '72 Hz'], [90, '90 Hz'], [120, '120 Hz']] },
     { key: 'autoPerf', label: 'Automatisch flüssig halten', opts: onOff },
     { key: 'corpseTime', label: 'Tote Zombies liegen', opts: [[0.4, 'Sehr kurz'], [1.2, 'Kurz'], [3, 'Normal'], [8, 'Lang']] }
   ] }
@@ -2637,7 +2665,7 @@ const SETTINGS_DEFAULT = {
   startPoints: 500, amount: 1, blood: 1, killcam: true, ambient: true, hitmarker: true,
   grip: 'hold', reload: 'real', assist: true, haptics: 1, wristHud: true, snapBelt: 1,
   shadows: true, particles: 1, dust: true, popups: true, eyeGlow: true, autoPerf: true,
-  autoPlace: 'weapons', corpseTime: 1.2, quality: 'balanced', guides: true, priceWeapons: 1, priceBox: 950, pricePerks: 1, priceUpgrade: 1, priceTrap: 1000, pointsMul: 1
+  autoPlace: 'weapons', corpseTime: 1.2, quality: 'balanced', guides: true, priceWeapons: 1, priceBox: 950, pricePerks: 1, priceUpgrade: 1, priceTrap: 1000, pointsMul: 1, frameRate: 90
 };
 // Preise laut Einstellungen (auf schöne Zahlen gerundet)
 const price = {
@@ -2665,6 +2693,8 @@ function applySettings() {
   setEyeGlow(settings.eyeGlow);
   setCorpseTime(settings.corpseTime);
   applyQuality();
+  perf.level = 0; perf.lowHz = false;
+  if (renderer.xr.isPresenting) applyFrameRate();
 }
 function setSetting(k, v) {
   settings[k] = v;
@@ -2754,7 +2784,7 @@ function tryWeaponGrab(h) {
     if (!w.sockets.foregrip) return false;
     const local = w.root.worldToLocal(p.clone());
     const fl = w.root.worldToLocal(w.sockets.foregrip.getWorldPosition(tmpV));
-    if (!(local.z < 0.02 && local.z > fl.z - 0.25 && Math.hypot(local.x, local.y - fl.y) < 0.15)) return false;
+    if (!(local.z < 0.02 && local.z > fl.z - 0.25 && hyp(local.x, local.y - fl.y) < 0.15)) return false;
     opts[0] = { type: 'fore' };
   }
   if (opts[0].type === 'swap') { takeWeapon(w, h); return true; }
@@ -3359,7 +3389,7 @@ function wallEnds() {
 }
 function snapCorner(p, maxD = 0.4) {
   let best = null, bd = maxD;
-  for (const e of wallEnds()) { const d = Math.hypot(e.x - p.x, e.z - p.z); if (d < bd) { bd = d; best = e; } }
+  for (const e of wallEnds()) { const d = hyp(e.x - p.x, e.z - p.z); if (d < bd) { bd = d; best = e; } }
   return best;
 }
 // Endpunkt einer neuen Wand: an Ecken einrasten, sonst rechte Winkel zur nächsten Wand
@@ -3481,7 +3511,7 @@ function setupTriggerDown(src) {
     let kind = null;
     if (tool === 'perk') { kind = setup.perkKind; for (const o of surfacesOf('perk').filter(o => o.kind === kind)) removeSurface(o); } // jede Sorte nur einmal
     if (tool === 'upgrade') for (const o of surfacesOf('upgrade')) removeSurface(o);
-    if (surfacesOf('wallbuy', 'perk', 'upgrade').some(o => Math.hypot(o.pos.x - pos.x, o.pos.z - pos.z) < (tool === 'wallbuy' ? 0.9 : 0.55))) { setup.msg = 'Zu nah an einem anderen Platz'; refreshSetupPanel(); return; }
+    if (surfacesOf('wallbuy', 'perk', 'upgrade').some(o => hyp(o.pos.x - pos.x, o.pos.z - pos.z) < (tool === 'wallbuy' ? 0.9 : 0.55))) { setup.msg = 'Zu nah an einem anderen Platz'; refreshSetupPanel(); return; }
     const x = addWallbuy(pos, normal, tool, kind);
     setup.last = x;
     if (tool === 'perk') { const used = surfacesOf('perk').map(o => o.kind); setup.perkKind = PERK_ORDER.find(k => !used.includes(k)) || kind; }
@@ -3955,6 +3985,7 @@ function beginRound() {
 }
 function nextWave() {
   wave++;
+  plankPts = 0;
   toSpawn = Math.max(2, Math.round((gameMode === 'training' ? 2 + wave : Math.min(70, 4 + wave * 2.4)) * DIFFS[diffKey].count * settings.amount));
   refillGrenades();
   bruteWarned = false;
@@ -4091,7 +4122,7 @@ function updateGame(dt) {
       boardDirty = true;
     }
   } else if (aliveCount() === 0) {
-    const bonus = 50 * wave;
+    const bonus = 30 * wave; // Wellen-Bonus (Punkte-Balance v35: vorher 50 pro Welle)
     award(bonus);
     SFX.waveEnd();
     speak(`Welle ${wave} überstanden`);
@@ -4100,17 +4131,25 @@ function updateGame(dt) {
     boardDirty = true;
   }
 }
+// ---- Punkte-Balance -------------------------------------------------------------------
+// Kill: 60 (Kopfschuss 100). Treffer: je 10, aber höchstens 60 pro Zombie (Riese 200, Boss 400).
+// Bretter annageln: je 10, höchstens 300 pro Welle.
+const killPts = (res) => (res.headshot ? 100 : 60);
+const hitCap = (z) => (z.type === 'boss' ? 400 : z.type === 'giant' ? 200 : 60);
+const PLANK_CAP = 300;
+let plankPts = 0;
+function awardPlank() { if (!inRound() || plankPts >= PLANK_CAP) return 0; plankPts += 10; award(10); return 10; }
 function handleZombieHit(res, point, prefix = '') {
   if (!res) return;
   if (res.kill) {
     floorDecal(res.pos, 'blood', THREE.MathUtils.randFloat(0.5, 0.9));
     if (inRound() && res.type === 'boss') { // Boss besiegt: großer Bonus + volle Munition + Medipack
       const lvl = res.zombie.level || 1;
-      award(1000 * lvl);
+      award(500 * lvl);
       spawnPowerup(res.pos, 'ammo');
       spawnMedkit(res.pos.clone().add(new THREE.Vector3(0.6, 0, 0)));
       speak('Boss besiegt!');
-      streakMsg = { text: `👑 BOSS BESIEGT +${1000 * lvl}`, t: 3 };
+      streakMsg = { text: `👑 BOSS BESIEGT +${500 * lvl}`, t: 3 };
     } else if (inRound() && res.type === 'giant') spawnPowerup(res.pos); // der Riese lässt immer ein Power-up fallen
     else if (inRound() && Math.random() < (playerHp < 50 ? 0.12 : 0.05)) spawnMedkit(res.pos);
     else if (inRound() && !res.nuke && powerups.length < 2 && Math.random() < 0.045) spawnPowerup(res.pos);
@@ -4120,7 +4159,10 @@ function handleZombieHit(res, point, prefix = '') {
   if (inRound()) {
     if (!res.explosion && !res.dot) stats.hits++;
     const mult = active.double > 0 ? 2 : 1;
-    if (!res.dot) award(10 * mult);
+    // Treffer-Punkte nur bis zu einer Obergrenze pro Zombie: Schrot (viele Kugeln), Dauerfeuer und zähe Zombies
+    // in späten Wellen bringen sonst viel zu schnell viel zu viele Punkte
+    const z = res.zombie;
+    if (!res.dot && z && (z.hitPts || 0) < hitCap(z)) { z.hitPts = (z.hitPts || 0) + 10; award(10 * mult); }
     if (res.kill) {
       stats.kills++;
       // Killserie: mehrere Kills kurz hintereinander
@@ -4130,18 +4172,18 @@ function handleZombieHit(res, point, prefix = '') {
       if (streak >= 2) {
         const names = { 2: 'Doppelkill!', 3: 'Dreifachkill!', 4: 'Vierfachkill!' };
         const name = names[streak] || 'Massaker!';
-        const bonus = 50 * (streak - 1) * mult;
+        const bonus = Math.min(100, 25 * (streak - 1)) * mult;
         award(bonus);
         streakMsg = { text: `${name} +${bonus}`, t: 2.2 };
         if (streak <= 5 || streak % 3 === 0) speak(name.replace('!', ''));
       }
-      award((res.headshot ? 150 : 100) * mult);
+      award(killPts(res) * mult);
       if (res.headshot) stats.headshots++;
       // letzter Zombie der Welle: kurze Zeitlupe
       if (settings.killcam && toSpawn === 0 && aliveCount() === 0 && wave > 0) { killcamT = 1.6; SFX.slowmo(); }
     }
   }
-  if (res.kill) floatingText(prefix + (res.headshot ? 'KOPFSCHUSS! +160' : 'Erledigt +110'), point, res.headshot ? '#ffd21f' : '#ffffff');
+  if (res.kill) floatingText(prefix + (res.headshot ? 'KOPFSCHUSS! +' : 'Erledigt +') + killPts(res) * (active.double > 0 ? 2 : 1), point, res.headshot ? '#ffd21f' : '#ffffff');
   boardDirty = true;
 }
 function refreshBoard() {
@@ -4298,6 +4340,7 @@ function updateSights(w) {
       redDot.visible = true;
       redDot.position.copy(a.eye).addScaledVector(axis, 40);
       redDot.scale.setScalar(0.14);
+      redDot.updateMatrixWorld(true); // nach dem Szenen-Update verschoben
     }
   } else if (w.def.sight === 'scope' && !scopeRendered) {
     const P = w.parts;
@@ -4458,7 +4501,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'p' || e.key === 'P') {
     let best = null, bd = Infinity;
     for (const o of openings()) { if (missingPlanks(o) <= 0) continue; const d = o.mid.distanceTo(camera.position); if (d < bd) { bd = d; best = o; } }
-    if (best) { addPlank(best); SFX.thunk(); if (inRound()) award(10); }
+    if (best) { addPlank(best); SFX.thunk(); awardPlank(); }
   }
   if (e.key === 't' || e.key === 'T') { let best = null, bd = Infinity; for (const t of traps) { const d = t.center.distanceTo(camera.position); if (d < bd) { bd = d; best = t; } } if (best) pullTrap(best, null); }
   if ((e.key === 'm' || e.key === 'M') && monkeyCount > 0) {
@@ -4541,6 +4584,9 @@ renderer.xr.addEventListener('sessionstart', () => {
   bench = null;
   lastResult = null;
   setup.autoImport = 4;
+  perf.level = 0; perf.lowHz = false; perf.ema = 0;
+  applyPerfLevel();
+  applyFrameRate(); // 90 Hz statt 72 Hz (wenn die Brille es kann)
   setTimeout(() => { enterSetup(); resetWeapons(false, false); }, 400);
 });
 renderer.xr.addEventListener('sessionend', () => {
@@ -4597,7 +4643,7 @@ renderer.setAnimationLoop(() => {
     reportError(e);
     // Zustand nach einem Fehler mitten im Zielfernrohr-Rendern wiederherstellen
     renderer.xr.enabled = true;
-    try { renderer.setRenderTarget(null); renderer.render(scene, camera); } catch { /* nächstes Bild */ }
+    try { renderer.setRenderTarget(null); scene.updateMatrixWorld(); renderer.render(scene, camera); } catch { /* nächstes Bild */ }
   }
 });
 function frame() {

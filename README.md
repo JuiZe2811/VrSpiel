@@ -5,6 +5,23 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 35 – Flüssiger ohne Abstriche und faire Punkte
+
+**Flüssiger, ohne die Grafik zu verschlechtern:**
+- **90 Hz statt 72 Hz** auf der Quest. Einstellbar unter Grafik → „Bildrate (Brille)“: 72, 90 oder 120 Hz.
+- **Automatisch flüssig halten** wirkt nur noch vorübergehend. Wird es eng, geht zuerst die Bildrate auf 72 Hz, erst danach werden Details reduziert. Läuft es wieder länger als 25 Sekunden flüssig, kommen die Details zurück. Nichts wird mehr dauerhaft abgeschaltet.
+- **Deutlich weniger Speicher-Müll pro Bild:** von etwa 3,5 auf 2 MB/s in den ersten Sekunden. Danach optimiert der Browser die Zombie-Steuerung, die er vorher nie optimiert hat, und es wird noch weniger. Weniger Müll heißt weniger kleine Ruckler durch das Aufräumen. Im Detail: Die Zombie-Steuerung ist in kleine Funktionen aufgeteilt, Wegsuche und Animationen arbeiten ohne Hilfs-Arrays, und alle Zombies haben dieselbe Objekt-Form.
+- **Weniger Zeichenaufrufe bei gleichem Aussehen:** Granaten, Affe, Messer und Bretter bestehen aus weniger Einzelteilen. Der Gürtel braucht 34 statt 47 Aufrufe, ein Brett 2 statt 3.
+- Die Positionen aller Objekte werden nur noch einmal pro Bild berechnet statt zweimal.
+
+**Punkte – nicht mehr zu schnell zu reich:**
+- Kill: 60 Punkte, Kopfschuss: 100 (vorher 100 und 150).
+- Treffer: weiterhin 10 pro Treffer, aber höchstens 60 pro Zombie (Riese 200, Boss 400). Schrot, Dauerfeuer und zähe Zombies in späten Wellen bringen dadurch nicht mehr unendlich viele Punkte.
+- Killserien-Bonus: höchstens 100 pro Kill. Wellen-Bonus: 30 × Welle. Boss: 500 × Stufe.
+- Bretter annageln: 10 pro Brett, höchstens 300 pro Welle.
+- Ergebnis laut Rechnung: In Welle 5 hat man etwa 6.500 Punkte statt 10.800. Alles kaufen (Getränke, Aufrüstung ★★★, Waffen) kann man um Welle 20 statt schon um Welle 15.
+- Wer es leichter will: Einstellungen → Preise → „Punkte für Treffer & Kills“.
+
 ## Neu in Version 34 – Neues Monster-Modell für den Riesen
 
 - Der Riese (kommt in den Wellen 8, 13, 18 usw.) ist jetzt ein echtes 3D-Monster: riesiges Maul mit Zähnen, dicker Bauch und lange Krallen (`models/giant.glb`).
@@ -27,7 +44,7 @@ und wollen dich töten.
   - Stufe 3 (Welle 15): dazu Teleport (taucht hinter dir auf und schlägt zu) und Wut-Modus bei wenig Leben (rot, schneller, Angriffe direkt hintereinander)
   - Stufe 4 (Welle 20) und höher: dazu Wirbelwind. Mit jeder Stufe hat er mehr Leben, ist schneller, trifft härter und wird etwas größer.
 - **Fair:** Er hat einen Lebensbalken über dem Kopf, und jeder Angriff wird angekündigt (Ausholen). Ein Kopfschuss zählt dreifach. Einfrieren, Fallen und die Atombombe kosten ihn nur ein Stück Leben, sie töten ihn nicht sofort.
-- **Belohnung:** 1000 Punkte × Stufe, „Volle Munition“ und ein Medipack.
+- **Belohnung:** 500 Punkte × Stufe (ab v35), „Volle Munition“ und ein Medipack.
 - Der Riese kommt jetzt in den Wellen 8, 13, 18 usw.
 
 ## Neu in Version 31 – Leuchtende Hilfen für alle Waffen, neue Rundenanzeige

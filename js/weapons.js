@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo, mergeStatic } from './util.js?v=34';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo, mergeStatic } from './util.js?v=35';
 
 // Waffen: Daten, Modelle, Munition
 export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'sniper'];
@@ -61,6 +61,7 @@ export function makeKnife() {
   g.add(box(0.026, 0.036, 0.006, MAT.steel, 0.038, 0));
   g.add(prof([[0.04, 0.011], [0.13, 0.011], [0.175, 0.0], [0.16, -0.008], [0.04, -0.011]], 0.004, MAT.bright, 0.001));
   g.add(box(0.024, 0.022, 0.008, MAT.steel, -0.064, 0));
+  mergeStatic(g, null); // Leistung: gleiche Materialien zu einem Mesh
   return g;
 }
 export const BUILDERS = {
@@ -450,6 +451,7 @@ export function makeGrenade() {
   ring.position.set(-0.018, 0.056, 0);
   ring.rotation.y = Math.PI / 2;
   g.add(ring);
+  mergeStatic(g, { ring }); // Leistung: Rillen/Hebel zusammenfassen, der Ring bleibt einzeln (wird gezogen)
   g.userData.ring = ring;
   return g;
 }

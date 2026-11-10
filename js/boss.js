@@ -5,13 +5,14 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss } from './zombies.js?v=34';
-import { burst, shockwave, puff, sparks } from './effects.js?v=34';
-import { SFX, SFX3D } from './sfx.js?v=34';
-import { makePanel } from './util.js?v=34';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=34';
-import './weaponkit.js?v=34';
-import { roomOccluders } from './room.js?v=34';
+import { zombies, walkable, registerBoss } from './zombies.js?v=35';
+import { burst, shockwave, puff, sparks } from './effects.js?v=35';
+import { SFX, SFX3D } from './sfx.js?v=35';
+import { makePanel } from './util.js?v=35';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=35';
+import './weaponkit.js?v=35';
+import { roomOccluders } from './room.js?v=35';
+const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
 let template = null;
@@ -219,7 +220,7 @@ function explodeGrenade(p, head) {
   burst(at.clone().setY(0.3), 0x333333, 20);
   shockwave(at.clone().setY(0.05));
   puff(at.clone().setY(0.4), 0x555555, 0.8, 1.6, 0.6, 0.7);
-  const d = Math.hypot(head.x - at.x, head.z - at.z);
+  const d = hyp(head.x - at.x, head.z - at.z);
   if (d < GRENADE_R) { cb.playerHit(p.dmg * (0.45 + 0.55 * (1 - d / GRENADE_R)), boss); cb.pulse(1, 400); }
   else cb.pulse(0.4, 150);
 }
@@ -318,7 +319,7 @@ function updateRings(dt, head) {
     r.r += r.speed * dt;
     r.obj.scale.setScalar(r.r);
     r.obj.material.opacity = Math.max(0, 0.85 * (1 - r.r / r.max));
-    const d = Math.hypot(head.x - r.x, head.z - r.z);
+    const d = hyp(head.x - r.x, head.z - r.z);
     if (!r.hit && Math.abs(d - r.r) < 0.3) { r.hit = true; cb.playerHit(r.dmg, boss); cb.pulse(1, 250); }
     if (r.r >= r.max) { scene.remove(r.obj); r.obj.geometry.dispose(); r.obj.material.dispose(); rings.splice(i, 1); }
   }
@@ -416,7 +417,7 @@ function updateBoss(z, dt, head, opts) {
   }
   const rage = z.rage ? 1.5 : 1;
   const G = z.gun.def;
-  const dist = Math.hypot(player.x - z.pos.x, player.z - z.pos.z);
+  const dist = hyp(player.x - z.pos.x, player.z - z.pos.z);
   let pose = {};
   if (z.mode === 'intro') {
     pose = { armsUp: Math.max(0, Math.sin(Math.min(1, z.t / 1.6) * Math.PI)) };
@@ -487,7 +488,7 @@ function updateBoss(z, dt, head, opts) {
       const blocked = moveBoss(z, z.pos.clone().addScaledVector(z.chargeDir, 1), (3.4 + z.level * 0.3) * rage, dt);
       z.phase += dt * 14;
       pose = { walk: 1.4, lean: 0.6 };
-      if (!z.attackHit && Math.hypot(player.x - z.pos.x, player.z - z.pos.z) < 0.75) { z.attackHit = true; hitPlayer(z, 18 + z.level * 4); }
+      if (!z.attackHit && hyp(player.x - z.pos.x, player.z - z.pos.z) < 0.75) { z.attackHit = true; hitPlayer(z, 18 + z.level * 4); }
       if (blocked || z.t > 1.3) { z.mode = 'recover'; z.t = 0; if (blocked) { SFX3D.bang(z.root.position.clone().setY(1)); burst(z.root.position.clone().setY(1.2), 0x888888, 12); } }
     } else if (a.id === 'stomp') {
       pose = { armsUp: Math.max(0, 1 - z.t * 4), crouch: Math.max(0, 0.4 - z.t) };
