@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=28';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=28';
-import { SFX3D } from './sfx.js?v=28';
-import { burst, addDebris, shockwave } from './effects.js?v=28';
-import { cachedGeo } from './util.js?v=28';
+import { room, surfacesOf, isOpening } from './room.js?v=29';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=29';
+import { SFX3D } from './sfx.js?v=29';
+import { burst, addDebris, shockwave } from './effects.js?v=29';
+import { cachedGeo } from './util.js?v=29';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -99,7 +99,7 @@ function friendFaceTex(img) {
     const t = tmp.getContext('2d');
     t.drawImage(img, 0, 0, w, h);
     t.globalCompositeOperation = 'destination-in';
-    const g = t.createRadialGradient(w / 2, h * 0.5, Math.min(w, h) * 0.3, w / 2, h * 0.5, Math.min(w, h) * 0.52);
+    const g = t.createRadialGradient(w / 2, h * 0.5, Math.min(w, h) * 0.4, w / 2, h * 0.5, Math.min(w, h) * 0.56);
     g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
     t.fillStyle = g; t.save(); t.translate(w / 2, h / 2); t.scale(1, h / w); t.translate(-w / 2, -h / 2); t.fillRect(0, 0, w, h); t.restore();
     ctx.drawImage(tmp, 0, 0);
@@ -117,7 +117,7 @@ function friendFaceTex(img) {
   });
 }
 // gewölbte Fläche vorne am Kopf (Ausschnitt einer Kugel), Bild füllt die ganze Fläche
-const facePatchGeo = cachedGeo('zfacepatch', () => new THREE.SphereGeometry(0.104, 28, 20, Math.PI / 2 - 0.95, 1.9, 0.38, 1.7));
+const facePatchGeo = cachedGeo('zfacepatch', () => new THREE.SphereGeometry(0.104, 32, 24, Math.PI / 2 - 1.2, 2.4, 0.14, 2.2));
 // urls: Bild-Daten (data:…); share: Anteil der Zombies mit Freundes-Gesicht (0…1)
 export function setFriendFaces(urls, share) {
   friendShare = share;
@@ -213,7 +213,7 @@ function buildZombie(type) {
     const patch = new THREE.Mesh(facePatchGeo, pick(FRIEND_FACES));
     patch.userData.part = 'head';
     skull.add(patch);
-    head.scale.setScalar(1.18);
+    head.scale.setScalar(1.32);
   }
   if (!friend && Math.random() < 0.6) head.add(mesh(hairGeo, hairMat, 0, 0.115, -0.005, null, 0.95, 1.1, 1.02));
   const eyeMat = type === 'runner' || type === 'giant' ? EYES[1] : pick(EYES);

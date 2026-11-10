@@ -1,16 +1,16 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=28';
+import { VERSION } from './version.js?v=29';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=28';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=28';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=28';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=28';
-import { facesButtonVisible, setFaces } from './faces.js?v=28';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=28';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=28';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=28';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime } from './zombies.js?v=28';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY } from './util.js?v=29';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=29';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=29';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=29';
+import { facesButtonVisible, setFaces } from './faces.js?v=29';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=29';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=29';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=29';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime } from './zombies.js?v=29';
 
 // =============================================================================
 // Grundgerüst
@@ -177,8 +177,12 @@ const isFree = (h) => !h.held && !h.grab && !h.pull;
 // =============================================================================
 // Alle Waffen, die gerade in der Welt existieren (Startwaffe + gekaufte/gezogene)
 const arsenal = [];
+// Reserve-Munition (begrenzt): Magazine am Gürtel zehren davon, „Volle Munition“ und Wandkauf füllen auf
+const reserveMax = (def) => (def.feed === 'mag' ? def.capacity * (def.tier >= 4 ? 2 : 4) : Math.max(6, def.capacity * 3));
+function refillAmmo(w) { refillWeapon(w); w.reserve = reserveMax(w.def); boardDirty = true; }
 function spawnWeapon(id, starter = false) {
   const w = createWeapon(id);
+  w.reserve = reserveMax(w.def);
   castShadows(w.root);
   w.starter = starter;
   w.lastTouch = elapsed;
@@ -226,7 +230,7 @@ function takeWeapon(w, h) {
   w.holder = h.i;
   w.twoHanding = false;
   h.held = { type: 'weapon', w };
-  setBeltWeapon(w.id, w.def);
+  setBeltWeapon(w.id, w.def, w);
   SFX.grab();
   pulse(h, 0.5, 40);
   boardDirty = true;
@@ -244,27 +248,40 @@ function dropWeapon(h, throwIt = true) {
   w.parts.flash.visible = false;
   w.lastTouch = elapsed;
   // Startpistole an der Hüfte losgelassen: zurück ins Gürtel-Holster
-  if (w.starter && pistolSlot && h.point.distanceTo(pistolSlot.obj.getWorldPosition(tmpV)) < 0.22) { holsterPistol(w); SFX.click(700, 0.4, 0.08); pulse(h, 0.5, 50); return; }
+  if (w.starter && nearHipHolster(h.point)) { holsterPistol(w); SFX.click(700, 0.4, 0.08); pulse(h, 0.5, 50); return; }
   // über der Schulter losgelassen: ins Rückenholster stecken
-  if (!holster && inHolsterZone(h.point)) {
+  if (inHolsterZone(h.point)) {
+    const old = holster;
     holster = w;
     w.holstered = true;
     w.root.visible = false;
+    w.root.position.set(0, -10, 0);
     SFX.click(700, 0.4, 0.08);
     pulse(h, 0.6, 60);
     boardDirty = true;
+    if (old) { old.holstered = false; old.root.visible = true; takeWeapon(old, h); } // tauschen: Waffe vom Rücken in die Hand
     return;
   }
   makeLoose(w, throwIt ? h.vel.clone().multiplyScalar(1.2) : new THREE.Vector3(), throwIt ? h.angVel.clone() : new THREE.Vector3());
   SFX.grab();
 }
 // Rückenholster: hinter den Schultern (links oder rechts)
+// Rückenholster: großzügige Zone hinter/über beiden Schultern
 function inHolsterZone(p) {
   getViewCamera().getWorldDirection(tmpV3);
   const f = tmpV3.setY(0).normalize();
   const side = new THREE.Vector3(-f.z, 0, f.x);
-  const base = headPos.clone().addScaledVector(f, -0.12).add(new THREE.Vector3(0, -0.18, 0));
-  return p.distanceTo(base.clone().addScaledVector(side, 0.18)) < 0.26 || p.distanceTo(base.clone().addScaledVector(side, -0.18)) < 0.26;
+  const base = headPos.clone().addScaledVector(f, -0.1).add(new THREE.Vector3(0, -0.12, 0));
+  const rel = p.clone().sub(headPos);
+  const behind = rel.dot(f) < 0.05 && p.y > headPos.y - 0.45 && p.y < headPos.y + 0.25 && Math.hypot(rel.x, rel.z) < 0.5;
+  return behind || p.distanceTo(base.clone().addScaledVector(side, 0.18)) < 0.34 || p.distanceTo(base.clone().addScaledVector(side, -0.18)) < 0.34;
+}
+// Hüft-Holster der Pistole: großzügig um den Platz an der rechten Hüfte bzw. seitlich am Gürtel
+function nearHipHolster(p) {
+  if (!pistolSlot) return false;
+  if (p.distanceTo(pistolSlot.obj.getWorldPosition(tmpV)) < 0.3) return true;
+  const dy = p.y - belt.position.y, dr = Math.hypot(p.x - belt.position.x, p.z - belt.position.z);
+  return Math.abs(dy) < 0.22 && dr < BELT_R + 0.25 && dr > BELT_R - 0.1;
 }
 function releaseGrab(h) {
   const g = h.grab;
@@ -294,7 +311,7 @@ const starterPistol = () => arsenal.find(w => w.starter);
 // Waffen zurücksetzen: gekaufte weg (optional), alle voll, Pistole in die rechte Hand (bzw. ins Holster)
 function resetWeapons(removeBought = false, toHand = true) {
   if (removeBought) for (const w of [...arsenal]) if (!w.starter) disposeWeapon(w);
-  for (const w of arsenal) if (w.holder < 0 && w !== deskW) refillWeapon(w);
+  for (const w of arsenal) if (w.holder < 0 && w !== deskW) refillAmmo(w);
   const p0 = starterPistol();
   if (!p0) return;
   if (p0.holder < 0 && p0 !== deskW) holsterPistol(p0);
@@ -359,7 +376,8 @@ function ejectMag(w) {
   const drop = makeMag(w.id);
   mag.matrixWorld.decompose(drop.position, drop.quaternion, tmpS);
   w.root.getWorldQuaternion(tmpQ);
-  dropMagObject(drop, w.id, w.magRounds, new THREE.Vector3(0, -1.2, 0).applyQuaternion(tmpQ));
+  w.reserve = (w.reserve || 0) + w.magRounds; // Restpatronen gehen nicht verloren
+  dropMagObject(drop, w.id, 0, new THREE.Vector3(0, -1.2, 0).applyQuaternion(tmpQ));
   mag.visible = false;
   SFX.magOut();
   boardDirty = true;
@@ -564,8 +582,9 @@ const knifeSlot = (() => {
   return slot;
 })();
 // zwei Handgranaten am Gürtel (werden zu jeder Welle aufgefüllt)
-const grenadeSlots = [-0.95, 0.95].map(phi => {
-  const mount = beltMount(phi);
+const grenadeSlots = [0, 1].map(k => { // zwei Granaten übereinander an einer Stelle (links)
+  const mount = beltMount(-0.75);
+  mount.position.y = -k * 0.07;
   const loop = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.012), leather);
   loop.position.set(0, -0.01, -0.016);
   mount.add(loop);
@@ -656,16 +675,6 @@ let pistolSlot = null;
   show.visible = false;
   beltSlots.push(pistolSlot);
 }
-const plankBeltSlot = (() => {
-  const mount = beltMount(0);
-  const pl = makePlankMesh(0.22);
-  pl.rotation.set(0, 0, 0);
-  pl.position.set(0, -0.09, -0.03);
-  mount.add(pl);
-  const slot = { kind: 'plank', mount, obj: pl, available: true, refill: 0, radius: 0.12 };
-  beltSlots.push(slot);
-  return slot;
-})();
 function syncMonkeySlot() { monkeySlot.available = monkeyCount > 0; monkeySlot.obj.visible = monkeyCount > 0; boardDirty = true; }
 // einzelne Munition: Schrotpatrone, Revolverpatrone oder Armbrustbolzen
 function beltAmmoObj(def) {
@@ -674,7 +683,9 @@ function beltAmmoObj(def) {
   if (def.ammo === 'bolt') { const o = makeArrow(); o.rotation.x = Math.PI / 2; o.scale.setScalar(0.7); const g = new THREE.Group(); g.add(o); return g; }
   return makeShell();
 }
-function setBeltWeapon(id, def = null) {
+let beltW = null; // Waffe, deren Munition gerade am Gürtel hängt
+function setBeltWeapon(id, def = null, w = null) {
+  if (w) beltW = w;
   const wdef = def || WEAPON_DEFS[id];
   if (id === beltWeaponId && wdef === beltDef) return;
   beltWeaponId = id;
@@ -685,8 +696,8 @@ function setBeltWeapon(id, def = null) {
     beltSlots.splice(i, 1);
   }
   def = wdef;
-  for (const side of [-1, 1]) {
-    const mount = beltMount(side * 0.55 * settings.snapBelt);
+  for (const side of [1]) { // nur noch ein Munitionsplatz (rechts vorne)
+    const mount = beltMount(side * 0.5 * settings.snapBelt);
     if (def.feed === 'mag') {
       const pouch = new THREE.Mesh(cachedGeo('pouch', () => new THREE.BoxGeometry(0.05, 0.075, 0.042)), pouchMat);
       pouch.position.set(0, -0.022, -0.024);
@@ -730,12 +741,34 @@ function updateBelt(dt) {
   for (const s of beltSlots) {
     if (s.available) continue;
     if (s.kind === 'grenade' && (state === 'playing' || state === 'countdown')) continue; // erst zur nächsten Welle
-    if (s.kind === 'monkey' || s.kind === 'pistol' || s.kind === 'plank') continue; // eigene Logik
+    if (s.kind === 'monkey' || s.kind === 'pistol') continue; // eigene Logik
+    if ((s.kind === 'mag' || s.kind === 'shell') && beltW && beltW.reserve <= 0) continue; // keine Munition mehr
     s.refill -= dt;
     if (s.refill <= 0) { s.available = true; s.obj.visible = true; }
   }
+  // Munition leer: Platz leeren
+  if (beltW && beltW.reserve <= 0) for (const s of beltSlots) if ((s.kind === 'mag' || s.kind === 'shell') && s.available) { s.available = false; s.obj.visible = false; s.refill = 0.5; }
+  // Anzeige über der Munition: wie viel Schuss noch in Reserve
+  const res = beltW ? beltW.reserve : 0, txt = beltW ? (res > 0 ? `${res}` : 'LEER') : '';
+  if (txt !== ammoLabel.txt) {
+    ammoLabel.txt = txt;
+    ammoLabel.p.draw((ctx, w, h) => {
+      if (!txt) return;
+      roundRect(ctx, 2, 2, w - 4, h - 4, 14);
+      ctx.fillStyle = res > 0 ? 'rgba(0,0,0,0.65)' : 'rgba(120,0,0,0.75)'; ctx.fill();
+      ctx.fillStyle = res > (beltDef ? beltDef.capacity : 0) ? '#ffffff' : '#ffcc33';
+      ctx.font = 'bold 60px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(txt, w / 2, h / 2 + 3);
+    });
+  }
+  const am = beltSlots.find(s => s.kind === 'mag' || s.kind === 'shell');
+  ammoLabel.p.mesh.visible = !!(am && beltW && (beltW.holder >= 0 || beltW === deskW));
+  if (am) { am.mount.getWorldPosition(ammoLabel.p.mesh.position); ammoLabel.p.mesh.position.y += 0.1; ammoLabel.p.mesh.lookAt(headPos); }
   belt.updateMatrixWorld(true);
 }
+const ammoLabel = { p: makePanel(0.075, 0.04, 2400), txt: null };
+ammoLabel.p.mesh.renderOrder = 30;
+scene.add(ammoLabel.p.mesh);
 function holdItem(h, type, obj, extra = {}) {
   obj.position.set(0, 0.05, -0.03);
   obj.quaternion.setFromEuler(new THREE.Euler(-0.3, 0, 0));
@@ -777,11 +810,14 @@ function tryBeltGrab(h) {
   best.refill = best.kind === 'knife' ? 2 : best.kind === 'grenade' ? 3 : 1.2;
   if (best.kind === 'monkey') { monkeyCount--; holdItem(h, 'monkey', makeMonkey()); syncMonkeySlot(); return true; }
   if (best.kind === 'pistol') { const p0 = starterPistol(); if (p0) takeWeapon(p0, h); return true; }
-  if (best.kind === 'plank') { best.available = true; best.obj.visible = true; holdItem(h, 'plank', makePlankMesh(1.0)); return true; }
   if (best.kind === 'knife') holdItem(h, 'knife', makeKnife());
   else if (best.kind === 'grenade') holdItem(h, 'grenade', makeGrenade(), { slot: best });
-  else if (best.kind === 'mag') holdItem(h, 'mag', makeMag(beltWeaponId), { weaponId: beltWeaponId, rounds: beltDef.capacity });
-  else holdItem(h, 'shell', beltAmmoObj(WEAPON_DEFS[beltWeaponId]));
+  else if (best.kind === 'mag') {
+    const n = beltW ? Math.min(beltDef.capacity, beltW.reserve) : beltDef.capacity;
+    if (beltW) beltW.reserve -= n;
+    holdItem(h, 'mag', makeMag(beltWeaponId), { weaponId: beltWeaponId, rounds: n });
+  } else { if (beltW) beltW.reserve = Math.max(0, beltW.reserve - 1); holdItem(h, 'shell', beltAmmoObj(WEAPON_DEFS[beltWeaponId])); }
+  boardDirty = true;
   return true;
 }
 
@@ -939,7 +975,7 @@ function collectPowerup(pu) {
   if (pu.type === 'double') active.double = 20;
   if (pu.type === 'slowmo') active.slowmo = 10;
   if (pu.type === 'instakill') active.instakill = 20;
-  if (pu.type === 'ammo') { for (const w of arsenal) refillWeapon(w); refillGrenades(); }
+  if (pu.type === 'ammo') { for (const w of arsenal) refillAmmo(w); refillGrenades(); }
   if (pu.type === 'nuke') {
     nukeFlash = 1;
     SFX.explosion();
@@ -1114,6 +1150,17 @@ function updateRoundFx(dt) {
 }
 // Blickrichtung einer Hand (um die Hochachse)
 function handYaw(h) { const f = new THREE.Vector3(0, 0, -1).applyQuaternion(h.quat); return Math.atan2(-f.x, -f.z); }
+// Brett direkt an einer Tür/einem Fenster mit fehlenden Brettern greifen
+function plankOpeningNear(p) {
+  for (const o of openings()) {
+    if (missingPlanks(o) <= 0) continue;
+    const rel = p.clone().sub(o.mid);
+    if (Math.abs(rel.dot(o.right)) < o.width / 2 + 0.3 && Math.abs(rel.dot(o.normal)) < 0.6 && p.y > o.bottom - 0.2 && p.y < o.top + 0.3) return o;
+  }
+  return null;
+}
+// wenig Munition: gehaltene Waffe hat weniger als ein Magazin in Reserve
+function lowAmmo() { return hands.some(h => { const w = heldWeapon(h); return w && w.reserve < w.def.capacity; }) || (deskW && deskW.reserve < deskW.def.capacity); }
 // Klangkulisse: Musik-Spannung und zufällige Gruselgeräusche aus der Umgebung
 function updateSoundscape(dt) {
   if (state === 'playing') {
@@ -1560,7 +1607,7 @@ function tryBuy(wb, h) {
   const own = ownedWeapon(wb.id);
   if (own) {
     if (!spend(price.ammo(wb.def), where)) return false;
-    refillWeapon(own);
+    refillAmmo(own);
     floatingText('Munition aufgefüllt', where, '#9fe8ff');
     return true;
   }
@@ -1669,8 +1716,8 @@ function upgradeWeapon(w) {
   w.def = upgradedDef(WEAPON_DEFS[w.id], n);
   if (!w.camoMeshes) { w.camoMeshes = []; w.root.traverse(o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial && !o.material.map && !o.material.transparent && o.material.toneMapped !== false) w.camoMeshes.push(o); }); }
   for (const o of w.camoMeshes) o.material = camoMats[n - 1];
-  refillWeapon(w);
-  if (w.holder >= 0 || w === deskW) setBeltWeapon(w.id, w.def);
+  refillAmmo(w);
+  if (w.holder >= 0 || w === deskW) setBeltWeapon(w.id, w.def, w);
   boardDirty = true;
 }
 const bottleMats = {};
@@ -2703,6 +2750,7 @@ function updateHandsXR(dt) {
       else if (tryBeltGrab(h)) { /* vom Gürtel */ }
       else if (holster && inHolsterZone(h.point)) takeWeapon(holster, h); // aus dem Rückenholster
       else if (trapNear(h.point)) pullTrap(trapNear(h.point), h); // Fallen-Hebel
+      else if (inRound() && plankOpeningNear(h.point)) { holdItem(h, 'plank', makePlankMesh(1.0)); } // Brett direkt an der Tür/am Fenster nehmen
       else if (machineNear(h.point)) useMachine(machineNear(h.point), h); // Automat / Aufrüster
       else if (boxNear(h.point)) useBox(h); // Glückskiste
       else if (wallbuyNear(h.point)) tryBuy(wallbuyNear(h.point), h); // Wandkauf
@@ -2734,6 +2782,9 @@ function updateHandsXR(dt) {
     // Waffe in dieser Hand
     const w = heldWeapon(h);
     if (w) updateHeldWeapon(w, h, dt);
+    // spürbare Rückmeldung: Waffe ist über der Schulter (Rücken) bzw. an der Hüfte (Pistole) – loslassen = einstecken
+    const zone = w ? (inHolsterZone(h.point) ? 'back' : w.starter && nearHipHolster(h.point) ? 'hip' : null) : null;
+    if (zone !== h.holsterZone) { h.holsterZone = zone; if (zone) { pulse(h, 0.7, 60); SFX.click(zone === 'back' ? 900 : 1400, 0.15, 0.03); } }
   }
 }
 
@@ -3777,7 +3828,7 @@ function startCountdown() {
   // jede Runde: nur die Startpistole, Punkte neu, neue Wandkauf-Waffen, Glückskiste bereit
   if (holster) { disposeWeapon(holster); holster = null; }
   for (const w of [...arsenal]) if (!w.starter) disposeWeapon(w);
-  for (const w of arsenal) refillWeapon(w);
+  for (const w of arsenal) refillAmmo(w);
   resetWeapons();
   setupWallbuys();
   setupMysteryBox();
@@ -3944,6 +3995,7 @@ function handleZombieHit(res, point, prefix = '') {
     if (inRound() && res.type === 'giant') spawnPowerup(res.pos); // der Riese lässt immer ein Power-up fallen
     else if (inRound() && Math.random() < (playerHp < 50 ? 0.12 : 0.05)) spawnMedkit(res.pos);
     else if (inRound() && !res.nuke && powerups.length < 2 && Math.random() < 0.045) spawnPowerup(res.pos);
+    else if (inRound() && lowAmmo() && !powerups.some(p0 => p0.type === 'ammo') && Math.random() < 0.09) spawnPowerup(res.pos, 'ammo'); // wenig Munition: öfter „Volle Munition“
   }
   if (settings.hitmarker && (!res.dot || res.kill)) SFX.marker(res.kill, res.headshot);
   if (inRound()) {
@@ -4012,7 +4064,7 @@ function statusLines(w, h) {
   const holding = off && off.held && (off.held.type === 'mag' || off.held.type === 'shell');
   const modeName = { safe: 'GESICHERT', semi: d.modes.length > 2 ? 'EINZEL' : 'FEUER', auto: 'DAUERFEUER', burst: 'SALVE' }[mode(w)];
   const loaded = w.chamber === 'live' ? 1 : 0;
-  const ammo = d.feed === 'mag' ? `${w.magInserted ? w.magRounds : '–'}/${d.capacity}+${loaded}` : `${w.tube}/${d.capacity}+${loaded}`;
+  const ammo = (d.feed === 'mag' ? `${w.magInserted ? w.magRounds : '–'}+${loaded}` : `${w.tube}+${loaded}`) + ` | ${w.reserve ?? 0}`;
   const line2 = `${inRound() ? `❤${Math.ceil(playerHp)}${[...perks].map(k => PERKS[k].icon).join('')} 💰${free() ? '∞' : points} · ` : ''}${ammo} · ${modeName}${d.sight === 'scope' ? ` · ${w.zoom.toFixed(0)}x` : ''}`;
   let hint = '';
   if (mode(w) === 'safe') hint = `Gesichert – ${B}: entsichern`;
@@ -4191,23 +4243,27 @@ function equipDesk(w) {
   camera.add(w.root);
   w.root.quaternion.identity();
   deskW = w;
-  setBeltWeapon(w.id, w.def);
+  setBeltWeapon(w.id, w.def, w);
   SFX.grab();
 }
 function desktopReload() { if (deskW) autoReload(deskW); }
+let noAmmoT = 0;
+function floatingNoAmmo(w) { if (elapsed - noAmmoT < 2) return; noAmmoT = elapsed; floatingText('Keine Munition mehr!', w.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.25, 0)), '#ff7070'); }
 // automatisches Nachladen (PC und Einstellung "Nachladen: einfach")
 function autoReload(w) {
   if (!w || w.desktopBusy) return;
   if (w.def.feed === 'mag' ? (w.magInserted && w.magRounds >= w.def.capacity) : w.tube >= w.def.capacity) { if (w.chamber !== 'live') cycleAction(w); return; }
+  const avail = (w.reserve || 0) + (w.def.feed === 'mag' && w.magInserted ? w.magRounds : 0);
+  if (avail <= 0) { SFX.dry(); floatingNoAmmo(w); return; }
   w.desktopBusy = true;
   let t = 0;
   if (w.def.feed === 'mag') {
     if (w.magInserted) { ejectMag(w); t += 0.5 * reloadK(); }
-    later(t, () => insertMag(w, w.def.capacity));
+    later(t, () => { const n = Math.min(w.def.capacity, w.reserve || 0); w.reserve -= n; if (n > 0) insertMag(w, n); });
     t += 0.35 * reloadK();
   } else {
-    const need = w.def.capacity - w.tube;
-    for (let i = 0; i < need; i++) later(t + i * 0.3 * reloadK(), () => { if (w.tube < w.def.capacity) w.tube++; SFX.shellIn(); boardDirty = true; });
+    const need = Math.min(w.def.capacity - w.tube, w.reserve || 0);
+    for (let i = 0; i < need; i++) later(t + i * 0.3 * reloadK(), () => { if (w.tube < w.def.capacity && w.reserve > 0) { w.tube++; w.reserve--; } SFX.shellIn(); boardDirty = true; });
     t += (need * 0.3 + 0.1) * reloadK();
   }
   later(t, () => {

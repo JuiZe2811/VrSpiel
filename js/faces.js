@@ -1,6 +1,6 @@
 // Gesichter von Freunden für die Zombies: Fotos laden, aufs Gesicht zuschneiden, lokal speichern.
 // Die Bilder bleiben nur im Browser dieses Geräts (localStorage) – sie werden nirgends hochgeladen.
-import { setFriendFaces } from './zombies.js?v=28';
+import { setFriendFaces } from './zombies.js?v=29';
 
 const KEY = 'vrspiel-gesichter';
 // fest eingebaute Gesichter (Freunde, mit Erlaubnis) – werden benutzt, solange keine eigenen Fotos geladen sind

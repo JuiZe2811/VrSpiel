@@ -5,6 +5,29 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 29 – Größere Gesichter, aufgeräumter Gürtel, begrenzte Munition, Rücken für jede Waffe
+
+**Gesichter noch größer**
+- Die Fotos sind jetzt größer ausgeschnitten (mit Haaren und Kinn), die Gesichtsfläche bedeckt fast die ganze Vorderseite des Kopfes, und die Köpfe der Freundes-Zombies sind 32 % größer – man erkennt sofort, wer da kommt.
+
+**Aufgeräumter Gürtel**
+- Am Gürtel sind nur noch: **Pistolen-Holster** (rechte Hüfte), **ein Munitionsplatz** (rechts vorne), **Granaten** (links, übereinander), **Messer** und – nur wenn du einen hast – der **Trommel-Affe**. Keine Bretter mehr am Gürtel.
+- **Pistole einstecken** klappt jetzt zuverlässig: einfach mit der Pistole irgendwo an die rechte Hüfte/den Gürtel fahren – es vibriert – und loslassen.
+
+**Begrenzte Munition**
+- Jede Waffe hat eine **Reserve** (z. B. Pistole 60 Schuss, meist 4 Magazine). Ein Magazin vom Gürtel nimmt Patronen aus der Reserve. Ausgeworfene Magazine geben ihre Restpatronen zurück in die Reserve.
+- **Beim Runterschauen** siehst du über dem Munitionsplatz, **wie viele Schuss noch übrig sind** (gelb = weniger als ein Magazin, rot „LEER“ = nichts mehr).
+- Auch die Anzeige am Handgelenk zeigt die Reserve: „15+1 | 60“.
+- Nachschub: das Power-up **„Volle Munition“** (fällt bei wenig Munition deutlich öfter von Zombies), **Munition am Wandkauf** (halber Preis) und **Aufrüsten** füllen die Reserve auf.
+
+**Rücken: zwei Waffen tragen**
+- Jede Waffe kann auf den Rücken: über die Schulter nach hinten führen – es vibriert – und loslassen. Die Zone ist jetzt viel größer.
+- Ist der Rücken schon belegt, wird **getauscht**: die neue Waffe kommt auf den Rücken, die alte springt dir in die Hand.
+- Zum Ziehen über die Schulter greifen.
+
+**Bretter**
+- Bretter holst du dir jetzt **direkt an der Tür bzw. dem Fenster**, an dem welche fehlen: Hand hin, Griff-Taste, Brett anhalten, loslassen.
+
 ## Neu in Version 28 – Gesichter viel besser erkennbar
 
 - Das Foto liegt jetzt auf einer **eigenen gewölbten Gesichtsfläche** vorne am Kopf statt verzerrt auf der Kopfkugel – in höherer Auflösung (300 × 360) und mit weichem Rand, der in die Haut übergeht.
