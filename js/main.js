@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=32';
+import { VERSION } from './version.js?v=33';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=32';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=32';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=32';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=32';
-import { facesButtonVisible, setFaces } from './faces.js?v=32';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=32';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=32';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=32';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=32';
-import { initBoss, spawnBoss, bossReady, currentBoss } from './boss.js?v=32';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=33';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=33';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=33';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=33';
+import { facesButtonVisible, setFaces } from './faces.js?v=33';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=33';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=33';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=33';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=33';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL } from './boss.js?v=33';
 
 // =============================================================================
 // Grundgerüst
@@ -1137,7 +1137,7 @@ function drawRoundFx() {
       ctx.shadowBlur = 12; ctx.shadowColor = '#000';
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 50px system-ui, sans-serif';
       ctx.fillText(`WELLE ${f.to}`, w / 2, 48);
-      const sub = f.to % 5 === 0 && gameMode !== 'training' ? (bossReady() ? `👑 BOSS-RUNDE · STUFE ${f.to / 5} 👑` : '☠ EIN RIESE KOMMT ☠') : f.to > 5 && f.to % 5 === 3 && gameMode !== 'training' ? '☠ EIN RIESE KOMMT ☠' : f.to === 3 ? 'Neu: Brocken' : f.to === 4 ? 'Neu: Platzer' : f.to === 5 ? 'Neu: Spucker' : f.to === UPGRADE_TIERS[1].wave ? 'Aufrüster: Stufe ★★ freigeschaltet' : f.to === UPGRADE_TIERS[2].wave ? 'Aufrüster: Stufe ★★★ freigeschaltet' : '';
+      const sub = f.to % 5 === 0 && gameMode !== 'training' ? (bossReady() ? `👑 BOSS · STUFE ${f.to / 5} · ${bossGunName(f.to / 5)}${f.to / 5 === GRENADE_LEVEL ? ' + GRANATEN' : ''} 👑` : '☠ EIN RIESE KOMMT ☠') : f.to > 5 && f.to % 5 === 3 && gameMode !== 'training' ? '☠ EIN RIESE KOMMT ☠' : f.to === 3 ? 'Neu: Brocken' : f.to === 4 ? 'Neu: Platzer' : f.to === 5 ? 'Neu: Spucker' : f.to === UPGRADE_TIERS[1].wave ? 'Aufrüster: Stufe ★★ freigeschaltet' : f.to === UPGRADE_TIERS[2].wave ? 'Aufrüster: Stufe ★★★ freigeschaltet' : '';
       if (sub) { ctx.fillStyle = '#ffcc33'; ctx.font = 'bold 34px system-ui, sans-serif'; ctx.fillText(sub, w / 2, 372); }
     }
   });
@@ -4071,7 +4071,7 @@ function updateGame(dt) {
     bossSpawnT -= dt;
     if (bossSpawnT <= 0) {
       const lvl = Math.floor(wave / 5);
-      if (spawnBoss(lvl, headPos, DIFFS[diffKey].hp)) speak(lvl === 1 ? 'Der Boss ist da!' : `Der Boss ist zurück – Stufe ${lvl}!`);
+      if (spawnBoss(lvl, headPos, DIFFS[diffKey].hp)) speak((lvl === 1 ? 'Der Boss ist da – mit einer Pistole!' : `Der Boss ist zurück – Stufe ${lvl}, ${lvl <= 8 ? 'jetzt mit ' : ''}${bossGunName(lvl)}!`) + (lvl === GRENADE_LEVEL ? ' Und er hat Granaten!' : ''));
       else bossPending = true, toSpawn = 1; // Modell fehlt: Riese als Ersatz
       boardDirty = true;
     }

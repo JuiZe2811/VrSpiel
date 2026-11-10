@@ -5,12 +5,18 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 33 – Der Boss kämpft mit Waffen
+
+- **Jede Boss-Runde hat er eine bessere Waffe:** Welle 5 Pistole → 10 Revolver → 15 Maschinenpistole → 20 Pump-Flinte → 25 Sturmgewehr → 30 Maschinengewehr → 35 Panzerbüchse → 40 Minigun. Ab Welle 45 wechselt er zwischen den drei stärksten, und jede weitere Stufe trifft härter und schießt schneller.
+- **Fair und ausweichbar:** Vor jeder Salve zielt er sichtbar mit einem roten Laser-Visier. Die Kugeln sind leuchtende Leuchtspuren, die man kommen sieht. Wer sich bewegt, weicht aus, denn sein Zielpunkt folgt dir mit Verzögerung. Wände und Möbel halten die Kugeln auf, man kann also in Deckung gehen.
+- **Ab Welle 25 wirft er ab und zu Granaten:** Sie blinken, und ein roter Ring am Boden zeigt den Gefahrenbereich. Schnell raus da!
+- Nahkampf gibt es weiterhin: Sturmangriff, Stampfer, Teleport (ab Welle 15) und Wirbelwind (ab Welle 20). Wenn er stirbt, fällt ihm die Waffe aus der Hand.
+
 ## Neu in Version 32 – Boss-Runde jede 5. Welle
 
 - **Jede 5. Welle ist eine Boss-Runde:** Es kommen keine Zombies, nur der Boss (eigenes 3D-Modell, `models/boss.glb`). Die Welle ist geschafft, wenn er besiegt ist.
 - **Jedes Mal schwerer und mit neuen Angriffen:**
   - Stufe 1 (Welle 5): Sturmangriff und Stampfer (roter Druckwellen-Ring am Boden, ausweichen!)
-  - Stufe 2 (Welle 10): dazu Bretterwurf (Bretter fliegen im Bogen auf dich zu)
   - Stufe 3 (Welle 15): dazu Teleport (taucht hinter dir auf und schlägt zu) und Wut-Modus bei wenig Leben (rot, schneller, Angriffe direkt hintereinander)
   - Stufe 4 (Welle 20) und höher: dazu Wirbelwind. Mit jeder Stufe hat er mehr Leben, ist schneller, trifft härter und wird etwas größer.
 - **Fair:** Er hat einen Lebensbalken über dem Kopf, und jeder Angriff wird angekündigt (Ausholen). Ein Kopfschuss zählt dreifach. Einfrieren, Fallen und die Atombombe kosten ihn nur ein Stück Leben, sie töten ihn nicht sofort.
