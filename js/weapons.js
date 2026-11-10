@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo, mergeStatic } from './util.js?v=43';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo, mergeStatic } from './util.js?v=44';
 
 // Waffen: Daten, Modelle, Munition
 export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'sniper'];
@@ -404,6 +404,26 @@ const FLASH_SPRITE = (() => {
   const t = new THREE.CanvasTexture(c);
   return new THREE.SpriteMaterial({ map: t, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false });
 })();
+// Visier-Teile automatisch erkennen: kleine Teile direkt auf der Ziellinie (Kimme → Korn bzw. Rotpunkt-Rohr).
+// Sie werden nicht mit anderen Teilen zusammengefasst und bekommen beim Aufrüsten kein Tarnmuster –
+// sonst war das Visier danach nicht mehr zu erkennen bzw. das Rotpunkt-Rohr von hinten unsichtbar.
+const _sb = new THREE.Box3(), _sc = new THREE.Vector3(), _ss = new THREE.Vector3();
+function markSightParts(model, sockets) {
+  const sr = sockets.sightRear && sockets.sightRear.position, sf = sockets.sightFront && sockets.sightFront.position;
+  if (!sr || !sf || Math.abs(sf.z - sr.z) < 1e-4) return;
+  model.updateMatrixWorld(true);
+  const zmin = Math.min(sr.z, sf.z) - 0.03, zmax = Math.max(sr.z, sf.z) + 0.03;
+  model.traverse(o => {
+    if (!o.isMesh || (o.material && o.material.transparent)) return;
+    _sb.setFromObject(o);
+    _sb.getSize(_ss);
+    if (Math.max(_ss.x, _ss.y, _ss.z) > 0.075) return;
+    _sb.getCenter(_sc);
+    if (_sc.z < zmin || _sc.z > zmax || Math.abs(_sc.x) > 0.025) return;
+    const y = sr.y + (sf.y - sr.y) * ((_sc.z - sr.z) / (sf.z - sr.z));
+    if (Math.abs(_sc.y - y) < 0.026) o.userData.sight = true;
+  });
+}
 export function buildWeapon(id) {
   const def = WEAPON_DEFS[id];
   const root = new THREE.Group();
@@ -420,6 +440,7 @@ export function buildWeapon(id) {
     return o;
   };
   BUILDERS[def.builder || id](model, parts, sock, def);
+  markSightParts(model, sockets);
   mergeStatic(model, parts);
   const sc = def.scale || 1;
   model.scale.setScalar(sc);

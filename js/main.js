@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=43';
+import { VERSION } from './version.js?v=44';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=43';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=43';
-import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=43';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=43';
-import { facesButtonVisible, setFaces } from './faces.js?v=43';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=43';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=43';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=43';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=43';
-import { giantModelReady, giantWarmup } from './giantmodel.js?v=43';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=43';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=44';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=44';
+import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=44';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=44';
+import { facesButtonVisible, setFaces } from './faces.js?v=44';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=44';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=44';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=44';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=44';
+import { giantModelReady, giantWarmup } from './giantmodel.js?v=44';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=44';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -1877,12 +1877,13 @@ function upgradedDef(base, n) {
 function upgradeWeapon(w) {
   const n = (w.def.up || 0) + 1;
   w.def = upgradedDef(WEAPON_DEFS[w.id], n);
-  if (!w.camoMeshes) { w.camoMeshes = []; w.root.traverse(o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial && !o.material.map && !o.material.transparent && o.material.toneMapped !== false) w.camoMeshes.push(o); }); }
+  if (!w.camoMeshes) { w.camoMeshes = []; w.root.traverse(o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial && !o.material.map && !o.material.transparent && o.material.toneMapped !== false && !o.userData.sight) w.camoMeshes.push(o); /* Visier bleibt frei */ }); }
   for (const o of w.camoMeshes) o.material = camoMats[n - 1];
   refillAmmo(w); // aufgerüstet = immer komplett neue Munition (volles, größeres Magazin + mehr Reserve)
   if (w.holder >= 0 || w === deskW) setBeltWeapon(w.id, w.def, w);
   const base = WEAPON_DEFS[w.id];
-  floatingText(`${UPGRADE_TIERS[n - 1].stars} Magazin ${base.capacity}→${w.def.capacity} · Reserve ${w.reserve}`, w.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.25, 0)), '#ffd84a');
+  const at = w === deskW ? inFront(1.3, 0.15, headPos.y + 0.15) : w.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.25, 0)); // am PC nicht direkt vor dem Auge
+  floatingText(`${UPGRADE_TIERS[n - 1].stars} Magazin ${base.capacity}→${w.def.capacity} · Reserve ${w.reserve}`, at, '#ffd84a');
   boardDirty = true;
 }
 const bottleMats = {};

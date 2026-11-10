@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=43';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=43';
-import { SFX3D } from './sfx.js?v=43';
-import { burst, addDebris, shockwave } from './effects.js?v=43';
-import { cachedGeo } from './util.js?v=43';
+import { room, surfacesOf, isOpening } from './room.js?v=44';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=44';
+import { SFX3D } from './sfx.js?v=44';
+import { burst, addDebris, shockwave } from './effects.js?v=44';
+import { cachedGeo } from './util.js?v=44';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=43';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=44';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================

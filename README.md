@@ -5,6 +5,12 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 44 – Visiere nach dem Aufrüsten repariert
+
+- **Ursache:** Beim Aufrüsten bekam die ganze Waffe das Tarnmuster, auch die Visier-Teile. Das Rohr des Rotpunkt-Visiers wurde dadurch von hinten unsichtbar, und durch das Visier sah man nur noch eine graue Scheibe. Kimme und Korn bekamen das grelle, bewegte Muster und waren kaum noch zu erkennen.
+- **Lösung:** Visier-Teile werden jetzt automatisch erkannt: kleine Teile direkt auf der Ziellinie zwischen Kimme und Korn bzw. das Rotpunkt-Rohr. Sie bleiben beim Aufrüsten unverändert (schwarz bzw. original). Geprüft bei allen 26 Waffen mit Visier, jeweils normal und mit ★★★.
+- Die Anzeige „Magazin … · Reserve …“ nach dem Aufrüsten erscheint am PC nicht mehr direkt vor dem Auge.
+
 ## Neu in Version 43 – Aufrüsten mit mehr Munition, bessere Boss-Animationen
 
 **Aufrüsten (Pack-a-Punch):** Jede Stufe füllt die Waffe immer komplett auf, gibt ein größeres Magazin und viel mehr Reserve. Danach wird angezeigt, wie viel es jetzt ist. Beispiel Sturmgewehr:
