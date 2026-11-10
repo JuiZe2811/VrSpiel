@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=38';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=38';
-import { SFX3D } from './sfx.js?v=38';
-import { burst, addDebris, shockwave } from './effects.js?v=38';
-import { cachedGeo } from './util.js?v=38';
+import { room, surfacesOf, isOpening } from './room.js?v=39';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=39';
+import { SFX3D } from './sfx.js?v=39';
+import { burst, addDebris, shockwave } from './effects.js?v=39';
+import { cachedGeo } from './util.js?v=39';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=38';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=39';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -181,7 +181,7 @@ export const TYPES = {
   crawler: { name: 'Kriecher', scale: [0.82, 0.9], width: 0.95, hp: 60, speed: 1.4, dmg: 7 },
   bloater: { name: 'Platzer', scale: [0.92, 1.0], width: 1.6, hp: 90, speed: 0.8, dmg: 6, explode: true },
   spitter: { name: 'Spucker', scale: [0.86, 0.94], width: 0.85, hp: 85, speed: 0.95, dmg: 8, spit: true },
-  giant: { name: 'Riese', scale: [1.24, 1.3], width: 1.5, hp: 900, speed: 0.62, dmg: 28 }
+  giant: { name: 'Riese', scale: [1.05, 1.1], width: 1.5, hp: 900, speed: 0.62, dmg: 28 }
 };
 function buildZombie(type) {
   const T = TYPES[type];
@@ -333,6 +333,7 @@ function freeZombie(z) {
   z.skinned.geometry.dispose();
   z.skinned.skeleton.dispose();
 }
+const _rcA = new THREE.Vector3(), _rcB = new THREE.Vector3(), _rcP = new THREE.Vector3(), _rcC = new THREE.Vector3();
 function skinify(z) {
   if (!skinningOn) { z.hitTorso = z.torso.children[1]; return; }
   const root = z.root;
@@ -389,16 +390,33 @@ function skinify(z) {
   const proxies = {};
   const holder = { torso: z.torso, head: z.head, armL: z.arms[0].shoulder, armR: z.arms[1].shoulder, legL: z.legs[0].hip, legR: z.legs[1].hip };
   for (const [name, bone] of Object.entries(holder)) { const o = new THREE.Object3D(); o.userData.part = name; o.userData.zombie = z; o.userData.proxy = true; bone.add(o); proxies[name] = o; }
-  const orig = THREE.SkinnedMesh.prototype.raycast;
+  // Treffertest mit einfachen Kapseln/Kugeln je Körperteil (an den Knochen befestigt) statt jedes Dreieck
+  // samt Skelett durchzurechnen – das kostete ~3 ms pro Kugel und Zombie (Schrot/Dauerfeuer = Lag)
+  const caps = [];
+  const cap = (g, a, b, r, part) => caps.push({ g, a: new THREE.Vector3(0, a, 0), b: new THREE.Vector3(0, b, 0), r, part });
+  cap(z.hips, -0.02, 0.04, 0.14, 'torso');
+  cap(z.torso, 0.08, 0.42, z.belly ? 0.2 : 0.15, 'torso');
+  cap(z.head, 0.05, 0.15, 0.11, 'head');
+  for (let k = 0; k < 2; k++) {
+    const A = z.arms[k], L = z.legs[k];
+    cap(A.shoulder, -0.02, -0.25, 0.055, A.name); cap(A.elbow, 0, -0.3, 0.05, A.name);
+    cap(L.hip, -0.02, -0.4, 0.075, L.name); cap(L.knee, 0, -0.46, 0.06, L.name);
+  }
+  const lost = (name) => (name === 'armL' && z.armLost[0]) || (name === 'armR' && z.armLost[1]) || (name === 'legL' && z.legLost[0]) || (name === 'legR' && z.legLost[1]);
   mesh.raycast = function (rc, out) {
-    const start = out.length;
-    orig.call(this, rc, out);
-    for (let i = start; i < out.length; i++) {
-      const name = PART_NAMES[parts[out[i].face.a]];
-      if (!name || !proxies[name]) { out.splice(i, 1); i--; continue; }
-      // abgefallene Gliedmaßen treffen nicht mehr
-      if ((name === 'armL' && z.armLost[0]) || (name === 'armR' && z.armLost[1]) || (name === 'legL' && z.legLost[0]) || (name === 'legR' && z.legLost[1])) { out.splice(i, 1); i--; continue; }
-      out[i].object = proxies[name];
+    if (!z.root.visible) return;
+    const ray = rc.ray;
+    if (ray.distanceSqToPoint(_rcC.setFromMatrixPosition(z.root.matrixWorld).setY(_rcC.y + 0.9 * z.scale)) > 2.2 * z.scale * z.scale) return; // grob vorab
+    for (const c of caps) {
+      if (lost(c.part) || !proxies[c.part] || (c.part === 'head' && z.headless)) continue;
+      const m = c.g.matrixWorld.elements;
+      const sc = (Math.hypot(m[0], m[1], m[2]) + Math.hypot(m[4], m[5], m[6]) + Math.hypot(m[8], m[9], m[10])) / 3;
+      _rcA.copy(c.a).applyMatrix4(c.g.matrixWorld); _rcB.copy(c.b).applyMatrix4(c.g.matrixWorld);
+      const r = c.r * sc, d2 = ray.distanceSqToSegment(_rcA, _rcB, _rcP, null);
+      if (d2 > r * r) continue;
+      const t = Math.max(0, ray.origin.distanceTo(_rcP) - Math.sqrt(r * r - d2));
+      if (t < rc.near || t > rc.far) continue;
+      out.push({ distance: t, point: ray.at(t, new THREE.Vector3()), object: proxies[c.part], face: null });
     }
   };
   mesh.userData.part = 'skinned';
@@ -459,6 +477,7 @@ export function clearPlanks() {
 }
 export const plankMeshes = () => planks.map(p => p.board);
 // für den Boss: ein Brett abreißen (true, wenn noch eins da war)
+export const navPath = (from, to) => findPath(from, to); // Wegsuche (auch für den Boss)
 export function tearPlankFor(o, pos) { if (!o.planks || !o.planks.length) return false; tearPlank(o, pos); return true; }
 function tearPlank(o, zombiePos) {
   const p = o.planks.pop();
@@ -767,7 +786,7 @@ export function damageZombie(mesh, point, dir, dmg, quiet = false) {
 }
 // Einschussloch + Blutspur bleiben am getroffenen Körperteil
 function addWound(z, mesh, point) {
-  if (z.monster) return; // Monster-Modell: keine Einschusslöcher am unsichtbaren Baukasten-Körper
+  if (z.monster || z.T.boss) return; // Monster/Boss: keine Einschusslöcher an unsichtbaren Trefferkörpern
   if ((z.wounds || 0) >= (woundsMax) ) return;
   if (!mesh.geometry && mesh.userData.proxy) { // Skinned-Körper: Loch am Knochen befestigen
     z.wounds = (z.wounds || 0) + 1;

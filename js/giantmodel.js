@@ -7,6 +7,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 let template = null, monsterMat = null;
 export const giantModelReady = () => !!template;
+export function giantWarmup() { const m = cloneSkinned(template); m.traverse(o => { if (o.isMesh) o.frustumCulled = false; }); return m; }
 export function loadGiantModel() {
   new GLTFLoader().load('models/giant.glb', (g) => {
     const t = g.scene;

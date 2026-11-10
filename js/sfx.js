@@ -333,6 +333,8 @@ export const SFX3D = {
   },
   splat(pos) { // Treffer: nass und dumpf
     if (!audioCtx) return;
+    // höchstens ~20 pro Sekunde (Dauerfeuer/Schrot auf den Boss erzeugte sonst Hunderte 3D-Klangquellen → Lag)
+    const now = audioCtx.currentTime; if (now - (SFX3D._splatT || 0) < 0.05) return; SFX3D._splatT = now;
     const t = audioCtx.currentTime, out = panner(pos, null, 0.1);
     noise(t, 0.09, 0.7, 'lowpass', 1800, 300, 1, out);
     noise(t + 0.01, 0.06, 0.3, 'bandpass', 600, 250, 3, out);

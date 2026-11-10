@@ -5,18 +5,36 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor } from './zombies.js?v=38';
-import { burst, shockwave, puff, sparks } from './effects.js?v=38';
-import { SFX, SFX3D } from './sfx.js?v=38';
-import { makePanel } from './util.js?v=38';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=38';
-import './weaponkit.js?v=38';
-import { roomOccluders } from './room.js?v=38';
+import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath } from './zombies.js?v=39';
+import { burst, shockwave, puff, sparks } from './effects.js?v=39';
+import { SFX, SFX3D } from './sfx.js?v=39';
+import { makePanel } from './util.js?v=39';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=39';
+import './weaponkit.js?v=39';
+import { roomOccluders } from './room.js?v=39';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
 let template = null;
 export const bossReady = () => !!template;
+// Vorwärmen: eine Kopie einmal unsichtbar mitzeichnen lassen → Shader & Texturen sind fertig, bevor der Boss kommt
+// (sonst ruckelt es beim ersten Erscheinen). Die Kopie bleibt (unsichtbar) in der Szene, damit nichts wieder freigegeben wird.
+export function bossWarmup() {
+  const g = new THREE.Group();
+  const m = cloneSkinned(template);
+  m.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.material = o.material.clone(); o.castShadow = true; } }); // wie beim Erscheinen: eigene Materialien
+  g.add(m);
+  for (const G of GUNS) { const w = buildWeapon(G.id); w.parts.flash.visible = true; g.add(w.root); } // alle Boss-Waffen (Rotpunkt-Glas, Mündungsfeuer …)
+  const sc = document.createElement('canvas'); sc.width = sc.height = 4;
+  g.add(new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(sc), color: 0x555555, transparent: true, opacity: 0.5, depthWrite: false }))); // Rauch
+  g.add(new THREE.Mesh(laserGeo, new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending })));
+  g.add(new THREE.Mesh(tracerGeo, tracerMat));                                       // Leuchtspur-Kugel
+  g.add(new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48), new THREE.MeshBasicMaterial({ color: 0xff3a1a, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, toneMapped: false })));
+  g.add(makeGrenade());
+  const p = makePanel(0.7, 0.1, 900); p.mesh.material.depthTest = false; g.add(p.mesh); // Lebensbalken
+  g.traverse(o => { if (o.isMesh || o.isSprite) o.frustumCulled = false; if (o.isMesh && !o.material.transparent) o.castShadow = true; });
+  return g;
+}
 export function initBoss(s, callbacks) {
   scene = s;
   Object.assign(cb, callbacks);
@@ -43,6 +61,10 @@ const comb = (...qs) => qs.reduce((acc, q) => acc.multiply(q), new THREE.Quatern
 
 // ---- Erzeugen ------------------------------------------------------------------------
 let boss = null, projectiles = [], rings = [], bar = null;
+const HIT_MAT = new THREE.MeshBasicMaterial({ visible: false });
+const HIT_HEAD = new THREE.SphereGeometry(0.14, 8, 6);
+const HIT_TORSO = new THREE.CapsuleGeometry(0.24, 0.42, 3, 8);
+const HIT_LEGS = new THREE.CapsuleGeometry(0.2, 0.5, 3, 8);
 export const currentBoss = () => boss;
 export function spawnBoss(level, head, diffHp = 1) {
   if (!template) return null;
@@ -53,7 +75,7 @@ export function spawnBoss(level, head, diffHp = 1) {
   const root = new THREE.Group(), body = new THREE.Group();
   root.add(body);
   body.add(model);
-  const S = 1.05 + Math.min(0.25, level * 0.04); // mit jeder Stufe etwas größer
+  const S = 0.92 + Math.min(0.12, level * 0.02); // etwas kleiner als früher, mit jeder Stufe minimal größer
   model.scale.setScalar(S);
   const bones = {};
   model.traverse(o => { if (o.isBone) bones[o.name] = o; });
@@ -91,25 +113,18 @@ export function spawnBoss(level, head, diffHp = 1) {
   z.yaw = Math.atan2(head.x - pos.x, head.z - pos.z);
   root.position.copy(pos);
   root.rotation.y = z.yaw;
-  // Treffer: Kopf oder Körper je nach Höhe des Treffers
+  // Treffer: einfache unsichtbare Trefferkörper (Kopf-Kugel, Rumpf- und Bein-Kapsel) statt Treffertest
+  // gegen das ganze Modell (21 000 Punkte mit Skelett pro Schuss = starker Lag bei Dauerfeuer/Schrot)
   const proxies = {};
-  for (const [name, bone] of [['head', bones.Head], ['torso', bones.Spine1]]) { const o = new THREE.Object3D(); o.userData = { part: name, zombie: z, proxy: true }; bone.add(o); proxies[name] = o; }
+  const mk = (geo, part, y) => { const m = new THREE.Mesh(geo, HIT_MAT); m.userData = { part, zombie: z }; m.position.y = y * S; m.scale.setScalar(S); body.add(m); return m; };
+  proxies.head = mk(HIT_HEAD, 'head', 1.6);
+  proxies.torso = mk(HIT_TORSO, 'torso', 1.12);
+  mk(HIT_LEGS, 'torso', 0.42);
   z.proxies = proxies;
   z.hitTorso = proxies.torso;
   model.traverse(o => {
     if (!o.isSkinnedMesh) return;
-    o.userData.part = 'skinned';
-    o.userData.zombie = z;
     o.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 1.4);
-    const orig = THREE.SkinnedMesh.prototype.raycast;
-    o.raycast = function (rc, out) {
-      const start = out.length;
-      orig.call(this, rc, out);
-      for (let i = start; i < out.length; i++) {
-        const local = root.worldToLocal(out[i].point.clone());
-        out[i].object = local.y > 1.5 * S ? proxies.head : proxies.torso;
-      }
-    };
   });
   // Lebensbalken über dem Kopf
   bar = { p: makePanel(0.7, 0.1, 900), last: -1 };
@@ -305,7 +320,7 @@ function moveBoss(z, target, speed, dt) {
   const step = Math.min(len, speed * dt);
   d.multiplyScalar(step / len);
   const nx = z.pos.x + d.x, nz = z.pos.z + d.z;
-  if (walkable(nx, nz)) { z.pos.x = nx; z.pos.z = nz; return false; }
+  if (walkable(nx, nz) || !walkable(z.pos.x, z.pos.z)) { z.pos.x = nx; z.pos.z = nz; return false; } // (steht er in einer Sperrzone, darf er heraus)
   if (walkable(nx, z.pos.z)) z.pos.x = nx; else if (walkable(z.pos.x, nz)) z.pos.z = nz; else return true; // Wand
   return false;
 }
@@ -389,7 +404,9 @@ function updateBoss(z, dt, head, opts) {
     bar.p.mesh.position.copy(z.root.position).add(new THREE.Vector3(0, 2.15 * z.scale, 0));
     bar.p.mesh.lookAt(head);
     const k = Math.max(0, z.hp / z.maxHp);
-    if (Math.abs(k - bar.last) > 0.004) {
+    bar.t = (bar.t || 0) - dt;
+    if (Math.abs(k - bar.last) > 0.004 && (bar.t <= 0 || k <= 0)) { // höchstens ~7× pro Sekunde neu zeichnen (Textur-Upload kostet)
+      bar.t = 0.15;
       bar.last = k;
       bar.p.draw((ctx, w, h) => {
         ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, w, h);
@@ -467,13 +484,26 @@ function updateBoss(z, dt, head, opts) {
   } else if (z.mode === 'move') {
     // Abstand halten (2–3 m), dabei seitlich ausweichen
     const far = G.near ? 2.6 : 4.2, close = G.near ? 1.5 : 2.6;
-    const want = dist > far ? player.clone() : dist < close ? z.pos.clone().add(flat(z.pos).sub(player).normalize()) : z.pos.clone().add(new THREE.Vector3(-(player.z - z.pos.z), 0, player.x - z.pos.x).normalize().multiplyScalar(Math.sin(z.t * 0.7) > 0 ? 1 : -1));
-    moveBoss(z, want, z.speed * rage, dt);
-    face(z, player, dt);
+    // freie Sicht zum Spieler? sonst wie die Zombies dem berechneten Weg folgen (um Ecken, durch Türen)
+    z.losT = (z.losT || 0) - dt;
+    if (z.losT <= 0) { z.losT = 0.2; z.los = clearPath(z.pos, player); }
+    let want;
+    if (!z.los) {
+      z.pathT = (z.pathT || 0) - dt;
+      if (!z.navP || !z.navP.length || z.pathT <= 0) { z.navP = navPath(z.pos, player); z.pathT = 0.7; }
+      while (z.navP.length > 1 && hyp(z.navP[0].x - z.pos.x, z.navP[0].z - z.pos.z) < 0.25) z.navP.shift();
+      want = z.navP[0] || player;
+      // feststecken → neu planen und kurz zur Seite
+      z.stuckT = (z.stuckT || 0) + dt;
+      if (z.stuckT > 0.8) { if (hyp(z.pos.x - (z.sx ?? 1e9), z.pos.z - (z.sz ?? 1e9)) < 0.1) z.pathT = 0; z.stuckT = 0; z.sx = z.pos.x; z.sz = z.pos.z; }
+    } else want = dist > far ? player.clone() : dist < close ? z.pos.clone().add(flat(z.pos).sub(player).normalize()) : z.pos.clone().add(new THREE.Vector3(-(player.z - z.pos.z), 0, player.x - z.pos.x).normalize().multiplyScalar(Math.sin(z.t * 0.7) > 0 ? 1 : -1));
+    moveBoss(z, want, z.speed * rage * (z.los ? 1 : 1.25), dt);
+    face(z, z.los ? player : want, dt);
     z.phase += dt * 6 * z.speed * rage;
     pose = { walk: 1 };
     z.cool -= dt * rage;
     if (z.stepT === undefined || (z.stepT -= dt) <= 0) { z.stepT = 0.42 / rage; SFX3D.step(z.root.position.clone(), 1.3); }
+    if (z.cool <= 0 && !z.los) z.cool = 0.3; // ohne freie Sicht nicht angreifen, erst hinlaufen
     if (z.cool <= 0) {
       z.atk = pickAttack(z, dist);
       z.last = z.atk.id;

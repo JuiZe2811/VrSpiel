@@ -5,6 +5,22 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 39 – Bosse ohne Lag, kleiner, finden den Weg
+
+**Lag behoben:**
+- **Treffertest:** Jeder Schuss auf den Boss rechnete bisher das ganze Modell samt Skelett durch (21.000 Punkte). Bei Schrot oder Dauerfeuer kostete das rund 110 ms pro Bild. Jetzt gibt es einfache Trefferkörper (Kopf, Rumpf, Beine) und etwa 1 ms.
+- **Alle Zombies und der Riese** werden ebenfalls über einfache Kapseln je Körperteil getroffen (Kopf, Rumpf, Arme, Beine) statt über jedes Dreieck. Riese bei Schrotfeuer: 29 ms → 0,8 ms pro Bild. Kopfschüsse, Gliedmaßen und abgeschossene Teile funktionieren wie vorher.
+- **Vorwärmen:** Shader und Texturen von Boss (inklusive aller Boss-Waffen, Laser, Lebensbalken, Effekte) und Riese werden gleich nach dem Laden einmal unsichtbar vorbereitet. Dadurch gibt es keinen Ruckler mehr, wenn sie erscheinen.
+- **Bei Dauerfeuer gedrosselt:** Treffer-Geräusche (höchstens etwa 20 pro Sekunde) und das Neuzeichnen des Boss-Lebensbalkens (höchstens etwa 7-mal pro Sekunde).
+
+**Kleiner:**
+- Der Riese ist jetzt etwa 2 m groß statt etwa 2,4 m.
+- Der Boss ist etwa 1,6–1,8 m groß statt 1,8–2,2 m.
+
+**Bewegung im Raum:**
+- Der Boss folgt jetzt wie die Zombies dem berechneten Weg (um Ecken, durch Türen), sobald er dich nicht direkt sieht. Er greift erst an, wenn er freie Sicht hat. Feststecken wird erkannt.
+- Getestet im geschlossenen Raum (versetzte Tür, enger Gang, Tisch vor der Tür, Zickzack): Boss und Riese kommen überall an. Der alte Boss kam nie an.
+
 ## Neu in Version 38 – Der Boss kommt durchs Fenster
 
 - Der Boss erscheint jetzt wie die Zombies **draußen vor einem zufälligen Fenster** (gibt es keins, vor einer Tür). Er läuft hin, **reißt die Bretter ab**, **steigt geduckt herein** und brüllt. Erst dann nimmt er dich ins Visier und greift an. Vorher konnte er hinter der Wand erscheinen und dort hängen bleiben.

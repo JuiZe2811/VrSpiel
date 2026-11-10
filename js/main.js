@@ -1,17 +1,18 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=38';
+import { VERSION } from './version.js?v=39';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=38';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=38';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=38';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=38';
-import { facesButtonVisible, setFaces } from './faces.js?v=38';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=38';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=38';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=38';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=38';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL } from './boss.js?v=38';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=39';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=39';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=39';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=39';
+import { facesButtonVisible, setFaces } from './faces.js?v=39';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=39';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=39';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=39';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=39';
+import { giantModelReady, giantWarmup } from './giantmodel.js?v=39';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=39';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -4168,6 +4169,7 @@ function updateGame(dt) {
 const killPts = (res) => (res.headshot ? 100 : 60);
 const hitCap = (z) => (z.type === 'boss' ? 400 : z.type === 'giant' ? 200 : 60);
 const PLANK_CAP = 300;
+let lastMarkerT = -1;
 let plankPts = 0;
 function awardPlank() { if (!inRound() || plankPts >= PLANK_CAP) return 0; plankPts += 10; award(10); return 10; }
 function handleZombieHit(res, point, prefix = '') {
@@ -4186,7 +4188,7 @@ function handleZombieHit(res, point, prefix = '') {
     else if (inRound() && !res.nuke && powerups.length < 2 && Math.random() < 0.045 * DIFF().drops) spawnPowerup(res.pos);
     else if (inRound() && lowAmmo() && !powerups.some(p0 => p0.type === 'ammo') && Math.random() < 0.09) spawnPowerup(res.pos, 'ammo'); // wenig Munition: öfter „Volle Munition“
   }
-  if (settings.hitmarker && (!res.dot || res.kill)) SFX.marker(res.kill, res.headshot);
+  if (settings.hitmarker && (!res.dot || res.kill) && (res.kill || elapsed - lastMarkerT > 0.05)) { lastMarkerT = elapsed; SFX.marker(res.kill, res.headshot); } // (gedrosselt bei Dauerfeuer)
   if (inRound()) {
     if (!res.explosion && !res.dot) stats.hits++;
     const mult = active.double > 0 ? 2 : 1;
@@ -4682,6 +4684,20 @@ function frame() {
   try { frameInner(); } finally { const d = performance.now() - _t0; profStat.sum += d; profStat.n++; profStat.max = Math.max(profStat.max, d); }
 }
 const profStat = { sum: 0, n: 0, max: 0 };
+// Boss- und Riesen-Modell einmal unsichtbar mitzeichnen, sobald geladen (Shader/Texturen vorbereiten → kein Ruckler beim Erscheinen)
+let warmed = false;
+function warmupModels() {
+  if (warmed || !bossReady() || !giantModelReady()) return;
+  warmed = true;
+  const objs = [bossWarmup(), giantWarmup()];
+  for (const o of objs) { o.position.set(headPos.x, -60, headPos.z); o.traverse(m => { if (m.isMesh) m.castShadow = true; }); scene.add(o); }
+  renderer.shadowMap.needsUpdate = true;
+  later(0.3, () => { renderer.shadowMap.needsUpdate = true; });
+  // Effekte beim Erscheinen (Rauch, Druckwelle, Partikel) ebenfalls einmal unsichtbar auslösen
+  const at = new THREE.Vector3(headPos.x, -60, headPos.z);
+  burst(at, 0x3a3a3a, 4); puff(at, 0x555555, 0.6, 0.3, 0.6, 0.7); shockwave(at);
+  later(0.6, () => { for (const o of objs) o.visible = false; });
+}
 function frameInner() {
   const rawDt = clock.getDelta();
   const dt = Math.min(rawDt, 0.05);
@@ -4704,6 +4720,7 @@ function frameInner() {
     timers[i].t -= dt;
     if (timers[i].t <= 0) { const f = timers[i].fn; timers.splice(i, 1); f(); }
   }
+  warmupModels();
   updateBelt(dt);
   if (xr) {
     readInputs();
