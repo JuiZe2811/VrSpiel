@@ -5,6 +5,15 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 40 – Fehlersuche
+
+Geprüft mit allen automatischen Tests (Waffen, Nachladen, Holster, Gürtel, Bretter, Automaten, Fallen, Affe, Granaten, Boss, Riese, Schwierigkeitsgrade, Wegfindung), einem Langzeit-Test über 26 Wellen und einem Chaos-Test (831 zufällige Aktionen: Tasten, Schüsse, Wellen-Sprünge, Power-ups, Neustarts, Moduswechsel) – 0 Fehler.
+
+Behoben:
+- **Speicherleck:** Jedes Magazin, jede Granate, jeder Affe und jedes Messer bekam eigene neue Grafik-Puffer, die nie freigegeben wurden (seit v35). Bei langen Runden wuchs der Speicher dadurch ständig. Jetzt werden sie aus einer Vorlage geklont und teilen sich die Geometrie. Langzeit-Test: Die Geometrien bleiben bei etwa 243 statt +1,6 pro Welle.
+- **Speicher:** Entfernte Waffen, Wandkauf-Modelle und der Boss (Skelett, Waffen) geben ihren Grafikspeicher wieder frei.
+- **Kopftreffer:** Die Kopf-Trefferzone deckt jetzt den ganzen Schädel inklusive Haaren ab.
+
 ## Neu in Version 39 – Bosse ohne Lag, kleiner, finden den Weg
 
 **Lag behoben:**
