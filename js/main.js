@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=45';
+import { VERSION } from './version.js?v=46';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=45';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=45';
-import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=45';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=45';
-import { facesButtonVisible, setFaces } from './faces.js?v=45';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=45';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=45';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=45';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=45';
-import { giantModelReady, giantWarmup } from './giantmodel.js?v=45';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=45';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=46';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=46';
+import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=46';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=46';
+import { facesButtonVisible, setFaces } from './faces.js?v=46';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=46';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=46';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=46';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=46';
+import { giantModelReady, giantWarmup } from './giantmodel.js?v=46';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=46';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -533,7 +533,10 @@ function tryFire(w, desktopRay) {
       if (!z) { if (hh.object.userData.plank) { burst(hh.point, 0xb08850, 6); continue; } hit = hh; break; }
       if (seen.has(z)) continue;
       seen.add(z);
-      handleZombieHit(damageZombie(hh.object, hh.point, d, dmg * Math.pow(0.8, pierced)), hh.point, pierced ? '🎯 ' : '');
+      const res = damageZombie(hh.object, hh.point, d, dmg * Math.pow(w.def.pierceKeep || 0.8, pierced));
+      if (w.def.incendiary && res && !res.kill) ignite(z, w.def.incendiary);
+      if (w.def.explodeKill && res && res.kill && res.headshot) killBlast(hh.point);
+      handleZombieHit(res, hh.point, pierced ? '🎯 ' : '');
       hit = hh;
       if (++pierced >= w.def.pierce) break;
     }
@@ -544,7 +547,7 @@ function tryFire(w, desktopRay) {
     if (ud.surface) { if (p < 4) wallImpact(hit, d); continue; }
     if (ud.plank) { burst(hit.point, 0xb08850, 6); continue; }
     if (ud.zombie) {
-      if (!w.def.pierce) handleZombieHit(damageZombie(hit.object, hit.point, d, dmg), hit.point);
+      if (!w.def.pierce) { const res = damageZombie(hit.object, hit.point, d, dmg); if (w.def.incendiary && res && !res.kill) ignite(ud.zombie, w.def.incendiary); handleZombieHit(res, hit.point); }
       // Blut spritzt auf die Wand/den Tisch dahinter
       if (Math.random() < 0.6) {
         raycaster.set(hit.point, d);
@@ -1510,6 +1513,13 @@ function zombiesInCone(from, dir, range, angle) {
   return out;
 }
 const burning = new Set();
+// Drachenatem (aufgerüstete Flinte): Zombie brennt ein paar Sekunden
+function ignite(z, dmg) { if (!z || z.state === 'dead') return; if (!z.burnT) burning.add(z); z.burnT = 3; z.burnDmg = Math.max(z.burnDmg || 0, dmg); }
+// Kopfschuss-Explosion (Scharfschütze ★★★): kleine Explosion an der Stelle
+function killBlast(at) {
+  burst(at, 0xffb030, 18); shockwave(at.clone()); SFX.explosion(0.5);
+  for (const r of explosionDamage(at, 1.6, 220)) handleZombieHit(r, r.pos.clone().setY(1), '💥 ');
+}
 function flameShot(from, dir, dmg, up) {
   for (let i = 0; i < 3; i++) spawnFlamePart(from.clone(), dir.clone().add(new THREE.Vector3().randomDirection().multiplyScalar(0.12)).normalize().multiplyScalar(THREE.MathUtils.randFloat(6, 8)), flameMat, 0.6, 0.08);
   flashLight.position.copy(from).addScaledVector(dir, 1); flashLight.distance = 4; flashLight.intensity = 6;
@@ -1551,10 +1561,10 @@ function updateFlames(dt) {
     if (z.burnTick <= 0) {
       z.burnTick = 0.5;
       const c = z.root.position.clone().setY(1);
-      handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, new THREE.Vector3(0, -1, 0), z.burnUp ? 16 : 9, true), c, '🔥 ');
+      handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, new THREE.Vector3(0, -1, 0), z.burnDmg || (z.burnUp ? 16 : 9), true), c, '🔥 ');
       if (Math.random() < 0.3) SFX.fire();
     }
-    if (z.burnT <= 0) { burning.delete(z); z.burnT = 0; }
+    if (z.burnT <= 0) { burning.delete(z); z.burnT = 0; z.burnDmg = 0; }
   }
 }
 
@@ -1882,9 +1892,32 @@ function makeCamo(base, colors) {
 const camoMats = UPGRADE_TIERS.map(t => makeCamo(t.base, t.colors));
 const camoMat = camoMats[0];
 // Stufe n aus der Grundwaffe berechnen (nicht aufeinander stapeln)
+// Besondere Fähigkeiten beim Aufrüsten – damit sich Scharfschützen, Flinten & Co. lohnen (nicht nur Maschinengewehre)
+const SNIPERS = ['sniper', 'hunter', 'antimat', 'dmr'], SHOTGUNS = ['shotgun', 'autoshot', 'dbl', 'sawed'], HANDCANNONS = ['revolver', 'magnum', 'lever'];
+function upgradeAbilities(id, base, n) {
+  const a = {}, names = [];
+  if (SNIPERS.includes(id)) {
+    if (base.action === 'bolt') { a.autoCycle = true; a.action = 'none'; names.push('Halbautomatisch – kein Repetieren mehr'); }
+    a.pierce = (base.pierce || 1) + 2 * n;                                  // ★ 3 · ★★ 5 · ★★★ 7 Zombies hintereinander
+    names.push(`Durchschlag: ${a.pierce} Zombies`);
+    a.pierceKeep = 0.9;                                                     // verliert kaum Schaden pro Zombie
+    if (n >= 3) { a.explodeKill = true; names.push('Kopfschuss-Explosion'); }
+  } else if (SHOTGUNS.includes(id)) {
+    a.pellets = Math.round(base.pellets * (1 + 0.25 * n)); a.spread = base.spread * (1 - 0.15 * n);
+    names.push(`${a.pellets} Kugeln, enger gestreut`);
+    if (base.action === 'pump') { a.autoCycle = true; a.action = 'none'; names.push('Automatisch – kein Pumpen mehr'); }
+    if (n >= 2) { a.incendiary = 8 + 6 * n; names.push('Drachenatem: Zombies brennen'); }
+    if (n >= 3) { a.pierce = 2; a.pierceKeep = 0.75; names.push('Kugeln durchschlagen'); }
+  } else if (HANDCANNONS.includes(id)) {
+    if (base.action === 'lever') { a.autoCycle = true; names.push('Repetiert von selbst'); }
+    a.pierce = 1 + n; a.pierceKeep = 0.85; names.push(`Durchschlag: ${a.pierce} Zombies`);
+  }
+  return { a, names };
+}
 function upgradedDef(base, n) {
   const T = UPGRADE_TIERS[n - 1];
-  return Object.assign({}, base, {
+  const ab = upgradeAbilities(base.id || Object.keys(WEAPON_DEFS).find(k => WEAPON_DEFS[k] === base), base, n);
+  return Object.assign({}, base, ab.a, { abilities: ab.names }, {
     name: base.name + ' ' + T.stars, upgraded: true, up: n, dmg: Math.round((base.dmg ?? 30) * T.dmg),
     capacity: Math.max(base.capacity + n, Math.round(base.capacity * T.cap)), rpm: base.rpm * T.rpm, spread: base.spread * (1 - 0.15 * n),
     reserveK: 1 + 0.5 * n // Reserve-Munition: ★ ×1,5 · ★★ ×2 · ★★★ ×2,5 (zusätzlich zum größeren Magazin)
@@ -1900,6 +1933,7 @@ function upgradeWeapon(w) {
   const base = WEAPON_DEFS[w.id];
   const at = w === deskW ? inFront(1.3, 0.15, headPos.y + 0.15) : w.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.25, 0)); // am PC nicht direkt vor dem Auge
   floatingText(`${UPGRADE_TIERS[n - 1].stars} Magazin ${base.capacity}→${w.def.capacity} · Reserve ${w.reserve}`, at, '#ffd84a');
+  if (w.def.abilities && w.def.abilities.length) later(1.1, () => floatingText('Neu: ' + w.def.abilities.join(' · '), at.clone().add(new THREE.Vector3(0, -0.12, 0)), '#7dffa8'));
   boardDirty = true;
 }
 const bottleMats = {};
@@ -2693,7 +2727,8 @@ const SETTINGS_TABS = {
     { key: 'killcam', label: 'Zeitlupe beim letzten Kill', opts: onOff },
     { key: 'ambient', label: 'Gruselgeräusche', opts: onOff },
     { key: 'hitmarker', label: 'Treffer-Ton', opts: onOff },
-    { key: 'autoPlace', label: 'Automatisch aufstellen', opts: [['none', 'Nichts'], ['weapons', 'Waffen+Kiste'], ['all', 'Alles']] }
+    { key: 'autoPlace', label: 'Automatisch aufstellen', opts: [['none', 'Nichts'], ['weapons', 'Waffen+Kiste'], ['all', 'Alles']] },
+    { key: 'startWave', label: 'Start in Welle', opts: [[1, '1'], [5, '5'], [10, '10'], [15, '15'], [20, '20'], [25, '25'], [30, '30']] }
   ] },
   preise: { label: '💰 Preise', items: [
     { key: 'priceWeapons', label: 'Wandkauf-Waffen', opts: [[0.5, '50 %'], [0.75, '75 %'], [1, '100 %'], [1.5, '150 %'], [2, '200 %']] },
@@ -2729,7 +2764,7 @@ const SETTINGS_DEFAULT = {
   startPoints: 500, amount: 1, blood: 1, killcam: true, ambient: true, hitmarker: true,
   grip: 'hold', reload: 'real', assist: true, haptics: 1, wristHud: true, snapBelt: 1,
   shadows: true, particles: 1, dust: true, popups: true, eyeGlow: true, autoPerf: true,
-  autoPlace: 'weapons', corpseTime: 1.2, quality: 'balanced', guides: true, priceWeapons: 1, priceBox: 950, pricePerks: 1, priceUpgrade: 1, priceTrap: 1000, pointsMul: 1, frameRate: 90
+  autoPlace: 'weapons', corpseTime: 1.2, quality: 'balanced', guides: true, priceWeapons: 1, priceBox: 950, pricePerks: 1, priceUpgrade: 1, priceTrap: 1000, pointsMul: 1, frameRate: 90, startWave: 1
 };
 // Preise laut Einstellungen (auf schöne Zahlen gerundet)
 const price = {
@@ -3874,7 +3909,7 @@ const MODES = {
   training: { icon: '🎯', label: 'Training', desc: 'Langsame Zombies, die dir nichts tun – zum Üben' }
 };
 let state = 'menu', gameMode = 'survival';
-let score = 0, wave = 0, waveBreak = 0, countdown = 0, roundClock = 0, toSpawn = 0, spawnT = 0;
+let startedAt = 1, score = 0, wave = 0, waveBreak = 0, countdown = 0, roundClock = 0, toSpawn = 0, spawnT = 0;
 let playerHp = 100, hurtFlash = 0, regenT = 0, heartT = 0;
 let boardDirty = true, lastResult = null;
 const stats = { shots: 0, hits: 0, kills: 0, headshots: 0 };
@@ -4035,15 +4070,18 @@ function startCountdown() {
 }
 function beginRound() {
   state = 'playing';
-  score = 0; roundClock = 0; wave = 0;
-  points = free() ? 0 : settings.startPoints + DIFF().start;
+  // Startwelle (Einstellungen → Spiel): später einsteigen, z. B. zum Testen; dazu passende Startpunkte
+  const sw = gameMode === 'training' ? 1 : Math.max(1, settings.startWave || 1);
+  score = 0; roundClock = 0; wave = sw - 1;
+  startedAt = sw;
+  points = free() ? 0 : settings.startPoints + DIFF().start + 120 * (sw - 1) * (sw - 1);
   stats.shots = stats.hits = stats.kills = stats.headshots = 0;
   stats.bestStreak = 0;
   streak = 0;
   streakMsg = null;
   nextWave();
   musicStart();
-  startRoundFx(0, 1, true);
+  startRoundFx(sw - 1, sw, true);
 }
 // Boden aufräumen (alle 3 Wellen): Blut- und Brandflecken, leere Magazine, Hülsen, Trümmer.
 // Waffen, Messer, Power-ups und Medipacks bleiben liegen.
@@ -4078,7 +4116,7 @@ function endRound(died = false) {
   clearZombies();
   hurtFlash = 0;
   const acc = stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0;
-  const place = addTop(gameMode, { score, wave, kills: stats.kills, diff: diffKey, date: Date.now() });
+  const place = startedAt > 1 ? -1 : addTop(gameMode, { score, wave, kills: stats.kills, diff: diffKey, date: Date.now() }); // späterer Start: nicht in die Bestenliste
   lastResult = { score, kills: stats.kills, headshots: stats.headshots, acc, wave, place, died, streak: stats.bestStreak || 0 };
   speak(died ? 'Du wurdest gefressen' : place === 0 ? 'Neuer Rekord!' : 'Runde beendet');
   if (died) SFX.jingle([392, 370, 349, 330, 196], 0.4); else SFX.jingle([784, 659, 523, 392], 0.35);

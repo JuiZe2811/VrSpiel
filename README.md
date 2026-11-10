@@ -5,6 +5,20 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 46 – Spezial-Fähigkeiten beim Aufrüsten, Startwelle
+
+**Besondere Fähigkeiten beim Aufrüsten** (zusätzlich zu Schaden, Magazin und Reserve), damit sich auch Scharfschützengewehre und Flinten lohnen:
+
+| Waffen | ★ | ★★ | ★★★ |
+|---|---|---|---|
+| **Scharfschützengewehr, Jagdgewehr, Panzerbüchse, Präzisionsgewehr** | Halbautomatisch (kein Repetieren mehr), Durchschlag durch 3 Zombies | Durchschlag 5 | Durchschlag 7 + **Kopfschuss-Explosion** |
+| **Pump-Flinte, Auto-Flinte, Doppelflinte, Abgesägte** | 25 % mehr Kugeln, enger gestreut, Pump-Flinte automatisch (kein Pumpen) | 50 % mehr Kugeln + **Drachenatem** (Zombies brennen) | 75 % mehr Kugeln, Brand + Kugeln durchschlagen |
+| **Revolver, Magnum, Unterhebel** | Durchschlag 2 (Unterhebel repetiert selbst) | Durchschlag 3 | Durchschlag 4 |
+
+Beim Durchschlag verlieren die Kugeln kaum Schaden pro Zombie. Nach dem Aufrüsten wird angezeigt, welche Fähigkeiten neu sind.
+
+**Startwelle:** Unter Einstellungen → Spiel → „Start in Welle“ lässt sich 1, 5, 10, 15, 20, 25 oder 30 wählen. Man bekommt passende Startpunkte dazu (Welle 25: rund 69.000). Runden mit späterem Start kommen nicht in die Bestenliste.
+
 ## Neu in Version 45 – Pause-Menü und Munition an der Wand
 
 **Pause-Menü** (jederzeit während einer Runde):
