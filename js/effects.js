@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { makePanel } from './util.js?v=41';
-import { heightAt } from './room.js?v=41';
-import { SFX } from './sfx.js?v=41';
+import { makePanel } from './util.js?v=42';
+import { heightAt } from './room.js?v=42';
+import { SFX } from './sfx.js?v=42';
 
 // Kurzlebige Effekte: Leuchtspuren, Partikel, Punkte-Text, Einschusslöcher, Hülsen
 let scene;
@@ -228,31 +228,46 @@ const DECAL_MATS = {
   blood: new THREE.MeshBasicMaterial({ map: splatTex('95,0,0'), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
   scorch: new THREE.MeshBasicMaterial({ map: splatTex('20,18,16'), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })
 };
-const decalGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-const decals = [];
+// Flecken als Instanzen: alle Blut- bzw. Brandflecken zusammen in EINEM Zeichenaufruf (statt einem pro Fleck)
+const DECAL_CAP = { blood: 40, scorch: 16 };
+const decalSets = {};
+const _dm = new THREE.Object3D();
+function decalSet(kind) {
+  let d = decalSets[kind];
+  if (!d) {
+    const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), DECAL_MATS[kind], DECAL_CAP[kind]);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 1;
+    scene.add(mesh);
+    d = decalSets[kind] = { mesh, next: 0 };
+  }
+  if (!d.mesh.parent) scene.add(d.mesh);
+  return d;
+}
+function addDecal(kind) {
+  const d = decalSet(kind);
+  _dm.updateMatrix();
+  d.mesh.setMatrixAt(d.next, _dm.matrix);
+  d.next = (d.next + 1) % DECAL_CAP[kind];          // älteste werden überschrieben
+  d.mesh.count = Math.min(DECAL_CAP[kind], d.mesh.count + 1);
+  d.mesh.instanceMatrix.needsUpdate = true;
+}
 export function floorDecal(pos, kind = 'blood', size = 0.7) {
   if (kind === 'blood') { if (!fx.blood) return; size *= fx.blood === 2 ? 1.5 : 1; }
-  const m = new THREE.Mesh(decalGeo, DECAL_MATS[kind]);
-  m.position.set(pos.x, heightAt(pos.x, pos.z) + 0.004, pos.z);
-  m.rotation.y = Math.random() * Math.PI * 2;
-  m.scale.setScalar(size);
-  m.renderOrder = 1;
-  scene.add(m);
-  decals.push(m);
-  if (decals.length > 30) scene.remove(decals.shift());
+  _dm.position.set(pos.x, heightAt(pos.x, pos.z) + 0.004, pos.z);
+  _dm.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI * 2);
+  _dm.scale.setScalar(size);
+  addDecal(kind);
 }
 // Fleck an Wand/Tisch (z. B. Blut hinter einem getroffenen Zombie)
-const wallDecalGeo = new THREE.PlaneGeometry(1, 1);
 export function surfaceDecal(point, normal, kind = 'blood', size = 0.4) {
   if (kind === 'blood') { if (!fx.blood) return; size *= fx.blood === 2 ? 1.5 : 1; }
-  const m = new THREE.Mesh(wallDecalGeo, DECAL_MATS[kind]);
-  m.position.copy(point).addScaledVector(normal, 0.003);
-  m.lookAt(m.position.clone().add(normal));
-  m.rotateZ(Math.random() * Math.PI * 2);
-  m.scale.setScalar(size);
-  m.renderOrder = 1;
-  scene.add(m);
-  decals.push(m);
-  if (decals.length > 30) scene.remove(decals.shift());
+  _dm.position.copy(point).addScaledVector(normal, 0.003);
+  _dm.rotation.set(0, 0, 0);
+  _dm.lookAt(_dm.position.clone().add(normal));
+  _dm.rotateZ(Math.random() * Math.PI * 2);
+  _dm.scale.setScalar(size);
+  addDecal(kind);
 }
-export function clearDecals() { while (decals.length) scene.remove(decals.pop()); }
+export function clearDecals() { for (const d of Object.values(decalSets)) { d.mesh.count = 0; d.next = 0; } }

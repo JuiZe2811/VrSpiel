@@ -221,9 +221,17 @@ export function setListener(pos, fwd, up) {
     l.setOrientation(fwd.x, fwd.y, fwd.z, up.x, up.y, up.z);
   }
 }
-function panner(pos, bus = null, rev = 0.25) {
+// 3D-Klangquelle. Leistung (wichtig auf der Quest): HRTF (sehr genaues Richtungshören) ist teuer –
+// nur für höchstens 8 gleichzeitige Klänge; der Rest (und unwichtige Geräusche wie Schritte) nutzt
+// einfaches Stereo-Panning. Knoten werden nach Klangende freigegeben statt pauschal nach 3,5 s.
+let hrtfActive = 0, pannersActive = 0;
+export const audioLoad = () => pannersActive;
+function panner(pos, bus = null, rev = 0.25, life = 1.2, cheap = false) {
   const p = audioCtx.createPanner();
-  p.panningModel = 'HRTF';
+  const hrtf = !cheap && hrtfActive < 8;
+  p.panningModel = hrtf ? 'HRTF' : 'equalpower';
+  if (hrtf) hrtfActive++;
+  pannersActive++;
   p.distanceModel = 'inverse';
   p.refDistance = 1;
   p.rolloffFactor = 1.2;
@@ -231,7 +239,7 @@ function panner(pos, bus = null, rev = 0.25) {
   p.connect(bus || sfxBus);
   const s = send(rev);
   p.connect(s);
-  setTimeout(() => { try { p.disconnect(); } catch { /* schon getrennt */ } }, 3500); // sonst sammeln sich Audio-Knoten an
+  setTimeout(() => { try { p.disconnect(); s.disconnect(); } catch { /* schon getrennt */ } if (hrtf) hrtfActive--; pannersActive--; }, life * 1000 + 400); // sonst sammeln sich Audio-Knoten an
   return p;
 }
 // Zombie-Stimme: Sägezahn durch Vokal-Formanten (a/o/u) mit Pitch-Bewegung und Zittern
@@ -241,7 +249,7 @@ function voice(pos, { f0 = 90, f1 = 70, dur = 1, vowel = 'o', v = 0.7, rough = 0
   if (activeVoices >= 8) return; // nicht zu viele gleichzeitig (Leistung + Klarheit)
   activeVoices++;
   setTimeout(() => { activeVoices--; }, dur * 1000 + 100);
-  const t = audioCtx.currentTime, out = panner(pos, voiceBus, 0.3);
+  const t = audioCtx.currentTime, out = panner(pos, voiceBus, 0.3, dur + 0.3);
   const osc = audioCtx.createOscillator();
   osc.type = 'sawtooth';
   osc.frequency.setValueAtTime(f0, t);
@@ -270,11 +278,12 @@ const ri = (a, b) => a + Math.random() * (b - a);
 export const SFX3D = {
   step(pos, heavy = 1) { // schwerer Schritt
     if (!audioCtx) return;
-    const t = audioCtx.currentTime, out = panner(pos);
+    if (pannersActive > 28 && heavy < 1.5) return; // bei sehr viel Geräusch: einfache Schritte auslassen
+    const t = audioCtx.currentTime, out = panner(pos, null, 0.25, 0.4, heavy < 1.5);
     noise(t, 0.12 * heavy, 0.35 * heavy, 'lowpass', 300 + 200 / heavy, 60, 1, out);
     tone(t, 70 / heavy + 20, 30, 0.12 * heavy, 0.35 * heavy, 'sine', out);
   },
-  shuffle(pos) { if (!audioCtx) return; noise(audioCtx.currentTime, 0.18, 0.12, 'bandpass', 900, 400, 1.5, panner(pos, null, 0.1)); },
+  shuffle(pos) { if (!audioCtx || pannersActive > 20) return; noise(audioCtx.currentTime, 0.18, 0.12, 'bandpass', 900, 400, 1.5, panner(pos, null, 0.1, 0.3, true)); },
   roar(pos) { // Brüllen des Riesen
     if (!audioCtx) return;
     voice(pos, { f0: 60, f1: 42, dur: 1.8, vowel: 'aa', v: 1.0, rough: 0.8, wobble: 9, q: 4 });
@@ -346,7 +355,7 @@ export const SFX3D = {
   // Umgebung: knarrende Tür, ferner Schrei, Wind, Tropfen (zufällig im Raum verteilt)
   ambient(pos, kind) {
     if (!audioCtx) return;
-    const t = audioCtx.currentTime, out = panner(pos, null, 0.7);
+    const t = audioCtx.currentTime, out = panner(pos, null, 0.7, 3.2);
     if (kind === 'creak') { const o = audioCtx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(ri(180, 260), t); o.frequency.linearRampToValueAtTime(ri(120, 340), t + 1.2); const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 12; bp.frequency.value = 900; const g = audioCtx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.2); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.2); o.connect(bp).connect(g).connect(out); o.start(t); o.stop(t + 1.3); }
     else if (kind === 'scream') voice(pos, { f0: ri(380, 520), f1: ri(200, 300), dur: 1.4, vowel: 'aa', v: 0.18, rough: 0.5, wobble: 7, q: 3 });
     else if (kind === 'wind') noise(t, 3, 0.18, 'bandpass', ri(300, 500), ri(700, 1100), 4, out);

@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=41';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=41';
-import { SFX3D } from './sfx.js?v=41';
-import { burst, addDebris, shockwave } from './effects.js?v=41';
-import { cachedGeo } from './util.js?v=41';
+import { room, surfacesOf, isOpening } from './room.js?v=42';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=42';
+import { SFX3D } from './sfx.js?v=42';
+import { burst, addDebris, shockwave } from './effects.js?v=42';
+import { cachedGeo } from './util.js?v=42';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=41';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=42';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -616,7 +616,7 @@ function findPath(from, to) {
   }
   return out;
 }
-let planBudget = 0; // höchstens 2 Wegberechnungen pro Bild
+let planBudget = 0, shadowT = 0; // höchstens 2 Wegberechnungen pro Bild
 
 // ---- Zombies erzeugen ------------------------------------------------------------
 // Balance: Spezial-Zombies werden mit jeder Welle häufiger (mit Obergrenzen)
@@ -648,7 +648,7 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
     path: null, pathT: 0, attackT: 1, actionT: 0, deadT: 0, hurtT: 0, groanT: rand(1, 4), opening: null, enterT: 0, crawl: false, fallDir: 1, headless: false,
     // Leistung: alle später benutzten Felder gleich hier anlegen (gleiche Objekt-Form für alle Zombies,
     // Zahlenfelder bleiben Zahlen) – sonst erzeugt jede Änderung pro Bild neuen Speicher-Müll und es ruckelt
-    atkK: opts.atk || 1, stuckT: 0, stuckX: 0, stuckZ: 0, stuckN: 0, skipT: 0, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
+    atkK: opts.atk || 1, castsShadow: true, stuckT: 0, stuckX: 0, stuckZ: 0, stuckN: 0, skipT: 0, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
     headSnap: 0, hurtTwist: 1, knockT: 0, knockBack: 0, frozenT: 0, burnT: 0, burnTick: 0, burnUp: false, roarT: 2, stompT: 4, smokeT: 0, landT: 0, spinDir: 0,
     lureV: -1, slot: 0, attackVariant: 0, exploded: false, gibbed: false, landed: false, spat: false, kinCrawl: false, freed: false,
     hurtDir: new THREE.Vector3(0, 0, 1), enterFrom: null, fallVec: null, d0: null, deathStyle: '', ice: null, kin: null, phys: null, proxies: null,
@@ -1101,6 +1101,21 @@ export function updateZombies(dt, head, opts = {}) {
   updateSpits(dt, head, opts);
   for (let i = zombies.length - 1; i >= 0; i--) updateOne(i, dt, head, opts, player);
   for (let k = 0; k < zombies.length; k++) if (zombies[k].monster) syncMonster(zombies[k]); // Monster-Modell des Riesen folgt der fertigen Haltung
+  // Leistung: nur die 6 nächsten Zombies werfen Schatten (jeder Schattenwerfer wird ein zweites Mal gezeichnet);
+  // weit entfernte Schatten sind klein und kaum zu sehen
+  shadowT -= dt;
+  if (shadowT <= 0) {
+    shadowT = 0.3;
+    const list = [];
+    for (const z of zombies) if (!z.T.boss && z.state !== 'dead') list.push(z);
+    list.sort((a, b) => ((a.pos.x - head.x) ** 2 + (a.pos.z - head.z) ** 2) - ((b.pos.x - head.x) ** 2 + (b.pos.z - head.z) ** 2));
+    list.forEach((z, i) => {
+      const on = i < 6;
+      if (z.castsShadow === on) return;
+      z.castsShadow = on;
+      z.root.traverse(o => { if ((o.isSkinnedMesh || o.userData.part) && o.isMesh && !(o.material && o.material.transparent)) o.castShadow = on; });
+    });
+  }
   for (let i = limbs.length - 1; i >= 0; i--) {
     limbs[i].t -= dt;
     if (limbs[i].t <= 0) { removeDynamic(limbs[i].phys); limbs[i].obj.scale.setScalar(0.0001); limbs[i].obj.updateMatrixWorld(true); scene.remove(limbs[i].obj); limbs.splice(i, 1); }

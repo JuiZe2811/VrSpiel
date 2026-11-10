@@ -5,6 +5,15 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 42 – Boden aufräumen und flüssiger in hohen Wellen
+
+**Boden aufräumen:** Zu Beginn der Wellen 4, 7, 10, 13 usw. (also alle 3 Wellen) werden Blut- und Brandflecken, leere Magazine, Hülsen und Trümmer entfernt. Waffen, Messer, Power-ups und Medipacks bleiben liegen.
+
+**Flüssiger bei vielen Zombies:**
+- **3D-Klang:** Jeder Schritt, jedes Stöhnen und jeder Treffer war eine eigene 3D-Klangquelle mit aufwendiger HRTF-Raumberechnung, die außerdem 3,5 s lang aktiv blieb. Bei 14 Zombies waren das Dutzende gleichzeitig, was gerade auf der Quest viel Rechenzeit kostet. Jetzt bekommen höchstens 8 gleichzeitige Klänge HRTF, der Rest und alle unwichtigen Geräusche (Schritte) nutzen einfaches Stereo. Die Klangknoten werden direkt nach Klangende freigegeben, und bei sehr viel Geräusch werden einfache Schritte ausgelassen.
+- **Schatten:** Nur die 6 nächsten Zombies werfen einen echten Schatten. Jeder Schattenwerfer wird ein zweites Mal gezeichnet, und weit entfernte Schatten sieht man kaum.
+- **Flecken:** Alle Blut- bzw. Brandflecken werden zusammen in einem einzigen Zeichenaufruf gezeichnet (Instancing) statt bis zu 30 einzeln.
+
 ## Neu in Version 41 – Der Boss ist deutlich schwerer
 
 - **Mehr Leben:** Stufe 1 hat 3.600 statt 2.500, und das Leben steigt pro Stufe stärker (+90 % statt +80 %). Stufe 2 hat zum Beispiel 6.840.
