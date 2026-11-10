@@ -5,6 +5,19 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 41 – Der Boss ist deutlich schwerer
+
+- **Mehr Leben:** Stufe 1 hat 3.600 statt 2.500, und das Leben steigt pro Stufe stärker (+90 % statt +80 %). Stufe 2 hat zum Beispiel 6.840.
+- **Härter im Nehmen:** Pro Treffer zieht er höchstens 180 statt 300 ab, und ein Kopfschuss zählt beim Boss nur ×2 statt ×3.
+- **Gefährlichere Waffen:** 35 % mehr Schaden, 15 % schnellere Kugeln und 40 % mehr Schüsse pro Salve.
+- **Zielt besser:** Er folgt dir schneller mit der Waffe.
+- **Wut-Modus schon ab Stufe 1**, sobald er unter 45 % Leben hat (vorher erst ab Stufe 3 und unter 35 %).
+- **Kombos:** Er greift öfter direkt zweimal hintereinander an, im Wut-Modus sehr oft.
+- **Weicht aus:** Wenn du ihn dauerhaft beschießt, springt er zur Seite und kontert sofort.
+- **Heilt sich:** Triffst du ihn 4 Sekunden lang nicht, regeneriert er langsam, höchstens bis 90 %. Man muss dranbleiben.
+- Er ist schneller unterwegs und wartet kürzer zwischen den Angriffen.
+- Belohnung erhöht: 700 Punkte × Stufe.
+
 ## Neu in Version 40 – Fehlersuche
 
 Geprüft mit allen automatischen Tests (Waffen, Nachladen, Holster, Gürtel, Bretter, Automaten, Fallen, Affe, Granaten, Boss, Riese, Schwierigkeitsgrade, Wegfindung), einem Langzeit-Test über 26 Wellen und einem Chaos-Test (831 zufällige Aktionen: Tasten, Schüsse, Wellen-Sprünge, Power-ups, Neustarts, Moduswechsel) – 0 Fehler.

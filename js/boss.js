@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath } from './zombies.js?v=40';
-import { burst, shockwave, puff, sparks } from './effects.js?v=40';
-import { SFX, SFX3D } from './sfx.js?v=40';
-import { makePanel } from './util.js?v=40';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=40';
-import './weaponkit.js?v=40';
-import { roomOccluders } from './room.js?v=40';
+import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath } from './zombies.js?v=41';
+import { burst, shockwave, puff, sparks } from './effects.js?v=41';
+import { SFX, SFX3D } from './sfx.js?v=41';
+import { makePanel } from './util.js?v=41';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=41';
+import './weaponkit.js?v=41';
+import { roomOccluders } from './room.js?v=41';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
@@ -97,12 +97,12 @@ export function spawnBoss(level, head, diffHp = 1) {
     pos.set(head.x + Math.sin(a) * d, 0, head.z - Math.cos(a) * d);
     if (walkable(pos.x, pos.z)) break;
   }
-  const hp = 2500 * (1 + 0.8 * (level - 1)) * diffHp;
+  const hp = 3600 * (1 + 0.9 * (level - 1)) * diffHp; // (v41: deutlich zäher)
   const z = {
     type: 'boss', T: { boss: true, width: 1, hp, speed: 1, dmg: 20, name: 'Boss' }, scale: S, level,
     root, body, hips: bones.Hips, torso: bones.Spine1, neck: bones.Neck, head: bones.Head, skull: bones.Head, jaw: new THREE.Object3D(),
     arms: [], legs: [], legLost: [false, false], armLost: [false, false], legHp: [999, 999], armHp: [999, 999],
-    hp, maxHp: hp, state: 'intro', pos: pos.clone(), yaw: 0, speed: 0.75 + 0.08 * level, phase: 0, hurtT: 0, deadT: 0,
+    hp, maxHp: hp, state: 'intro', pos: pos.clone(), yaw: 0, speed: 0.9 + 0.09 * level, phase: 0, hurtT: 0, deadT: 0,
     B, mats, mode: opening ? 'approach' : 'intro', opening, t: 0, cool: 2.5, last: null, attackHit: false, rage: false, aimPt: head.clone(), flashT: 0
   };
   // Waffe(n) – ab Stufe 9 wechselt er zwischen mehreren
@@ -204,7 +204,7 @@ function fireGun(z, head) {
     obj.position.copy(from);
     obj.lookAt(from.clone().add(dir));
     scene.add(obj);
-    projectiles.push({ kind: 'bullet', obj, vel: dir.multiplyScalar(g.speed * (1 + (pw - 1) * 0.5)), dmg: g.dmg * pw * (z.rage ? 1.2 : 1), left: freeDist(from, from.clone().add(dir)), whiz: false });
+    projectiles.push({ kind: 'bullet', obj, vel: dir.multiplyScalar(g.speed * 1.15 * (1 + (pw - 1) * 0.5)), dmg: g.dmg * pw * 1.35 * (z.rage ? 1.2 : 1), left: freeDist(from, from.clone().add(dir)), whiz: false });
   }
   const w = z.gun.w;
   w.parts.flash.visible = true;
@@ -434,12 +434,31 @@ function updateBoss(z, dt, head, opts) {
     return;
   }
   if (z.frozenT > 0) { z.frozenT -= dt; if (z.frozenT <= 0 && z.ice) z.ice.visible = false; if (z.laser) z.laser.visible = false; return; }
+  // Wer ihn dauerhaft beschießt, dem weicht er mit einem Seitensprung aus; bleibt er eine Weile unverletzt,
+  // heilt er langsam (höchstens bis 90 %) – man muss also dranbleiben
+  if (z.lastHp === undefined) z.lastHp = z.hp;
+  if (z.hp < z.lastHp - 0.01) { z.hitsRecent = (z.hitsRecent || 0) + 1; z.noHitT = 0; } else z.noHitT = (z.noHitT || 0) + dt;
+  z.hitsRecent = Math.max(0, (z.hitsRecent || 0) - dt * 3);
+  if (z.noHitT > 4 && z.hp < z.maxHp * 0.9 && z.mode !== 'approach' && z.mode !== 'tear') z.hp = Math.min(z.maxHp * 0.9, z.hp + z.maxHp * 0.012 * dt);
+  z.lastHp = z.hp;
+  z.dodgeCool = (z.dodgeCool || 0) - dt;
+  if (z.mode === 'move' && z.hitsRecent > 5 && z.dodgeCool <= 0) {
+    const pl = new THREE.Vector3(head.x, 0, head.z), side = new THREE.Vector3(-(pl.z - z.pos.z), 0, pl.x - z.pos.x).normalize();
+    const s1 = Math.random() < 0.5 ? 1 : -1;
+    for (const sg of [s1, -s1]) {
+      const to = z.pos.clone().addScaledVector(side, 1.3 * sg);
+      if (clearPath(z.pos, to)) { z.mode = 'dodge'; z.t = 0; z.dodgeFrom = z.pos.clone(); z.dodgeTo = to; break; }
+    }
+    z.dodgeCool = Math.max(2, 3.5 - z.level * 0.15);
+    z.hitsRecent = 0;
+    if (z.mode === 'dodge') { SFX.whoosh(); puff(z.root.position.clone().setY(0.3), 0x777777, 0.3, 0.5, 0.2, 0.5); }
+  }
   // Zielpunkt folgt dem Kopf des Spielers mit Verzögerung – wer sich bewegt, weicht aus
-  const track = Math.min(5, 2.2 + z.level * 0.25) * (z.rage ? 1.3 : 1);
+  const track = Math.min(6.5, 3 + z.level * 0.35) * (z.rage ? 1.3 : 1); // zielt schneller nach
   z.aimPt.lerp(_aimT.set(head.x, head.y - 0.12, head.z), Math.min(1, dt * track));
   const aiming = (z.mode === 'wind' || z.mode === 'attack') && z.atk && z.atk.id === 'shoot'; // (erst nach dem Hereinsteigen)
   // Wut-Modus ab Stufe 3 bei wenig Leben
-  if (!z.rage && z.level >= 3 && z.hp < z.maxHp * 0.35) {
+  if (!z.rage && z.hp < z.maxHp * 0.45) { // Wut-Modus schon ab Stufe 1
     z.rage = true;
     for (const m of z.mats) { m.emissive = new THREE.Color(0x550000); m.emissiveIntensity = 1; }
     SFX3D.roar(z.root.position.clone().setY(1.6));
@@ -480,6 +499,12 @@ function updateBoss(z, dt, head, opts) {
       pose = { walk: 0.6, crouch: o.type === 'window' ? Math.sin(k * Math.PI) * 0.6 : 0, lean: o.type === 'window' ? 0.4 * Math.sin(k * Math.PI) : 0 };
       if (k >= 1) { z.mode = 'intro'; z.t = 0; }
     }
+  } else if (z.mode === 'dodge') { // schneller Seitensprung, danach sofort Gegenangriff
+    const k = Math.min(1, z.t / 0.35);
+    z.pos.lerpVectors(z.dodgeFrom, z.dodgeTo, 1 - (1 - k) * (1 - k));
+    face(z, player, dt, 10);
+    pose = { crouch: 0.45 * Math.sin(k * Math.PI), lean: -0.2 };
+    if (k >= 1) { z.mode = 'move'; z.t = 0; z.cool = 0.2; }
   } else if (z.mode === 'intro') {
     pose = { armsUp: Math.max(0, Math.sin(Math.min(1, z.t / 1.6) * Math.PI)) };
     face(z, player, dt);
@@ -543,7 +568,7 @@ function updateBoss(z, dt, head, opts) {
         SFX3D.bang(z.root.position.clone()); SFX.thunder();
         cb.pulse(0.7, 200);
       }
-      if (a.id === 'shoot') { z.shotsLeft = G.shots + (z.rage ? Math.ceil(G.shots * 0.3) : 0); z.shotT = 0; z.burstN = 0; }
+      if (a.id === 'shoot') { z.shotsLeft = Math.round(G.shots * 1.4) + (z.rage ? Math.ceil(G.shots * 0.4) : 0); z.shotT = 0; z.burstN = 0; }
       if (a.id === 'grenade') { const n = z.level >= 8 ? 2 : 1; for (let i = 0; i < n; i++) throwGrenade(z, player); }
       if (a.id === 'blink') {
         // hinter den Spieler (Richtung, in die er gerade nicht schaut, ist ungefähr „hinter“ vom Boss aus gesehen)
@@ -600,7 +625,7 @@ function updateBoss(z, dt, head, opts) {
   } else if (z.mode === 'recover') {
     face(z, player, dt, 3);
     pose = { lean: -0.1, crouch: 0.1 };
-    if (z.t > (z.rage ? 0.35 : 0.9)) { z.mode = 'move'; z.t = 0; z.cool = Math.max(1.2, 3.4 - z.level * 0.3) * (0.7 + Math.random() * 0.6); if (z.rage && Math.random() < 0.5) z.cool = 0.2; }
+    if (z.t > (z.rage ? 0.35 : 0.9)) { z.mode = 'move'; z.t = 0; z.cool = Math.max(0.8, 2.4 - z.level * 0.22) * (0.7 + Math.random() * 0.5); if (Math.random() < (z.rage ? 0.6 : 0.3)) z.cool = 0.15; /* Kombo: gleich nochmal */ }
   }
   z.root.position.x = z.pos.x;
   z.root.position.z = z.pos.z;

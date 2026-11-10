@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=40';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=40';
-import { SFX3D } from './sfx.js?v=40';
-import { burst, addDebris, shockwave } from './effects.js?v=40';
-import { cachedGeo } from './util.js?v=40';
+import { room, surfacesOf, isOpening } from './room.js?v=41';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=41';
+import { SFX3D } from './sfx.js?v=41';
+import { burst, addDebris, shockwave } from './effects.js?v=41';
+import { cachedGeo } from './util.js?v=41';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=40';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=41';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -761,9 +761,9 @@ export function damageZombie(mesh, point, dir, dmg, quiet = false) {
     if (dmg >= 30) z.stagger = Math.max(z.stagger || 0, Math.min(0.6, dmg * 0.006));
   }
   let headshot = false;
-  if (z.T.boss) dmg = Math.min(dmg, 300); // Boss: kein Sofort-Tod durch Eis, Fallen oder Power-ups
+  if (z.T.boss) dmg = Math.min(dmg, 180); // Boss: kein Sofort-Tod durch Eis, Fallen, Power-ups oder Riesen-Waffen
   else if (z.frozenT > 0) dmg *= 25; // gefroren: zerspringt
-  if (partName === 'head') { z.hp -= dmg * 3; headshot = true; }
+  if (partName === 'head') { z.hp -= dmg * (z.T.boss ? 2 : 3); headshot = true; } // Boss: Kopfschuss nur ×2
   else if (partName === 'torso') z.hp -= dmg;
   else if (partName.startsWith('arm')) {
     const k = partName === 'armL' ? 0 : 1;
