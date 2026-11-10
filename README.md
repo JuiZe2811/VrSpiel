@@ -5,6 +5,25 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 37 – Zombies finden den Weg, Rotpunkt statt Zielfernrohr, Holzhammer
+
+**Wegfindung der Zombies:**
+- **Keine Ecken mehr abschneiden:** Der Weg wird nicht mehr grob geglättet (nur jeder dritte Rasterpunkt), sondern mit Sichtlinien-Prüfung. Zombies laufen um Ecken herum statt gegen die Wand.
+- **Feststecken wird erkannt:** Kommt ein Zombie kaum vorwärts, plant er sofort neu. Nach mehreren Versuchen wird er auf die nächste freie Stelle gesetzt.
+- **Abkürzungen:** Ist ein späterer Wegpunkt schon frei sichtbar, läuft der Zombie direkt dorthin.
+- **Türen werden großzügig erkannt**, auch wenn sie leicht schief oder bis 60 cm vor bzw. hinter der Wand eingezeichnet sind. Vorher war das nur bis 30 cm erlaubt, sonst blieb die Tür für Zombies eine Wand. Außerdem bleibt jede Tür für die Zombies mindestens 80 cm breit.
+- **Weniger Abstand zu Wänden und Möbeln** (16 statt 24 cm). Zombies passen dadurch auch durch enge Lücken, zum Beispiel zwischen Tisch und Wand.
+- Getestet in einem rundum geschlossenen Raum mit Labyrinth, engem Gang mit zwei Kurven, versetzter Tür und Tisch vor der Tür. Alle Zombies kommen an. Vorher blieben sie bei der versetzten Tür dauerhaft an der Wand hängen.
+
+**Waffen:**
+- **Rotpunkt-Visier statt Zielfernrohr** bei Scharfschützengewehr, Präzisionsgewehr, Jagdgewehr und Panzerbüchse. Das Zielfernrohr war in VR schlecht zu benutzen.
+- **Rückstoß je nach Griff:** Mit zwei Händen ist er ruhig. Ein Gewehr einhändig springt stark.
+- **Dauerfeuer zieht die Mündung nach oben.** Mit zwei Händen lässt sich das gut kontrollieren.
+- **Gewicht spürbar:** Schwere Waffen reagieren einhändig träger, mit zwei Händen sind sie stabil.
+- **Vibration passend zur Waffe:** kurz und leicht bei der MP, lang und hart bei Flinte und Scharfschützengewehr.
+
+**Neues Power-up 🔨 Holzhammer:** Alle Bretter an allen Türen und Fenstern sind sofort wieder dran, dazu gibt es +200 Punkte. Es erscheint nur, wenn auch Bretter fehlen.
+
 ## Neu in Version 36 – Vier Schwierigkeitsgrade
 
 Im Hauptmenü wählbar. Unter den Knöpfen steht kurz, was der Modus bedeutet, und auf der Anzeige zu Rundenbeginn steht der gewählte Modus.

@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=36';
+import { VERSION } from './version.js?v=37';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=36';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=36';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=36';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=36';
-import { facesButtonVisible, setFaces } from './faces.js?v=36';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=36';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=36';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=36';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=36';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL } from './boss.js?v=36';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=37';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=37';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=37';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=37';
+import { facesButtonVisible, setFaces } from './faces.js?v=37';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=37';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=37';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=37';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=37';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL } from './boss.js?v=37';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -463,9 +463,15 @@ function tryFire(w, desktopRay) {
   w.cooldown = 60 / (w.def.rpm * (perks.has('turbo') ? 1.33 : 1));
   w.recoil = 1;
   w.recoilSide = THREE.MathUtils.randFloatSpread(1);
+  // Rückstoß je nach Griff: mit zwei Händen ruhig, Gewehr einhändig springt stark
+  w.recoilGrip = w.twoHanding ? 0.6 : w.def.twoHand ? 1.45 : 1;
+  // Dauerfeuer zieht die Mündung nach oben (mit zwei Händen gut kontrollierbar)
+  if (w.def.autoCycle && w.def.rpm >= 400) w.climb = Math.min(1, (w.climb || 0) + (w.twoHanding ? 0.05 : 0.12));
   SFX.shot(w.def);
-  pulse(h, 1.0, 80);
-  if (w.twoHanding && h) pulse(otherHand(h), 0.6, 60);
+  // Vibration passend zur Waffe: kurz und leicht (MP) bis lang und hart (Flinte, Scharfschütze)
+  const kick = THREE.MathUtils.clamp((w.def.dmg || 30) / 60 + (w.def.pellets > 1 ? 0.5 : 0), 0.35, 1);
+  pulse(h, kick, 30 + kick * 90);
+  if (w.twoHanding && h) pulse(otherHand(h), kick * 0.6, 20 + kick * 60);
   const origin = new THREE.Vector3(), dir = new THREE.Vector3();
   if (desktopRay) { origin.copy(desktopRay.origin); dir.copy(desktopRay.direction); }
   else {
@@ -945,7 +951,8 @@ const POWERUPS = {
   nuke: { icon: '☢', name: 'Atombombe', color: '#7dff4a' },
   ammo: { icon: '▮▮', name: 'Volle Munition', color: '#4ac8ff' },
   slowmo: { icon: '⏳', name: 'Zeitlupe', color: '#c48aff' },
-  instakill: { icon: '☠', name: 'Sofort-Tod', color: '#ff4a4a' }
+  instakill: { icon: '☠', name: 'Sofort-Tod', color: '#ff4a4a' },
+  planks: { icon: '🔨', name: 'Holzhammer', color: '#e0a65a' } // alle Bretter sofort wieder angenagelt
 };
 const powerTex = {};
 for (const [id, pu] of Object.entries(POWERUPS)) {
@@ -965,7 +972,10 @@ const powerups = [];
 const active = { double: 0, slowmo: 0, instakill: 0 };
 const activeInstakill = () => active.instakill > 0;
 function spawnPowerup(pos, type) {
-  type = type || Object.keys(POWERUPS)[Math.floor(Math.random() * Object.keys(POWERUPS).length)];
+  if (!type) { // Holzhammer nur, wenn auch Bretter fehlen
+    const types = Object.keys(POWERUPS).filter(t => t !== 'planks' || openings().some(o => missingPlanks(o) > 0));
+    type = types[Math.floor(Math.random() * types.length)];
+  }
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: powerTex[type], toneMapped: false, transparent: true, depthWrite: false }));
   sp.scale.setScalar(0.32);
   sp.position.set(pos.x, 1.05, pos.z);
@@ -1001,6 +1011,13 @@ function collectPowerup(pu) {
   if (pu.type === 'slowmo') active.slowmo = 10;
   if (pu.type === 'instakill') active.instakill = 20;
   if (pu.type === 'ammo') { for (const w of arsenal) refillAmmo(w); refillGrenades(); }
+  if (pu.type === 'planks') { // Holzhammer: alle Bretter an allen Türen & Fenstern wieder dran
+    let n = 0;
+    for (const o of openings()) while (missingPlanks(o) > 0) { addPlank(o); n++; }
+    for (let i = 0; i < Math.min(6, n); i++) later(i * 0.09, () => SFX.thunk());
+    if (inRound()) award(200);
+    floatingText(`🔨 ${n} Bretter +200`, headPos.clone().add(new THREE.Vector3(0, -0.2, -1).applyQuaternion(getViewCamera().getWorldQuaternion(tmpQ))), '#e0a65a');
+  }
   if (pu.type === 'nuke') {
     nukeFlash = 1;
     SFX.explosion();
@@ -2936,7 +2953,9 @@ function updateHeldWeapon(w, main, dt) {
   // Zittern glätten: kleine Bewegungen stark, große kaum (kein Nachziehen beim schnellen Schwenken)
   if (w.smoothQ && w.smoothHand === main) {
     const ang = w.smoothQ.angleTo(w.root.quaternion);
-    const k = 1 - Math.exp(-dt * (w.twoHanding || w.def.sight === 'scope' ? 14 : 22) * (1 + ang * 60));
+    // Gewicht spürbar: schwere Waffen einhändig träger, mit zwei Händen ruhig und stabil
+    const heavy = Math.sqrt(Math.max(1, (MASS[w.id] || 2) / 1.5));
+    const k = 1 - Math.exp(-dt * (w.twoHanding ? 14 : 22 / heavy) * (1 + ang * 60));
     w.smoothQ.slerp(w.root.quaternion, k);
     w.root.quaternion.copy(w.smoothQ);
   } else { w.smoothQ = w.root.quaternion.clone(); w.smoothHand = main; }
@@ -2990,9 +3009,10 @@ function updateHeldWeapon(w, main, dt) {
 function updateWeaponVisuals(w, dt) {
   w.cooldown -= dt;
   w.recoil = Math.max(0, w.recoil - dt * (w.def.autoCycle ? 9 : 5));
-  const k = w.recoil * w.recoil;
+  w.climb = Math.max(0, (w.climb || 0) - dt * (w.twoHanding ? 2.2 : 1.2)); // Mündung sinkt nach dem Feuern zurück
+  const k = w.recoil * w.recoil * (w.recoilGrip || 1);
   w.body.position.z = k * w.def.recoil.back;
-  w.body.rotation.x = k * w.def.recoil.rise;
+  w.body.rotation.x = k * w.def.recoil.rise + w.climb * 0.09;
   w.body.rotation.y = k * w.def.recoil.jitter * w.recoilSide;
   w.parts.flash.visible = w.recoil > 0.7;
   w.parts.flash.rotation.z = Math.random() * Math.PI;

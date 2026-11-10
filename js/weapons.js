@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo, mergeStatic } from './util.js?v=36';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo, mergeStatic } from './util.js?v=37';
 
 // Waffen: Daten, Modelle, Munition
 export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'sniper'];
@@ -26,10 +26,10 @@ export const WEAPON_DEFS = {
     range: [2, 5], scoreMult: 0.9, grip: [-0.062, -0.028], snd: { cut: 2200, thump: 90, vol: 1.0 }
   },
   sniper: {
-    name: 'Scharfschützengewehr', desc: '5 Schuss · Repetierer · Zielfernrohr 4–12x',
+    name: 'Scharfschützengewehr', desc: '5 Schuss · Repetierer · Rotpunkt-Visier',
     twoHand: true, capacity: 5, feed: 'mag', action: 'bolt', autoCycle: false, holdOpen: false,
     modes: ['safe', 'semi'], startMode: 1, rpm: 70, spread: 0.0004, pellets: 1,
-    recoil: { back: 0.05, rise: 0.22, jitter: 0.01 }, travel: 0.085, sight: 'scope',
+    recoil: { back: 0.05, rise: 0.22, jitter: 0.01 }, travel: 0.085, sight: 'reddot',
     range: [7, 16], scoreMult: 1.5, grip: [-0.04, -0.045], snd: { cut: 3000, thump: 70, vol: 1.0 }
   }
 };
@@ -275,14 +275,8 @@ export const BUILDERS = {
     lever.rotation.z = -0.45;
     bolt.add(lever);
     bolt.add(sphere(0.0095, MAT.black, -0.06, 0.032, 0.058));
-    // Zielfernrohr
-    for (const s of [-0.03, 0.1]) {
-      m.add(box(0.022, 0.03, 0.014, MAT.steel, s, 0.083));
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.0175, 0.004, 8, 24), MAT.steel);
-      ring.position.set(0, 0.11, -s);
-      m.add(ring);
-    }
-    scopeKit(m, P, sock, 0.03, 0.11);
+    // Rotpunkt-Visier statt Zielfernrohr (in VR viel besser zu benutzen)
+    redDotKit(m, sock, 0.03, 0.083);
     sock('muzzle', 0.82, 0.052);
     sock('eject', 0.0, 0.065, 0.022);
     sock('chargerGrab', -0.06, 0.032, 0.058);
@@ -303,6 +297,21 @@ export const BUILDERS = {
 };
 
 // ---- Zielfernrohr: Render-Target + Fadenkreuz ---------------------------
+// Rotpunkt-Visier: Montage, Röhre, Glas; Sockel für Zielen (sightRear/Front) und Leuchtpunkt (dotLens)
+const redDotBody = new THREE.MeshStandardMaterial({ color: 0x1d2330, metalness: 0.9, roughness: 0.3, side: THREE.DoubleSide });
+export function redDotKit(m, sock, s0, baseY) {
+  const y = baseY + 0.023;
+  m.add(box(0.02, 0.014, 0.04, MAT.steel, s0, baseY));
+  m.add(cylZ(0.019, 0.019, 0.055, redDotBody, s0, y, 0, 28, true));
+  m.add(cylZ(0.0195, 0.0195, 0.006, MAT.black, s0 - 0.025, y, 0, 28, true));
+  m.add(cylZ(0.0195, 0.0195, 0.006, MAT.black, s0 + 0.025, y, 0, 28, true));
+  const lens = new THREE.Mesh(cachedGeo('dotlens', () => new THREE.CircleGeometry(0.0175, 28)), MAT.glass);
+  lens.position.set(0, y, -(s0 + 0.026));
+  m.add(lens);
+  sock('sightRear', s0 - 0.03, y);
+  sock('sightFront', s0 + 0.03, y);
+  sock('dotLens', s0 + 0.026, y);
+}
 export const scopeRT = new THREE.WebGLRenderTarget(512, 512, { samples: 2 });
 // Zielfernrohr-Baustein: Rohr mittig bei s0 (Design-Koordinaten), Höhe y; setzt die nötigen Anker
 export function scopeKit(m, P, sock, s0, y) {

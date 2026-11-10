@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=36';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=36';
-import { SFX3D } from './sfx.js?v=36';
-import { burst, addDebris, shockwave } from './effects.js?v=36';
-import { cachedGeo } from './util.js?v=36';
+import { room, surfacesOf, isOpening } from './room.js?v=37';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=37';
+import { SFX3D } from './sfx.js?v=37';
+import { burst, addDebris, shockwave } from './effects.js?v=37';
+import { cachedGeo } from './util.js?v=37';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=36';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=37';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -471,7 +471,7 @@ function tearPlank(o, zombiePos) {
 
 // ---- Laufwege: Raster über dem Raum (A*) ----------------------------------------
 const nav = { cell: 0.15, minX: 0, minZ: 0, w: 0, h: 0, blocked: null };
-const RADIUS = 0.24;
+const RADIUS = 0.16; // Abstand zu Wänden/Möbeln (klein genug, dass Zombies auch durch enge Lücken passen)
 export function buildNav(head) {
   const walls = surfacesOf('wall');
   let minX = head.x - 6, maxX = head.x + 6, minZ = head.z - 6, maxZ = head.z + 6;
@@ -489,8 +489,10 @@ export function buildNav(head) {
   const boxes = room.surfaces.filter(s => s.type === 'table' || s.type === 'chair' || s.type === 'bench' || s.type === 'mbox');
   // Türen je Wand vorab als begehbare Abschnitte berechnen
   const wallInfo = walls.map(w => ({
-    w, doors: openings().filter(o => o.type === 'door' && Math.abs(o.normal.dot(w.normal)) > 0.9 && Math.abs((o.mid.x - w.mid.x) * w.normal.x + (o.mid.z - w.mid.z) * w.normal.z) < 0.3)
-      .map(o => { const u = (o.mid.x - w.a.x) * w.right.x + (o.mid.z - w.a.z) * w.right.z; return [u - o.width / 2 + 0.05, u + o.width / 2 - 0.05]; })
+    // Türen großzügig zuordnen (auch leicht schief/versetzt eingezeichnet) und immer mindestens 0,8 m breit freihalten,
+    // damit Zombies auch durch schmale Türen sauber durchlaufen
+    w, doors: openings().filter(o => o.type === 'door' && Math.abs(o.normal.dot(w.normal)) > 0.8 && Math.abs((o.mid.x - w.mid.x) * w.normal.x + (o.mid.z - w.mid.z) * w.normal.z) < 0.6)
+      .map(o => { const u = (o.mid.x - w.a.x) * w.right.x + (o.mid.z - w.a.z) * w.right.z, half = Math.max(0.4, o.width / 2 + 0.05); return [u - half, u + half]; })
   }));
   for (let j = 0; j < nav.h; j++) for (let i = 0; i < nav.w; i++) {
     const x = minX + (i + 0.5) * nav.cell, z = minZ + (j + 0.5) * nav.cell;
@@ -516,12 +518,32 @@ export function walkable(x, z) { // ohne Hilfs-Arrays (wird sehr oft pro Bild au
   const i = Math.floor((x - nav.minX) / nav.cell), j = Math.floor((z - nav.minZ) / nav.cell);
   return !inGrid(i, j) || !nav.blocked[j * nav.w + i];
 }
+// steckt fest (z. B. in einer Ecke): auf die nächste freie Zelle bzw. ein Stück in Wegrichtung setzen
+function unstick(z) {
+  z.stuckN = 0;
+  if (!nav.blocked) return;
+  const i = Math.floor((z.pos.x - nav.minX) / nav.cell), j = Math.floor((z.pos.z - nav.minZ) / nav.cell);
+  const f = isFreeCell(i, j) ? null : nearestFree(i, j);
+  if (f) { z.pos.x = nav.minX + (f[0] + 0.5) * nav.cell; z.pos.z = nav.minZ + (f[1] + 0.5) * nav.cell; }
+  else if (z.path && z.path[0]) { const n = z.path[0], dx = n.x - z.pos.x, dz = n.z - z.pos.z, d = hyp(dx, dz) || 1; if (walkable(z.pos.x + dx / d * 0.15, z.pos.z + dz / d * 0.15)) { z.pos.x += dx / d * 0.15; z.pos.z += dz / d * 0.15; } }
+}
 function nearestFree(i, j) {
   if (isFreeCell(i, j)) return [i, j];
   for (let r = 1; r < 12; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
     if (Math.max(Math.abs(di), Math.abs(dj)) === r && isFreeCell(i + di, j + dj)) return [i + di, j + dj];
   }
   return null;
+}
+// freie Sichtlinie auf dem Raster (in kleinen Schritten prüfen, mit etwas Seitenabstand)
+function lineFree(a, b) {
+  const dx = b.x - a.x, dz = b.z - a.z, len = Math.sqrt(dx * dx + dz * dz);
+  const n = Math.ceil(len / (nav.cell * 0.5));
+  const px = len > 0 ? -dz / len * 0.08 : 0, pz = len > 0 ? dx / len * 0.08 : 0;
+  for (let k = 1; k <= n; k++) {
+    const t = k / n, x = a.x + dx * t, z = a.z + dz * t;
+    if (!walkable(x, z) || !walkable(x + px, z + pz) || !walkable(x - px, z - pz)) return false;
+  }
+  return true;
 }
 // A* mit Binär-Heap (schnell, keine Ruckler)
 let gScore, fScore, came, closed, heapArr;
@@ -560,8 +582,17 @@ function findPath(from, to) {
   const path = [];
   for (let k = goal; k !== -1 && k !== start; k = came[k]) path.push(new THREE.Vector3(nav.minX + ((k % W) + 0.5) * nav.cell, 0, nav.minZ + (((k / W) | 0) + 0.5) * nav.cell));
   path.reverse();
-  const out = path.filter((_, i) => i % 3 === 2); // glätten
-  out.push(to.clone().setY(0));
+  path.push(to.clone().setY(0));
+  // glätten mit Sichtlinien-Prüfung: nur Punkte behalten, die wirklich nötig sind (keine Ecken abschneiden)
+  const out = [];
+  let anchor = from, i = 0;
+  while (i < path.length) {
+    let j = path.length - 1;
+    while (j > i && !lineFree(anchor, path[j])) j--;
+    out.push(path[j]);
+    anchor = path[j];
+    i = j + 1;
+  }
   return out;
 }
 let planBudget = 0; // höchstens 2 Wegberechnungen pro Bild
@@ -596,7 +627,7 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
     path: null, pathT: 0, attackT: 1, actionT: 0, deadT: 0, hurtT: 0, groanT: rand(1, 4), opening: null, enterT: 0, crawl: false, fallDir: 1, headless: false,
     // Leistung: alle später benutzten Felder gleich hier anlegen (gleiche Objekt-Form für alle Zombies,
     // Zahlenfelder bleiben Zahlen) – sonst erzeugt jede Änderung pro Bild neuen Speicher-Müll und es ruckelt
-    atkK: opts.atk || 1, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
+    atkK: opts.atk || 1, stuckT: 0, stuckX: 0, stuckZ: 0, stuckN: 0, skipT: 0, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
     headSnap: 0, hurtTwist: 1, knockT: 0, knockBack: 0, frozenT: 0, burnT: 0, burnTick: 0, burnUp: false, roarT: 2, stompT: 4, smokeT: 0, landT: 0, spinDir: 0,
     lureV: -1, slot: 0, attackVariant: 0, exploded: false, gibbed: false, landed: false, spat: false, kinCrawl: false, freed: false,
     hurtDir: new THREE.Vector3(0, 0, 1), enterFrom: null, fallVec: null, d0: null, deathStyle: '', ice: null, kin: null, phys: null, proxies: null,
@@ -1190,9 +1221,19 @@ function updateOne(i, dt, head, opts, player) {
       z.state = 'walk';
       z.attackT = Math.min(z.attackT, 0.5);
       z.pathT -= dt;
-      if ((z.pathT <= 0 || !z.path || !z.path.length) && planBudget > 0) { planBudget--; z.path = findPath(z.pos, tgt); z.pathT = rand(0.5, 0.9); }
+      // feststecken erkennen: kaum vorwärts gekommen → sofort neu planen (auch über das Budget hinaus)
+      z.stuckT += dt;
+      if (z.stuckT > 0.7) {
+        const moved = hyp(z.pos.x - z.stuckX, z.pos.z - z.stuckZ);
+        if (moved < 0.12 * speed / Math.max(0.2, z.speed)) { z.stuckN++; z.pathT = 0; if (z.stuckN >= 3) unstick(z); } else z.stuckN = 0;
+        z.stuckT = 0; z.stuckX = z.pos.x; z.stuckZ = z.pos.z;
+      }
+      if ((z.pathT <= 0 || !z.path || !z.path.length) && (planBudget > 0 || z.stuckN > 0)) { planBudget--; z.path = findPath(z.pos, tgt); z.pathT = rand(0.5, 0.9); }
       if (!z.path) z.path = [tgt.clone()];
       while (z.path.length > 1 && z.path[0].distanceTo(tmpV.set(z.pos.x, 0, z.pos.z)) < 0.2) z.path.shift();
+      // Abkürzung: ist der übernächste Punkt schon frei sichtbar, direkt dorthin
+      z.skipT -= dt;
+      if (z.skipT <= 0) { z.skipT = 0.25; if (z.path.length > 1 && lineFree(z.pos, z.path[1])) z.path.shift(); }
       const next = z.path[0] || tgt;
       faceTowards(z, next, dt);
       moveTowards(z, next, speed, dt);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=36';
-import { WEAPON_DEFS, WEAPON_ORDER, BUILDERS, scopeKit, makeCartridge } from './weapons.js?v=36';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo } from './util.js?v=37';
+import { WEAPON_DEFS, WEAPON_ORDER, BUILDERS, scopeKit, redDotKit, makeCartridge } from './weapons.js?v=37';
 
 // =============================================================================
 // Waffen-Baukasten: 12 weitere Waffen aus Parametern + Sondermodelle
@@ -142,17 +142,7 @@ function longGun(m, P, sock, o) {
     m.add(box(0.02, 0.025, 0.012, MAT.steel, (r0 + r1) / 2 + 0.08, 0.085));
     scopeKit(m, P, sock, (r0 + r1) / 2 + 0.02, 0.105);
   } else if (o.sight === 'reddot') {
-    const s0 = (r0 + r1) / 2;
-    m.add(box(0.02, 0.014, 0.04, MAT.steel, s0, 0.083));
-    m.add(cylZ(0.019, 0.019, 0.055, new THREE.MeshStandardMaterial({ color: 0x1d2330, metalness: 0.9, roughness: 0.3, side: THREE.DoubleSide }), s0, 0.106, 0, 28, true));
-    m.add(cylZ(0.0195, 0.0195, 0.006, MAT.black, s0 - 0.025, 0.106, 0, 28, true));
-    m.add(cylZ(0.0195, 0.0195, 0.006, MAT.black, s0 + 0.025, 0.106, 0, 28, true));
-    const lens = new THREE.Mesh(cachedGeo('dotlens', () => new THREE.CircleGeometry(0.0175, 28)), MAT.glass);
-    lens.position.set(0, 0.106, -(s0 + 0.026));
-    m.add(lens);
-    sock('sightRear', s0 - 0.03, 0.106);
-    sock('sightFront', s0 + 0.03, 0.106);
-    sock('dotLens', s0 + 0.026, 0.106);
+    redDotKit(m, sock, (r0 + r1) / 2, 0.083);
   } else {
     // Kimme und Korn (bzw. Perlkorn)
     m.add(box(0.005, 0.012, 0.008, MAT.black, r0 + 0.03, sightY - 0.006, 0.005));
@@ -306,7 +296,7 @@ const NEW = {
   autoshot: base({ name: 'Auto-Schrotflinte AS-8', desc: '8 Schuss · Halbautomat · Schrot', builder: 'autoshot', capacity: 8, modes: ['safe', 'semi'], startMode: 1, rpm: 300, pellets: 8, spread: 0.045, sight: 'bead', recoil: { back: 0.05, rise: 0.3, jitter: 0.04 }, snd: { cut: 2200, thump: 90, vol: 1.0 }, dmg: 13, price: 1700, tier: 2, mass: 4.2 }),
   dbl: base({ name: 'Doppelflinte', desc: '2 Schuss · verheerend aus der Nähe', builder: 'dbl', feed: 'tube', ammo: 'shell', action: 'none', capacity: 1, holdOpen: false, noEject: true, modes: ['semi'], startMode: 0, rpm: 300, pellets: 10, spread: 0.05,
     sight: 'bead', recoil: { back: 0.07, rise: 0.5, jitter: 0.03 }, travel: 0.005, grip: [-0.062, -0.028], snd: { cut: 2000, thump: 80, vol: 1.1 }, dmg: 16, price: 900, tier: 1, mass: 3.2 }),
-  dmr: base({ name: 'Präzisionsgewehr P-10', desc: '10 Schuss · Halbautomat · Zielfernrohr', builder: 'dmr', capacity: 10, modes: ['safe', 'semi'], startMode: 1, rpm: 240, spread: 0.0006, sight: 'scope', recoil: { back: 0.035, rise: 0.18, jitter: 0.01 }, snd: { cut: 2800, thump: 80, vol: 1.0 }, dmg: 95, price: 1900, tier: 3, mass: 4.6, range: [6, 14] }),
+  dmr: base({ name: 'Präzisionsgewehr P-10', desc: '10 Schuss · Halbautomat · Rotpunkt', builder: 'dmr', capacity: 10, modes: ['safe', 'semi'], startMode: 1, rpm: 240, spread: 0.0006, sight: 'reddot', recoil: { back: 0.035, rise: 0.18, jitter: 0.01 }, snd: { cut: 2800, thump: 80, vol: 1.0 }, dmg: 95, price: 1900, tier: 3, mass: 4.6, range: [6, 14] }),
   plasma: base({ name: 'Plasmawerfer', desc: 'Wunderwaffe · Plasmakugeln mit Flächenschaden', builder: 'plasma', magBuilder: 'plasma', capacity: 20, action: 'none', modes: ['semi'], startMode: 0, holdOpen: false, noEject: true, rpm: 300, sight: 'reddot', projectile: 'plasma',
     recoil: { back: 0.02, rise: 0.15, jitter: 0.02 }, travel: 0.005, snd: { cut: 5000, thump: 200, vol: 0.9 }, dmg: 160, price: 0, tier: 4, mass: 4.0, boxOnly: true })
 };
@@ -327,7 +317,7 @@ Object.assign(BUILDERS, {
   lmgMag: boxMag,
   autoshot: lg({ recLen: 0.22, hgLen: 0.22, barrel: 0.22, stock: 'fixed', hg: 'rail', sight: 'bead', furniture: MAT.polymer, body: MAT.blued, bore: 0.05 }),
   autoshotMag: () => straightMag(0.04, 0.13, 0.07, MAT.polymer, MAT.black),
-  dmr: lg({ recLen: 0.22, hgLen: 0.26, barrel: 0.26, stock: 'fixed', hg: 'rail', sight: 'scope', furniture: M.fde, rail: false }),
+  dmr: lg({ recLen: 0.22, hgLen: 0.26, barrel: 0.26, stock: 'fixed', hg: 'rail', sight: 'reddot', furniture: M.fde, rail: false }),
   dmrMag: () => straightMag(0.024, 0.09, 0.05),
   revolver, dbl: doubleBarrel, plasma,
   plasmaMag: cellMag,
@@ -460,7 +450,7 @@ const NEW2 = {
   lever: base({ name: 'Unterhebel .44', desc: '8 Schuss · Patronen einzeln laden · Hebel repetieren', builder: 'lever', feed: 'tube', ammo: 'round', action: 'bolt', autoCycle: false, capacity: 8, holdOpen: false,
     modes: ['semi'], startMode: 0, rpm: 140, spread: 0.0008, recoil: { back: 0.045, rise: 0.3, jitter: 0.02 }, travel: 0.07, snd: { cut: 3000, thump: 100, vol: 1.0 }, dmg: 85, price: 1000, tier: 1, mass: 3.4 }),
   antimat: base({ name: 'Panzerbüchse .50', desc: '5 Schuss · durchschlägt mehrere Zombies', builder: 'antimat', magBuilder: 'antimat', action: 'bolt', autoCycle: false, capacity: 5, holdOpen: false,
-    modes: ['safe', 'semi'], startMode: 1, rpm: 50, spread: 0.0003, sight: 'scope', pierce: 4, recoil: { back: 0.08, rise: 0.35, jitter: 0.02 }, travel: 0.09,
+    modes: ['safe', 'semi'], startMode: 1, rpm: 50, spread: 0.0003, sight: 'reddot', pierce: 4, recoil: { back: 0.08, rise: 0.35, jitter: 0.02 }, travel: 0.09,
     snd: { cut: 2200, thump: 55, vol: 1.2 }, dmg: 320, price: 2600, tier: 3, mass: 9, range: [8, 16], grip: [-0.04, -0.045] }),
   crossbow: base({ name: 'Armbrust', desc: 'Sprengbolzen · explodiert nach dem Einschlag', builder: 'crossbow', feed: 'tube', ammo: 'bolt', action: 'none', capacity: 1, holdOpen: false, noEject: true, autoCycle: true,
     modes: ['semi'], startMode: 0, rpm: 60, projectile: 'bolt', recoil: { back: 0.02, rise: 0.08, jitter: 0.01 }, travel: 0.005, snd: { cut: 1200, thump: 60, vol: 0.5 }, dmg: 260, price: 1900, tier: 2, mass: 3.6 }),
@@ -477,7 +467,7 @@ Object.assign(BUILDERS, {
   vector: lg({ recLen: 0.14, hgLen: 0.1, barrel: 0.06, stock: 'folding', hg: 'tube', furniture: M.white, body: M.gray, vgrip: true, magS: 0.07, magTilt: 0 }),
   vectorMag: () => straightMag(0.022, 0.17, 0.03, MAT.steel, MAT.black),
   lever: lg({ recLen: 0.14, hgLen: 0.22, barrel: 0.22, stock: 'wood', hg: 'wood', furniture: MAT.wood, body: MAT.blued, rail: false, action: 'bolt', loadPort: true, magS: 0.06 }),
-  antimat: lg({ recLen: 0.26, hgLen: 0.2, barrel: 0.36, stock: 'fixed', hg: 'rail', sight: 'scope', furniture: M.gray, body: MAT.black, bipod: true, action: 'bolt', rail: false, bore: 0.052 }),
+  antimat: lg({ recLen: 0.26, hgLen: 0.2, barrel: 0.36, stock: 'fixed', hg: 'rail', sight: 'reddot', furniture: M.gray, body: MAT.black, bipod: true, action: 'bolt', rail: false, bore: 0.052 }),
   antimatMag: () => straightMag(0.03, 0.1, 0.075),
   crossbow, tesla, minigun,
   bullpup: lg({ recLen: 0.12, hgLen: 0.16, barrel: 0.1, stock: 'fixed', hg: 'rail', sight: 'reddot', furniture: M.od, magS: -0.2, magTilt: 0.05 })
@@ -583,8 +573,8 @@ const NEW3 = {
     snd: { cut: 1900, thump: 80, vol: 1.1 }, dmg: 15, price: 800, tier: 1, mass: 2.0 }),
   mk44: base({ name: 'Maschinenkarabiner MK-44', desc: '30 Schuss · Holzschaft · kräftig', builder: 'mk44', magBuilder: 'carbine', capacity: 30, rpm: 600, startMode: 2, recoil: { back: 0.025, rise: 0.16, jitter: 0.05 },
     snd: { cut: 2900, thump: 95, vol: 1.0 }, dmg: 46, price: 1500, tier: 2, mass: 4.1 }),
-  hunter: base({ name: 'Jagdgewehr J-7', desc: '5 Schuss · Zielfernrohr · Kammerverschluss', builder: 'hunter', magBuilder: 'dmr', action: 'bolt', autoCycle: false, capacity: 5, holdOpen: false, modes: ['safe', 'semi'], startMode: 1,
-    rpm: 60, spread: 0.0004, sight: 'scope', recoil: { back: 0.05, rise: 0.24, jitter: 0.01 }, travel: 0.085, snd: { cut: 3000, thump: 70, vol: 1.0 }, dmg: 190, price: 1400, tier: 2, mass: 4.2, range: [7, 15], grip: [-0.04, -0.045] }),
+  hunter: base({ name: 'Jagdgewehr J-7', desc: '5 Schuss · Rotpunkt · Kammerverschluss', builder: 'hunter', magBuilder: 'dmr', action: 'bolt', autoCycle: false, capacity: 5, holdOpen: false, modes: ['safe', 'semi'], startMode: 1,
+    rpm: 60, spread: 0.0004, sight: 'reddot', recoil: { back: 0.05, rise: 0.24, jitter: 0.01 }, travel: 0.085, snd: { cut: 3000, thump: 70, vol: 1.0 }, dmg: 190, price: 1400, tier: 2, mass: 4.2, range: [7, 15], grip: [-0.04, -0.045] }),
   gl: base({ name: 'Granatwerfer GL-6', desc: '6 Granaten · explodieren beim Aufprall', builder: 'gl', feed: 'tube', ammo: 'gl', action: 'none', capacity: 6, holdOpen: false, noEject: true, autoCycle: true, modes: ['safe', 'semi'], startMode: 1,
     rpm: 90, projectile: 'grenade', recoil: { back: 0.06, rise: 0.35, jitter: 0.02 }, travel: 0.005, snd: { cut: 1400, thump: 95, vol: 1.0 }, dmg: 280, price: 2400, tier: 3, mass: 5.5 }),
   flamer: base({ name: 'Flammenwerfer', desc: 'Tank mit 120 Stößen · Zombies brennen', builder: 'flamer', magBuilder: 'flamer', capacity: 120, modes: ['safe', 'auto'], startMode: 1, rpm: 900, holdOpen: false, flame: true, noEject: true,
@@ -596,6 +586,6 @@ Object.assign(WEAPON_DEFS, NEW3);
 WEAPON_ORDER.push(...Object.keys(NEW3));
 Object.assign(BUILDERS, {
   mk44: lg({ recLen: 0.22, hgLen: 0.2, barrel: 0.16, stock: 'wood', hg: 'wood', furniture: MAT.wood, body: MAT.blued, rail: false }),
-  hunter: lg({ recLen: 0.2, hgLen: 0.24, barrel: 0.3, stock: 'wood', hg: 'wood', furniture: MAT.wood, body: MAT.blued, sight: 'scope', action: 'bolt', rail: false }),
+  hunter: lg({ recLen: 0.2, hgLen: 0.24, barrel: 0.3, stock: 'wood', hg: 'wood', furniture: MAT.wood, body: MAT.blued, sight: 'reddot', action: 'bolt', rail: false }),
   gl: grenadeLauncher, flamer, flamerMag, frost
 });
