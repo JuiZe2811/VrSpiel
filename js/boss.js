@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss } from './zombies.js?v=35';
-import { burst, shockwave, puff, sparks } from './effects.js?v=35';
-import { SFX, SFX3D } from './sfx.js?v=35';
-import { makePanel } from './util.js?v=35';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=35';
-import './weaponkit.js?v=35';
-import { roomOccluders } from './room.js?v=35';
+import { zombies, walkable, registerBoss } from './zombies.js?v=36';
+import { burst, shockwave, puff, sparks } from './effects.js?v=36';
+import { SFX, SFX3D } from './sfx.js?v=36';
+import { makePanel } from './util.js?v=36';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=36';
+import './weaponkit.js?v=36';
+import { roomOccluders } from './room.js?v=36';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };

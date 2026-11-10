@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=35';
+import { VERSION } from './version.js?v=36';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=35';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=35';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=35';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=35';
-import { facesButtonVisible, setFaces } from './faces.js?v=35';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=35';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=35';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=35';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=35';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL } from './boss.js?v=35';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=36';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=36';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=36';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=36';
+import { facesButtonVisible, setFaces } from './faces.js?v=36';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=36';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=36';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=36';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=36';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL } from './boss.js?v=36';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -26,6 +26,23 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.xr.enabled = true;
 document.body.appendChild(renderer.domElement);
 
+// ---- Schwierigkeitsgrade -------------------------------------------------------------------
+// hp/speed/count/atk: Zombies (Leben, Tempo, Anzahl, Schlag-Tempo) · dmg: Schaden am Spieler · points: Punkte-Faktor
+// regenDelay/regenRate: Heilung (Sekunden ohne Treffer / Lebenspunkte pro Sekunde) · ammo: Reserve-Munition
+// drops: Chance auf Medipacks & Power-ups · start: Extra-Startpunkte
+const DIFFS = {
+  easy: { label: 'Leicht', icon: '🙂', hp: 0.7, speed: 0.85, count: 0.8, atk: 0.75, dmg: 0.5, points: 1.3, regenDelay: 2.5, regenRate: 6, ammo: 1.5, drops: 1.5, start: 1000,
+    desc: 'Leicht: schwache Zombies · halber Schaden · schnelle Heilung · +30 % Punkte' },
+  normal: { label: 'Mittel', icon: '😐', hp: 1, speed: 1, count: 1, atk: 1, dmg: 1, points: 1, regenDelay: 4, regenRate: 3, ammo: 1, drops: 1, start: 0,
+    desc: 'Mittel: das ausgewogene Spiel' },
+  hard: { label: 'Schwer', icon: '😠', hp: 1.35, speed: 1.12, count: 1.25, atk: 1.15, dmg: 1.6, points: 0.85, regenDelay: 6, regenRate: 2, ammo: 0.8, drops: 0.7, start: 0,
+    desc: 'Schwer: zähe Zombies · +60 % Schaden · langsame Heilung · weniger Punkte' },
+  hardcore: { label: 'Hardcore', icon: '☠', hp: 1.7, speed: 1.25, count: 1.4, atk: 1.3, dmg: 5.5, points: 0.7, regenDelay: 10, regenRate: 1.5, ammo: 0.6, drops: 0.4, start: 0,
+    desc: '☠ Hardcore: 2 Schläge = down · zähe Horden · kaum Heilung & Munition' }
+};
+let diffKey = (() => { try { return JSON.parse(localStorage.getItem('vrspiel-schwierigkeit')) || 'normal'; } catch { return 'normal'; } })();
+if (!DIFFS[diffKey]) diffKey = 'normal';
+const DIFF = () => DIFFS[diffKey];
 const scene = new THREE.Scene();
 scene.matrixWorldAutoUpdate = false; // Leistung: Matrizen werden einmal pro Bild in frameInner aktualisiert (nicht nochmal in jedem render)
 const desktopBackground = new THREE.Color(0x30343c);
@@ -185,7 +202,7 @@ const isFree = (h) => !h.held && !h.grab && !h.pull;
 // Alle Waffen, die gerade in der Welt existieren (Startwaffe + gekaufte/gezogene)
 const arsenal = [];
 // Reserve-Munition (begrenzt): Magazine am Gürtel zehren davon, „Volle Munition“ und Wandkauf füllen auf
-const reserveMax = (def) => (def.feed === 'mag' ? def.capacity * (def.tier >= 4 ? 2 : 4) : Math.max(6, def.capacity * 3));
+const reserveMax = (def) => Math.max(def.capacity, Math.round((def.feed === 'mag' ? def.capacity * (def.tier >= 4 ? 2 : 4) : Math.max(6, def.capacity * 3)) * DIFF().ammo));
 function refillAmmo(w) { refillWeapon(w); w.reserve = reserveMax(w.def); boardDirty = true; }
 function spawnWeapon(id, starter = false) {
   const w = createWeapon(id);
@@ -1574,7 +1591,7 @@ function teslaStrike(from, hit, dir, dmg, jumps) {
 const START_POINTS = 500;
 let points = 0;
 const free = () => gameMode === 'training';
-function award(n) { score += n; points += Math.round(n * settings.pointsMul); boardDirty = true; }
+function award(n) { score += n; points += Math.round(n * settings.pointsMul * DIFF().points); boardDirty = true; }
 function spend(price, where) {
   if (free() || points >= price) {
     if (!free()) points -= price;
@@ -2716,13 +2733,6 @@ function speak(textStr) {
     speechSynthesis.speak(u);
   } catch { /* keine Sprachausgabe */ }
 }
-const DIFFS = {
-  easy: { label: 'Leicht', hp: 0.8, speed: 0.85, dmg: 0.6, count: 0.8 },
-  normal: { label: 'Normal', hp: 1, speed: 1, dmg: 1, count: 1 },
-  hard: { label: 'Schwer', hp: 1.25, speed: 1.15, dmg: 1.4, count: 1.3 }
-};
-let diffKey = load('vrspiel-schwierigkeit', 'normal');
-if (!DIFFS[diffKey]) diffKey = 'normal';
 let lowHpWarned = false, bruteWarned = false, pendingDeath = false, bossPending = false, bossWave = false, bossSpawnT = 0;
 let streak = 0, lastKillT = -10, streakMsg = null, lastBreakSec = 0;
 function topList(mode) { return load('vrspiel-top-' + mode, []); }
@@ -3857,17 +3867,18 @@ function refreshMenu() {
       text(ctx, nOpen ? `Die Zombies kommen durch deine ${nOpen} Türen/Fenster.` : '⚠ Keine Türen/Fenster eingerichtet – Zombies kommen aus dem Boden.', w / 2, 124, 23, nOpen ? '#cfd8e3' : '#ffb04a');
     }
     text(ctx, MODES[gameMode].desc, w / 2, 168, 23, '#9ad', 'center', true);
-    text(ctx, top.length ? '🏆 ' + top.slice(0, 5).map((e, i) => `${i + 1}. ${e.score} (W${e.wave}, ${DIFFS[e.diff] ? DIFFS[e.diff].label : ''})`).join('  ') : '🏆 Noch keine Bestenliste', w / 2, 404, 19, '#9ad');
+    text(ctx, DIFF().desc, w / 2, 384, 18, diffKey === 'hardcore' ? '#ff6a5a' : '#ffd28a');
+    text(ctx, top.length ? '🏆 ' + top.slice(0, 5).map((e, i) => `${i + 1}. ${e.score} (W${e.wave}, ${DIFFS[e.diff] ? DIFFS[e.diff].label : ''})`).join('  ') : '🏆 Noch keine Bestenliste', w / 2, 410, 19, '#9ad');
     text(ctx, '⚙ Bedienung', 30, 506, 20, '#9ad', 'left', true);
     text(ctx, 'Kopf x3 · 💰 Punkte → Wandkäufe & Glückskiste · Waffe über die Schulter = Holster', w / 2, 610, 19, '#cfd8e3');
     text(ctx, `Version ${VERSION}`, w - 24, 664, 18, '#6b7a90', 'right');
   }, [
     ...row(184, 56, Object.entries(MODES).map(([id, m]) => ({ id, label: `${m.icon} ${m.label}`, active: gameMode === id, onClick: () => { gameMode = id; refreshMenu(); } })), 792),
     ...row(250, 50, [
-      ...Object.entries(DIFFS).map(([id, d]) => ({ id: 'd_' + id, label: d.label, font: 28, active: diffKey === id, onClick: () => { diffKey = id; store('vrspiel-schwierigkeit', id); refreshMenu(); } })),
-      { id: 'settings', label: '⚙ Einstellungen', font: 24, onClick: () => { menuView = 'settings'; refreshMenu(); } }
+      ...Object.entries(DIFFS).map(([id, d]) => ({ id: 'd_' + id, label: `${d.icon} ${d.label}`, font: 23, active: diffKey === id, onClick: () => { diffKey = id; store('vrspiel-schwierigkeit', id); refreshMenu(); } })),
+      { id: 'settings', label: '⚙', font: 26, onClick: () => { menuView = 'settings'; refreshMenu(); } }
     ], 792),
-    ...row(312, 66, [{ id: 'start', label: '▶ START', font: 40, onClick: startPressed }], 792, 220),
+    ...row(308, 58, [{ id: 'start', label: '▶ START', font: 40, onClick: startPressed }], 792, 220),
     ...row(428, 58, [
       { id: 'room', label: '🧱 Raum bearbeiten', onClick: enterSetup },
       { id: 'reset', label: '🔫 Waffen zurücklegen', onClick: resetWeapons }
@@ -3974,7 +3985,7 @@ function startCountdown() {
 function beginRound() {
   state = 'playing';
   score = 0; roundClock = 0; wave = 0;
-  points = free() ? 0 : settings.startPoints;
+  points = free() ? 0 : settings.startPoints + DIFF().start;
   stats.shots = stats.hits = stats.kills = stats.headshots = 0;
   stats.bestStreak = 0;
   streak = 0;
@@ -4047,11 +4058,11 @@ function showHitDirection(from) {
 function playerHit(dmg, z) {
   if (z && z.root) showHitDirection(z.root.position.clone().setY(headPos.y));
   if (state !== 'playing') return;
-  playerHp -= dmg * DIFFS[diffKey].dmg;
+  playerHp -= dmg * DIFF().dmg;
   hurtFlash = 1;
   if (playerHp < 30 && playerHp > 0 && !lowHpWarned) { lowHpWarned = true; speak('Du bist schwer verletzt'); }
   if (playerHp >= 45) lowHpWarned = false;
-  regenT = 4;
+  regenT = DIFF().regenDelay;
   SFX_PLAYER.hurt();
   for (const h of hands) pulse(h, 1, 150);
   boardDirty = true;
@@ -4088,7 +4099,7 @@ function updateGame(dt) {
   roundClock += dt;
   // Leben regeneriert langsam, wenn man eine Weile nicht getroffen wurde
   regenT -= dt;
-  if (regenT <= 0 && playerHp < maxHp()) { playerHp = Math.min(maxHp(), playerHp + dt * 3); if (Math.random() < dt * 2) boardDirty = true; }
+  if (regenT <= 0 && playerHp < maxHp()) { playerHp = Math.min(maxHp(), playerHp + dt * DIFF().regenRate); if (Math.random() < dt * 2) boardDirty = true; }
   if (playerHp < 35) { heartT -= dt; if (heartT <= 0) { heartT = 0.9; SFX_PLAYER.heartbeat(); if (Math.random() < 0.35) SFX_PLAYER.breath(); } }
   if (streakMsg) { streakMsg.t -= dt; if (streakMsg.t <= 0) streakMsg = null; boardDirty = true; }
   if (waveBreak > 0) {
@@ -4113,7 +4124,7 @@ function updateGame(dt) {
     spawnT -= dt;
     if (spawnT <= 0 && aliveCount() < Math.min(MAX_ALIVE, Math.round((3 + wave) * Math.min(1.5, settings.amount)))) {
       const D = DIFFS[diffKey];
-      const zn = spawnZombie(gameMode === 'training' ? 0 : wave, headPos, bossPending ? 'giant' : undefined, { hp: D.hp, speed: gameMode === 'training' ? 0.8 : D.speed });
+      const zn = spawnZombie(gameMode === 'training' ? 0 : wave, headPos, bossPending ? 'giant' : undefined, { hp: D.hp, speed: gameMode === 'training' ? 0.8 : D.speed, atk: gameMode === 'training' ? 1 : D.atk });
       bossPending = false;
       if (zn.type === 'brute' && !bruteWarned) { bruteWarned = true; speak('Achtung, ein Brocken!'); }
       if ((zn.type === 'bloater' || zn.type === 'spitter') && !warnedTypes.has(zn.type)) { warnedTypes.add(zn.type); speak(zn.type === 'bloater' ? 'Achtung, ein Platzer! Nicht zu nah ran!' : 'Achtung, Spucker! Ausweichen!'); }
@@ -4151,8 +4162,8 @@ function handleZombieHit(res, point, prefix = '') {
       speak('Boss besiegt!');
       streakMsg = { text: `👑 BOSS BESIEGT +${500 * lvl}`, t: 3 };
     } else if (inRound() && res.type === 'giant') spawnPowerup(res.pos); // der Riese lässt immer ein Power-up fallen
-    else if (inRound() && Math.random() < (playerHp < 50 ? 0.12 : 0.05)) spawnMedkit(res.pos);
-    else if (inRound() && !res.nuke && powerups.length < 2 && Math.random() < 0.045) spawnPowerup(res.pos);
+    else if (inRound() && Math.random() < (playerHp < 50 ? 0.12 : 0.05) * DIFF().drops) spawnMedkit(res.pos);
+    else if (inRound() && !res.nuke && powerups.length < 2 && Math.random() < 0.045 * DIFF().drops) spawnPowerup(res.pos);
     else if (inRound() && lowAmmo() && !powerups.some(p0 => p0.type === 'ammo') && Math.random() < 0.09) spawnPowerup(res.pos, 'ammo'); // wenig Munition: öfter „Volle Munition“
   }
   if (settings.hitmarker && (!res.dot || res.kill)) SFX.marker(res.kill, res.headshot);
@@ -4190,7 +4201,7 @@ function refreshBoard() {
   const training = gameMode === 'training' && state === 'playing';
   board.set((ctx, w) => {
     if (state === 'countdown') {
-      text(ctx, `${MODES[gameMode].icon} ${MODES[gameMode].label}`, w / 2, 70, 44, '#9ad', 'center', true);
+      text(ctx, `${MODES[gameMode].icon} ${MODES[gameMode].label} · ${DIFF().icon} ${DIFF().label}`, w / 2, 70, 40, diffKey === 'hardcore' ? '#ff6a5a' : '#9ad', 'center', true);
       text(ctx, countdown > 0.5 ? String(Math.ceil(countdown - 0.5)) : 'LOS!', w / 2, 200, 150, '#ffcc33', 'center', true);
       return;
     }
@@ -4738,7 +4749,7 @@ function frameInner() {
 applySettings();
 window.__game = {
   get boss() { return currentBoss(); },
-  renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
+  renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, set diff(v) { diffKey = v; refreshMenu(); }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,
   guides, profile: async (ms) => { profStat.sum = profStat.n = profStat.max = 0; await new Promise(r => setTimeout(r, ms)); return { jsMsAvg: +(profStat.sum / Math.max(1, profStat.n)).toFixed(2), jsMsMax: +profStat.max.toFixed(1), frames: profStat.n }; },

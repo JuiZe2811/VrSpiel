@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=35';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=35';
-import { SFX3D } from './sfx.js?v=35';
-import { burst, addDebris, shockwave } from './effects.js?v=35';
-import { cachedGeo } from './util.js?v=35';
+import { room, surfacesOf, isOpening } from './room.js?v=36';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=36';
+import { SFX3D } from './sfx.js?v=36';
+import { burst, addDebris, shockwave } from './effects.js?v=36';
+import { cachedGeo } from './util.js?v=36';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=35';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=36';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -596,7 +596,7 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
     path: null, pathT: 0, attackT: 1, actionT: 0, deadT: 0, hurtT: 0, groanT: rand(1, 4), opening: null, enterT: 0, crawl: false, fallDir: 1, headless: false,
     // Leistung: alle später benutzten Felder gleich hier anlegen (gleiche Objekt-Form für alle Zombies,
     // Zahlenfelder bleiben Zahlen) – sonst erzeugt jede Änderung pro Bild neuen Speicher-Müll und es ruckelt
-    stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
+    atkK: opts.atk || 1, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
     headSnap: 0, hurtTwist: 1, knockT: 0, knockBack: 0, frozenT: 0, burnT: 0, burnTick: 0, burnUp: false, roarT: 2, stompT: 4, smokeT: 0, landT: 0, spinDir: 0,
     lureV: -1, slot: 0, attackVariant: 0, exploded: false, gibbed: false, landed: false, spat: false, kinCrawl: false, freed: false,
     hurtDir: new THREE.Vector3(0, 0, 1), enterFrom: null, fallVec: null, d0: null, deathStyle: '', ice: null, kin: null, phys: null, proxies: null,
@@ -1179,7 +1179,7 @@ function updateOne(i, dt, head, opts, player) {
       if (!(z.stagger > 0)) z.attackT -= dt; // taumelnd kein Angriff
       animateAttack(z, dt);
       if (z.attackT <= 0) {
-        z.attackT = 1.3;
+        z.attackT = 1.3 / z.atkK;
         z.attackVariant = Math.random() < 0.4 ? 1 : 0;
         SFX3D.swing(z.skull.getWorldPosition(tmpV2));
         if (Math.random() < 0.6) SFX3D.growl(z.skull.getWorldPosition(tmpV2), z.type);

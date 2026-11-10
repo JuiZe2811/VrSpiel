@@ -5,6 +5,25 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 36 – Vier Schwierigkeitsgrade
+
+Im Hauptmenü wählbar. Unter den Knöpfen steht kurz, was der Modus bedeutet, und auf der Anzeige zu Rundenbeginn steht der gewählte Modus.
+
+| | 🙂 Leicht | 😐 Mittel | 😠 Schwer | ☠ Hardcore |
+|---|---|---|---|---|
+| Zombie-Leben | 70 % | 100 % | 135 % | 170 % |
+| Zombie-Tempo | 85 % | 100 % | 112 % | 125 % |
+| Zombies pro Welle | 80 % | 100 % | 125 % | 140 % |
+| Schlag-Tempo der Zombies | langsamer | normal | schneller | viel schneller |
+| Schaden an dir | 50 % | 100 % | 160 % | 550 % (2 Schläge = down) |
+| Heilung | nach 2,5 s, schnell | nach 4 s | nach 6 s, langsam | nach 10 s, sehr langsam |
+| Punkte | +30 % | 100 % | 85 % | 70 % |
+| Reserve-Munition | 150 % | 100 % | 80 % | 60 % |
+| Medipacks & Power-ups | 150 % | 100 % | 70 % | 40 % |
+| Startpunkte | +1000 | – | – | – |
+
+Der Boss hat im Modus mehr oder weniger Leben, und sein Schaden zählt ebenfalls nach dem Modus. In der Bestenliste steht bei jedem Eintrag, in welchem Modus er gespielt wurde.
+
 ## Neu in Version 35 – Flüssiger ohne Abstriche und faire Punkte
 
 **Flüssiger, ohne die Grafik zu verschlechtern:**
