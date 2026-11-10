@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=27';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=27';
-import { SFX3D } from './sfx.js?v=27';
-import { burst, addDebris, shockwave } from './effects.js?v=27';
-import { cachedGeo } from './util.js?v=27';
+import { room, surfacesOf, isOpening } from './room.js?v=28';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=28';
+import { SFX3D } from './sfx.js?v=28';
+import { burst, addDebris, shockwave } from './effects.js?v=28';
+import { cachedGeo } from './util.js?v=28';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -88,35 +88,43 @@ const FACES = SKIN_COLORS.map((c, i) => new THREE.MeshStandardMaterial({ map: fa
 // ---- Gesichter von Freunden (Fotos, nur lokal auf dem Gerät gespeichert) ----------------------
 const FRIEND_FACES = [];
 let friendShare = 0;
+// Foto auf eine eigene gewölbte Gesichtsfläche (keine Verzerrung wie auf der Kugel):
+// Gesicht bleibt gut erkennbar, nur leicht fahl gefärbt, Ränder blenden in die Haut über
 function friendFaceTex(img) {
-  return canvasTex(512, 256, (ctx, w, h) => {
-    ctx.fillStyle = '#6e7058'; ctx.fillRect(0, 0, w, h);
-    grime(ctx, w, h, 60, 0.3);
-    // Foto vorne auf die Kopfkugel (Mitte vorne bei u = 0.25), weich ausgeblendet
-    const cx = w * 0.25, fw = 200, fh = 210, top = h * 0.12;
-    ctx.save();
-    ctx.beginPath(); ctx.ellipse(cx, top + fh / 2, fw / 2, fh / 2, 0, 0, Math.PI * 2); ctx.clip();
-    ctx.drawImage(img, cx - fw / 2, top, fw, fh);
-    // zombifizieren: fahl-grünlich, dunkle Augenringe, Schmutz und Blut
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = '#b7c9a0'; ctx.fillRect(cx - fw / 2, top, fw, fh);
+  return canvasTex(300, 360, (ctx, w, h) => {
+    ctx.fillStyle = '#7a7c64'; ctx.fillRect(0, 0, w, h);
+    // Foto mit weichem, ovalem Rand
+    const tmp = document.createElement('canvas');
+    tmp.width = w; tmp.height = h;
+    const t = tmp.getContext('2d');
+    t.drawImage(img, 0, 0, w, h);
+    t.globalCompositeOperation = 'destination-in';
+    const g = t.createRadialGradient(w / 2, h * 0.5, Math.min(w, h) * 0.3, w / 2, h * 0.5, Math.min(w, h) * 0.52);
+    g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    t.fillStyle = g; t.save(); t.translate(w / 2, h / 2); t.scale(1, h / w); t.translate(-w / 2, -h / 2); t.fillRect(0, 0, w, h); t.restore();
+    ctx.drawImage(tmp, 0, 0);
+    // dezent zombiehaft: leichter Grünstich, etwas Schmutz und Blut nur am Rand
+    ctx.globalCompositeOperation = 'color';
+    ctx.fillStyle = 'rgba(120,150,100,0.18)'; ctx.fillRect(0, 0, w, h);
     ctx.globalCompositeOperation = 'source-over';
-    const g = ctx.createRadialGradient(cx, top + fh / 2, fw * 0.25, cx, top + fh / 2, fw * 0.6);
-    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(40,45,30,0.85)');
-    ctx.fillStyle = g; ctx.fillRect(cx - fw / 2, top, fw, fh);
-    ctx.restore();
-    grime(ctx, w, h, 25, 0.5);
-    ctx.strokeStyle = 'rgba(120,0,0,0.85)'; ctx.lineWidth = 3;
-    for (let i = 0; i < 4; i++) { const x = cx + (Math.random() - 0.5) * 60; ctx.beginPath(); ctx.moveTo(x, top + fh * 0.78); ctx.lineTo(x + (Math.random() - 0.5) * 6, top + fh * 0.78 + 15 + Math.random() * 25); ctx.stroke(); }
+    for (let i = 0; i < 18; i++) {
+      const a = Math.random() * Math.PI * 2, r = 0.38 + Math.random() * 0.12;
+      ctx.fillStyle = Math.random() < 0.5 ? `rgba(110,0,0,${0.5 + Math.random() * 0.4})` : `rgba(0,0,0,${Math.random() * 0.3})`;
+      ctx.beginPath(); ctx.ellipse(w / 2 + Math.cos(a) * w * r, h / 2 + Math.sin(a) * h * r, 3 + Math.random() * 8, 3 + Math.random() * 10, a, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(120,0,0,0.8)'; ctx.lineWidth = 3;
+    for (const x of [w * 0.32, w * 0.7]) { ctx.beginPath(); ctx.moveTo(x, h * 0.86); ctx.lineTo(x + (Math.random() - 0.5) * 6, h * 0.99); ctx.stroke(); }
   });
 }
+// gewölbte Fläche vorne am Kopf (Ausschnitt einer Kugel), Bild füllt die ganze Fläche
+const facePatchGeo = cachedGeo('zfacepatch', () => new THREE.SphereGeometry(0.104, 28, 20, Math.PI / 2 - 0.95, 1.9, 0.38, 1.7));
 // urls: Bild-Daten (data:…); share: Anteil der Zombies mit Freundes-Gesicht (0…1)
 export function setFriendFaces(urls, share) {
   friendShare = share;
   for (const m of FRIEND_FACES.splice(0)) { m.map.dispose(); m.dispose(); }
   for (const u of urls) {
     const img = new Image();
-    img.onload = () => FRIEND_FACES.push(new THREE.MeshStandardMaterial({ map: friendFaceTex(img), roughness: 0.75, envMapIntensity: 0.35 }));
+    img.onload = () => { const t = friendFaceTex(img); FRIEND_FACES.push(new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.35, roughness: 0.7, envMapIntensity: 0.3 })); };
     img.src = u;
   }
 }
@@ -170,7 +178,7 @@ function buildZombie(type) {
   const si = Math.floor(Math.random() * SKINS.length);
   const toxic = type === 'bloater' || type === 'spitter';
   const friend = FRIEND_FACES.length > 0 && type !== 'giant' && Math.random() < friendShare;
-  const skin = toxic ? TOXIC_SKIN : SKINS[si], face = friend ? pick(FRIEND_FACES) : FACES[si], shirt = pick(SHIRTS), pants = pick(PANTS);
+  const skin = toxic ? TOXIC_SKIN : SKINS[si], face = friend ? skin : FACES[si], shirt = pick(SHIRTS), pants = pick(PANTS);
   const sleeves = Math.random() < 0.5 ? shirt : skin; // zerrissene Ärmel
   const root = new THREE.Group();   // steht auf dem Boden, schaut nach +Z
   const body = new THREE.Group();   // für Umfallen / Kriechen
@@ -201,6 +209,12 @@ function buildZombie(type) {
   const skull = mesh(sphGeo(0.1), face, 0, 0.1, 0, 'head', 0.92, 1.12, 1);
   skull.rotation.y = 0; // Gesicht zeigt nach +Z
   head.add(skull);
+  if (friend) { // Freundes-Gesicht: eigene Fläche mit dem Foto, Kopf etwas größer
+    const patch = new THREE.Mesh(facePatchGeo, pick(FRIEND_FACES));
+    patch.userData.part = 'head';
+    skull.add(patch);
+    head.scale.setScalar(1.18);
+  }
   if (!friend && Math.random() < 0.6) head.add(mesh(hairGeo, hairMat, 0, 0.115, -0.005, null, 0.95, 1.1, 1.02));
   const eyeMat = type === 'runner' || type === 'giant' ? EYES[1] : pick(EYES);
   const glowMat = toxic ? EYE_GLOW[3] : EYE_GLOW[EYES.indexOf(eyeMat)];

@@ -5,6 +5,13 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 28 – Gesichter viel besser erkennbar
+
+- Das Foto liegt jetzt auf einer **eigenen gewölbten Gesichtsfläche** vorne am Kopf statt verzerrt auf der Kopfkugel – in höherer Auflösung (300 × 360) und mit weichem Rand, der in die Haut übergeht.
+- Viel weniger Zombie-Färbung: nur ein leichter Grünstich, Blut und Schmutz nur am Rand – das Gesicht bleibt frei.
+- Das Gesicht leuchtet leicht von selbst, damit man es auch im dunklen Flur und bei wenig Licht erkennt.
+- Köpfe der Freundes-Zombies sind 18 % größer.
+
 ## Neu in Version 27 – Gesichter von Freunden & flüssiger
 
 **🧟 Zombies mit den Gesichtern deiner Freunde**

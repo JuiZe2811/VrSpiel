@@ -1,6 +1,6 @@
 // Gesichter von Freunden für die Zombies: Fotos laden, aufs Gesicht zuschneiden, lokal speichern.
 // Die Bilder bleiben nur im Browser dieses Geräts (localStorage) – sie werden nirgends hochgeladen.
-import { setFriendFaces } from './zombies.js?v=27';
+import { setFriendFaces } from './zombies.js?v=28';
 
 const KEY = 'vrspiel-gesichter';
 // fest eingebaute Gesichter (Freunde, mit Erlaubnis) – werden benutzt, solange keine eigenen Fotos geladen sind
@@ -124,9 +124,9 @@ cv.addEventListener('pointerup', () => { dragging = null; });
 $('facesCancel').onclick = () => { img = null; $('facesCrop').style.display = 'none'; };
 $('facesOk').onclick = () => {
   if (!img) return;
-  // Ausschnitt in voller Auflösung, 200×240 Pixel als JPEG (klein genug für den Speicher)
+  // Ausschnitt in voller Auflösung, 300×360 Pixel als JPEG (klein genug für den Speicher)
   const out = document.createElement('canvas');
-  out.width = 200; out.height = 240;
+  out.width = 300; out.height = 360;
   const sw = zoom * img.width, sh = sw * ASPECT;
   out.getContext('2d').drawImage(img, cx * img.width - sw / 2, cy * img.height - sh / 2, sw, sh, 0, 0, out.width, out.height);
   data.faces.push(out.toDataURL('image/jpeg', 0.85));
