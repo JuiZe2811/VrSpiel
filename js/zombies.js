@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=39';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=39';
-import { SFX3D } from './sfx.js?v=39';
-import { burst, addDebris, shockwave } from './effects.js?v=39';
-import { cachedGeo } from './util.js?v=39';
+import { room, surfacesOf, isOpening } from './room.js?v=40';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=40';
+import { SFX3D } from './sfx.js?v=40';
+import { burst, addDebris, shockwave } from './effects.js?v=40';
+import { cachedGeo } from './util.js?v=40';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=39';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=40';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -396,7 +396,7 @@ function skinify(z) {
   const cap = (g, a, b, r, part) => caps.push({ g, a: new THREE.Vector3(0, a, 0), b: new THREE.Vector3(0, b, 0), r, part });
   cap(z.hips, -0.02, 0.04, 0.14, 'torso');
   cap(z.torso, 0.08, 0.42, z.belly ? 0.2 : 0.15, 'torso');
-  cap(z.head, 0.05, 0.15, 0.11, 'head');
+  cap(z.head, 0.04, 0.15, 0.115, 'head'); // Schädel inkl. Haare
   for (let k = 0; k < 2; k++) {
     const A = z.arms[k], L = z.legs[k];
     cap(A.shoulder, -0.02, -0.25, 0.055, A.name); cap(A.elbow, 0, -0.3, 0.05, A.name);

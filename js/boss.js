@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath } from './zombies.js?v=39';
-import { burst, shockwave, puff, sparks } from './effects.js?v=39';
-import { SFX, SFX3D } from './sfx.js?v=39';
-import { makePanel } from './util.js?v=39';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=39';
-import './weaponkit.js?v=39';
-import { roomOccluders } from './room.js?v=39';
+import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath } from './zombies.js?v=40';
+import { burst, shockwave, puff, sparks } from './effects.js?v=40';
+import { SFX, SFX3D } from './sfx.js?v=40';
+import { makePanel } from './util.js?v=40';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=40';
+import './weaponkit.js?v=40';
+import { roomOccluders } from './room.js?v=40';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
@@ -143,7 +143,10 @@ export function spawnBoss(level, head, diffHp = 1) {
 }
 export function clearBoss() {
   if (boss && boss.root.parent) boss.root.parent.remove(boss.root);
-  if (boss) { for (const m of boss.mats) m.dispose(); for (const g of boss.guns) scene.remove(g.w.root); if (boss.laser) { scene.remove(boss.laser); boss.laser.material.dispose(); } }
+  if (boss) { // alles freigeben: Materialien, Skelett-Texturen, Waffen-Geometrien
+    for (const m of boss.mats) m.dispose();
+    boss.root.traverse(o => { if (o.isSkinnedMesh) o.skeleton.dispose(); });
+    for (const g of boss.guns) { scene.remove(g.w.root); g.w.root.traverse(o => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); }); } if (boss.laser) { scene.remove(boss.laser); boss.laser.material.dispose(); } }
   boss = null;
   for (const p of projectiles) removeProjectile(p);
   projectiles = [];

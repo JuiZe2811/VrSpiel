@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=39';
+import { VERSION } from './version.js?v=40';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=39';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=39';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=39';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=39';
-import { facesButtonVisible, setFaces } from './faces.js?v=39';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=39';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=39';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=39';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=39';
-import { giantModelReady, giantWarmup } from './giantmodel.js?v=39';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=39';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=40';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=40';
+import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=40';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=40';
+import { facesButtonVisible, setFaces } from './faces.js?v=40';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=40';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=40';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=40';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=40';
+import { giantModelReady, giantWarmup } from './giantmodel.js?v=40';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=40';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -221,9 +221,12 @@ function disposeWeapon(w) {
   if (holster === w) holster = null;
   if (w.phys) { removeDynamic(w.phys); w.phys = null; }
   if (w.root.parent) w.root.parent.remove(w.root);
+  disposeTree(w.root); // eigene (zusammengefasste) Geometrien freigeben – sonst wächst der Grafikspeicher mit jeder Runde
   const i = arsenal.indexOf(w);
   if (i >= 0) arsenal.splice(i, 1);
 }
+// Geometrien eines Objekts freigeben (geteilte/zwischengespeicherte bleiben erhalten)
+function disposeTree(obj) { obj.traverse(o => { if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); }); }
 let holster = null; // im Rückenholster verstaute Waffe
 spawnWeapon('pistol', true);
 let deskW = null; // am PC gehaltene Waffe
@@ -638,7 +641,12 @@ const monkeyMats = {
   brass: new THREE.MeshStandardMaterial({ color: 0xd4a83a, roughness: 0.3, metalness: 1 }),
   light: new THREE.MeshBasicMaterial({ color: 0xff3a3a, toneMapped: false })
 };
-function makeMonkey() {
+function makeMonkey() { // aus einer Vorlage klonen (teilt Geometrie → kein Speicher-Zuwachs pro Affe)
+  const g = fromTemplate('monkey', buildMonkey);
+  g.userData = { arms: [g.getObjectByName('arm0'), g.getObjectByName('arm1')], key: g.getObjectByName('key'), light: g.getObjectByName('light') };
+  return g;
+}
+function buildMonkey() {
   const g = new THREE.Group();
   const sph = (r, mat, x, y, z, sx = 1, sy = 1, sz = 1) => { const m = new THREE.Mesh(cachedGeo('mk' + r, () => new THREE.SphereGeometry(r, 14, 10)), mat); m.position.set(x, y, z); m.scale.set(sx, sy, sz); g.add(m); return m; };
   sph(0.032, monkeyMats.vest, 0, 0.045, 0, 1, 1.15, 0.9);           // Körper mit Weste
@@ -678,7 +686,8 @@ function makeMonkey() {
   g.add(key);
   const light = sph(0.006, monkeyMats.light, 0, 0.128, 0);
   mergeStatic(g, { light }); // Leistung: Teile mit gleichem Material zusammenfassen (Arme und Schlüssel bleiben beweglich)
-  g.userData = { arms, key, light };
+  arms.forEach((a, i) => { a.name = 'arm' + i; });
+  key.name = 'key'; light.name = 'light';
   return g;
 }
 let monkeyCount = 1;
@@ -1649,7 +1658,7 @@ const wallbuys = [];
 const boardMat = new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.9 });
 const chalkMat = new THREE.MeshBasicMaterial({ color: 0xffd36a, toneMapped: false });
 function clearWallbuys() {
-  for (const wb of wallbuys.splice(0)) { scene.remove(wb.group); wb.glow.material.dispose(); wb.label.mesh.material.map.dispose(); wb.label.mesh.material.dispose(); wb.label.mesh.geometry.dispose(); }
+  for (const wb of wallbuys.splice(0)) { scene.remove(wb.group); disposeTree(wb.group); wb.glow.material.dispose(); wb.label.mesh.material.map.dispose(); wb.label.mesh.material.dispose(); wb.label.mesh.geometry.dispose(); }
 }
 // freie Wandstellen (nicht vor Türen/Fenstern, Abstand zu anderen Plätzen) – ohne Wände: frei stehend im Kreis
 function freeWallSpots(n, y, avoid = [], minSep = 1.2, angles = [Math.PI * 0.5, Math.PI, -Math.PI * 0.5], radius = 1.8) {

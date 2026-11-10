@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo, mergeStatic } from './util.js?v=39';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo, mergeStatic } from './util.js?v=40';
 
 // Waffen: Daten, Modelle, Munition
 export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'sniper'];
@@ -55,7 +55,15 @@ export function makeShell(spent = false) {
   return g;
 }
 
-export function makeKnife() {
+// Vorlagen: Modelle, die oft neu erzeugt werden (Magazine, Granaten, Messer), nur einmal bauen und danach klonen.
+// Klone teilen sich Geometrie und Material → keine neuen GPU-Puffer pro Exemplar (sonst wächst der Speicher mit jedem Nachladen/Wurf).
+const _tpl = {};
+export function fromTemplate(key, build) {
+  if (!_tpl[key]) { _tpl[key] = build(); _tpl[key].traverse(o => { if (o.geometry) o.geometry.userData.shared = true; }); } // geteilt: nie freigeben
+  return _tpl[key].clone();
+}
+export const makeKnife = () => fromTemplate('knife', buildKnife);
+function buildKnife() {
   const g = new THREE.Group();
   g.add(prof([[-0.055, -0.011], [0.035, -0.012], [0.035, 0.012], [-0.055, 0.011], [-0.062, 0]], 0.022, MAT.grip, 0.004));
   g.add(box(0.026, 0.036, 0.006, MAT.steel, 0.038, 0));
@@ -447,6 +455,11 @@ export function buildWeapon(id) {
 // Handgranate (Ursprung = Mitte des Körpers)
 const grenadeMat = new THREE.MeshStandardMaterial({ color: 0x3d4a2a, roughness: 0.6, metalness: 0.2 });
 export function makeGrenade() {
+  const g = fromTemplate('grenade', buildGrenade);
+  g.userData.ring = g.getObjectByName('ring');
+  return g;
+}
+function buildGrenade() {
   const g = new THREE.Group();
   const body = new THREE.Mesh(cachedGeo('gren', () => new THREE.SphereGeometry(0.032, 14, 10)), grenadeMat);
   body.scale.set(1, 1.25, 1);
@@ -460,11 +473,11 @@ export function makeGrenade() {
   ring.position.set(-0.018, 0.056, 0);
   ring.rotation.y = Math.PI / 2;
   g.add(ring);
+  ring.name = 'ring';
   mergeStatic(g, { ring }); // Leistung: Rillen/Hebel zusammenfassen, der Ring bleibt einzeln (wird gezogen)
-  g.userData.ring = ring;
   return g;
 }
-export const makeMag = (id) => { const g = BUILDERS[(WEAPON_DEFS[id].magBuilder || id) + 'Mag'](WEAPON_DEFS[id]); mergeStatic(g, null); return g; };
+export const makeMag = (id) => fromTemplate('mag:' + id, () => { const g = BUILDERS[(WEAPON_DEFS[id].magBuilder || id) + 'Mag'](WEAPON_DEFS[id]); mergeStatic(g, null); return g; });
 export const MASS = new Proxy({ pistol: 0.9, smg: 2.6, shotgun: 3.3, sniper: 5.5 }, { get: (t, k) => t[k] ?? (WEAPON_DEFS[k] && WEAPON_DEFS[k].mass) ?? 3 });
 
 // Vollständige Waffe inkl. Munitionszustand
