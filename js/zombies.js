@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=30';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=30';
-import { SFX3D } from './sfx.js?v=30';
-import { burst, addDebris, shockwave } from './effects.js?v=30';
-import { cachedGeo } from './util.js?v=30';
+import { room, surfacesOf, isOpening } from './room.js?v=31';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=31';
+import { SFX3D } from './sfx.js?v=31';
+import { burst, addDebris, shockwave } from './effects.js?v=31';
+import { cachedGeo } from './util.js?v=31';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // =============================================================================

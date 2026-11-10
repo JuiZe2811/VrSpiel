@@ -1,16 +1,16 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=30';
+import { VERSION } from './version.js?v=31';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=30';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=30';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=30';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=30';
-import { facesButtonVisible, setFaces } from './faces.js?v=30';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=30';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=30';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=30';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=30';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=31';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=31';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=31';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=31';
+import { facesButtonVisible, setFaces } from './faces.js?v=31';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=31';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=31';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=31';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=31';
 
 // =============================================================================
 // Grundgerüst
@@ -1163,6 +1163,81 @@ function updateRoundFx(dt) {
 }
 // Blickrichtung einer Hand (um die Hochachse)
 function handYaw(h) { const f = new THREE.Vector3(0, 0, -1).applyQuaternion(h.quat); return Math.atan2(-f.x, -f.z); }
+// Rundenanzeige als schwebendes HUD: 1,3 m vor dir, leicht oberhalb der Blickrichtung
+let boardYaw = 0;
+function placeBoardHud(snap) {
+  const yaw = headYaw();
+  const diff = Math.atan2(Math.sin(yaw - boardYaw), Math.cos(yaw - boardYaw));
+  if (snap || Math.abs(diff) > 0.55) boardYaw += diff * (snap ? 1 : 0.06); // erst nachziehen, wenn man sich deutlich wegdreht
+  const target = new THREE.Vector3(headPos.x - Math.sin(boardYaw) * 1.3, headPos.y + 0.42, headPos.z - Math.cos(boardYaw) * 1.3);
+  if (snap) board.mesh.position.copy(target); else board.mesh.position.lerp(target, 0.12);
+  board.mesh.lookAt(headPos);
+}
+// ---- Leuchtende Hilfen: zeigen, was als Nächstes zu tun ist (Magazin, Durchladen, Entsichern …) ----
+const guideTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 4, 32, 32, 30); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.7)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 3; g.beginPath(); g.arc(32, 32, 22, 0, Math.PI * 2); g.stroke(); return new THREE.CanvasTexture(c); })();
+const guides = [0, 1].map(() => {
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: guideTex, color: 0x4ae2ff, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+  glow.renderOrder = 70;
+  glow.visible = false;
+  scene.add(glow);
+  const label = makePanel(0.2, 0.045, 1600);
+  label.mesh.renderOrder = 71;
+  label.mesh.material.depthTest = false;
+  label.mesh.visible = false;
+  scene.add(label.mesh);
+  return { glow, label, txt: '' };
+});
+const tmpG = new THREE.Vector3();
+// Was muss mit der Waffe in Hand h als Nächstes passieren? → { pos (Weltposition), text }
+function guideStep(w, h) {
+  const d = w.def, off = otherHand(h), offItem = off && off.held;
+  const sock = (n) => (w.sockets[n] ? w.sockets[n].getWorldPosition(new THREE.Vector3()) : null);
+  const A = btnName(h, 'a'), B = btnName(h, 'b');
+  if (mode(w) === 'safe') return { pos: w.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.08, 0)), text: `${B}: entsichern`, color: 0xffd21f };
+  if (d.feed === 'mag') {
+    if (!w.magInserted) {
+      if (offItem && offItem.type === 'mag') return { pos: sock('magwell'), text: '↑ Magazin hier rein' };
+      const slot = beltSlots.find(s0 => s0.kind === 'mag' && s0.available);
+      if (slot) return { pos: slot.obj.getWorldPosition(new THREE.Vector3()), text: 'Magazin greifen' };
+      return { pos: w.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.08, 0)), text: 'Keine Munition!', color: 0xff4a3a };
+    }
+    if (w.magRounds === 0 && w.chamber !== 'live') return { pos: sock('magwell'), text: `${A}: Magazin raus`, color: 0xffb03a };
+  } else {
+    if (w.tube === 0 && w.chamber !== 'live') {
+      if (offItem && offItem.type === 'shell') return { pos: sock('loadPort'), text: 'Patrone hier rein' };
+      const slot = beltSlots.find(s0 => s0.kind === 'shell' && s0.available);
+      if (slot) return { pos: slot.obj.getWorldPosition(new THREE.Vector3()), text: 'Patrone greifen' };
+      return { pos: w.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.08, 0)), text: 'Keine Munition!', color: 0xff4a3a };
+    }
+  }
+  if ((w.chamber !== 'live' || w.actionOpen) && d.action !== 'none' && !w.desktopBusy) {
+    if (d.action === 'pump') return { pos: sock('foregrip'), text: 'Vorderschaft zurück & vor' };
+    if (off && off.grab && off.grab.w === w) return { pos: sock('chargerGrab'), text: d.action === 'bolt' ? 'zurück … und vor' : 'ganz zurückziehen' };
+    return { pos: sock('chargerGrab'), text: d.action === 'slide' ? `Schlitten ziehen (oder ${B})` : d.action === 'bolt' ? 'Kammerstängel greifen' : 'Spannhebel ziehen' };
+  }
+  return null;
+}
+function updateGuides() {
+  const on = settings.guides && renderer.xr.isPresenting;
+  hands.forEach((h, i) => {
+    const G = guides[i];
+    const w = on ? heldWeapon(h) : null;
+    const step = w ? guideStep(w, h) : null;
+    G.glow.visible = G.label.mesh.visible = !!(step && step.pos);
+    if (!G.glow.visible) return;
+    const k = 0.75 + Math.sin(elapsed * 9) * 0.25;
+    G.glow.position.copy(step.pos);
+    G.glow.scale.setScalar(0.06 * k + 0.02);
+    G.glow.material.color.setHex(step.color || 0x4ae2ff);
+    G.glow.material.opacity = 0.55 + 0.45 * k;
+    G.label.mesh.position.copy(step.pos).add(tmpG.set(0, 0.07, 0));
+    G.label.mesh.lookAt(headPos);
+    if (G.txt !== step.text) {
+      G.txt = step.text;
+      G.label.draw((ctx, cw, ch) => { roundRect(ctx, 2, 2, cw - 4, ch - 4, 18); ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fill(); ctx.strokeStyle = '#4ae2ff'; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; let f = 34; ctx.font = `bold ${f}px system-ui, sans-serif`; while (ctx.measureText(step.text).width > cw - 24 && f > 16) { f -= 2; ctx.font = `bold ${f}px system-ui, sans-serif`; } ctx.fillText(step.text, cw / 2, ch / 2 + 2); });
+    }
+  });
+}
 // Brett direkt an einer Tür/einem Fenster mit fehlenden Brettern greifen
 function plankOpeningNear(p) {
   for (const o of openings()) {
@@ -2536,6 +2611,7 @@ const SETTINGS_TABS = {
     { key: 'pointsMul', label: 'Punkte für Treffer & Kills', opts: [[0.5, '×0,5'], [0.75, '×0,75'], [1, '×1'], [1.5, '×1,5'], [2, '×2'], [3, '×3']] }
   ] },
   bedienung: { label: '✊ Bedienung', items: [
+    { key: 'guides', label: 'Leuchtende Hilfen', opts: onOff },
     { key: 'grip', label: 'Griff-Taste', opts: [['hold', 'Halten'], ['toggle', 'Tippen']] },
     { key: 'reload', label: 'Nachladen', opts: [['real', 'Echt'], ['simple', 'Einfach']] },
     { key: 'assist', label: 'Zielhilfe', opts: onOff },
@@ -2559,7 +2635,7 @@ const SETTINGS_DEFAULT = {
   startPoints: 500, amount: 1, blood: 1, killcam: true, ambient: true, hitmarker: true,
   grip: 'hold', reload: 'real', assist: true, haptics: 1, wristHud: true, snapBelt: 1,
   shadows: true, particles: 1, dust: true, popups: true, eyeGlow: true, autoPerf: true,
-  autoPlace: 'weapons', corpseTime: 1.2, quality: 'balanced', priceWeapons: 1, priceBox: 950, pricePerks: 1, priceUpgrade: 1, priceTrap: 1000, pointsMul: 1
+  autoPlace: 'weapons', corpseTime: 1.2, quality: 'balanced', guides: true, priceWeapons: 1, priceBox: 950, pricePerks: 1, priceUpgrade: 1, priceTrap: 1000, pointsMul: 1
 };
 // Preise laut Einstellungen (auf schöne Zahlen gerundet)
 const price = {
@@ -2667,7 +2743,7 @@ function tryWeaponGrab(h) {
   if (!w) return false;
   const p = h.point;
   const opts = [];
-  if (w.def.action !== 'pump' && w.def.action !== 'none') opts.push({ type: 'charger', d: p.distanceTo(w.sockets.chargerGrab.getWorldPosition(tmpV)) / 0.09 });
+  if (w.def.action !== 'pump' && w.def.action !== 'none') opts.push({ type: 'charger', d: p.distanceTo(w.sockets.chargerGrab.getWorldPosition(tmpV)) / 0.12 });
   if (w.sockets.foregrip) opts.push({ type: 'fore', d: p.distanceTo(w.sockets.foregrip.getWorldPosition(tmpV)) / 0.2 });
   opts.push({ type: 'swap', d: p.distanceTo(w.root.getWorldPosition(tmpV)) / 0.05 });
   opts.sort((a, b) => a.d - b.d);
@@ -2835,13 +2911,13 @@ function updateHeldWeapon(w, main, dt) {
   const item = off.held;
   if (item && (item.type === 'mag' || item.type === 'shell')) {
     const itemPos = item.obj.getWorldPosition(new THREE.Vector3());
-    if (item.type === 'mag' && item.weaponId === w.id && !w.magInserted && itemPos.distanceTo(w.sockets.magwell.getWorldPosition(tmpV)) < (perks.has('flink') ? 0.2 : 0.14)) {
+    if (item.type === 'mag' && item.weaponId === w.id && !w.magInserted && itemPos.distanceTo(w.sockets.magwell.getWorldPosition(tmpV)) < (perks.has('flink') ? 0.22 : 0.17)) {
       off.ray.remove(item.obj);
       off.held = null;
       insertMag(w, item.rounds);
       if (w.def.action === 'none' && w.chamber !== 'live') feed(w);
       pulse(off, 0.8, 50); pulse(main, 0.5, 40);
-    } else if (item.type === 'shell' && w.def.feed === 'tube' && w.tube < w.def.capacity && itemPos.distanceTo(w.sockets.loadPort.getWorldPosition(tmpV)) < 0.13) {
+    } else if (item.type === 'shell' && w.def.feed === 'tube' && w.tube < w.def.capacity && itemPos.distanceTo(w.sockets.loadPort.getWorldPosition(tmpV)) < 0.16) {
       off.ray.remove(item.obj);
       off.held = null;
       w.tube++;
@@ -3775,26 +3851,26 @@ function refreshSettings() {
   const tab = SETTINGS_TABS[settingsTab];
   const btns = [...row(80, 52, Object.entries(SETTINGS_TABS).map(([id, t]) => ({ id: 't_' + id, label: t.label, font: 21, active: settingsTab === id, onClick: () => { settingsTab = id; refreshMenu(); } })), 792, 20, 8)];
   tab.items.forEach((it, i) => {
-    const y = 150 + i * 63;
+    const y = 148 + i * 57;
     const idx = Math.max(0, it.opts.findIndex(o => o[0] === settings[it.key]));
     const step = (d) => () => { const n = it.opts.length; setSetting(it.key, it.opts[(idx + d + n) % n][0]); if (it.key === 'announcer' || it.key === 'announcerVoice') speak('Welle eins'); else SFX.ui(); };
-    btns.push({ id: 'l_' + it.key, label: '◀', font: 30, x: 470, y, w: 64, h: 54, onClick: step(-1) });
-    btns.push({ id: 'r_' + it.key, label: '▶', font: 30, x: 704, y, w: 64, h: 54, onClick: step(1) });
+    btns.push({ id: 'l_' + it.key, label: '◀', font: 28, x: 470, y, w: 64, h: 50, onClick: step(-1) });
+    btns.push({ id: 'r_' + it.key, label: '▶', font: 28, x: 704, y, w: 64, h: 50, onClick: step(1) });
   });
-  btns.push(...row(600, 60, [
+  btns.push(...row(610, 56, [
     { id: 'reset', label: '↺ Standard', font: 26, onClick: () => { for (const it of tab.items) settings[it.key] = SETTINGS_DEFAULT[it.key]; setSetting(tab.items[0].key, settings[tab.items[0].key]); } },
     { id: 'back', label: '◀ Zurück', font: 30, onClick: () => { menuView = 'main'; refreshMenu(); } }
   ], 792));
   menuPanel.set((ctx, w) => {
     text(ctx, '⚙ Einstellungen', w / 2, 40, 38, '#fff', 'center', true);
     tab.items.forEach((it, i) => {
-      const y = 150 + i * 63;
+      const y = 148 + i * 57;
       const o = it.opts.find(q => q[0] === settings[it.key]) || it.opts[0];
-      text(ctx, it.label, 40, y + 28, 25, '#e6edf5', 'left', true);
-      roundRect(ctx, 542, y + 4, 154, 48, 12);
+      text(ctx, it.label, 40, y + 26, 24, '#e6edf5', 'left', true);
+      roundRect(ctx, 542, y + 3, 154, 44, 12);
       ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill();
-      text(ctx, o[1], 619, y + 30, 25, '#ffd36a', 'center', true);
-      if (it.opts.length === 11 && typeof o[0] === 'number') { ctx.fillStyle = '#ffd36a'; ctx.fillRect(546, y + 46, 146 * o[0] / 10, 4); }
+      text(ctx, o[1], 619, y + 27, 24, '#ffd36a', 'center', true);
+      if (it.opts.length === 11 && typeof o[0] === 'number') { ctx.fillStyle = '#ffd36a'; ctx.fillRect(546, y + 43, 146 * o[0] / 10, 4); }
     });
     text(ctx, `Version ${VERSION}`, w - 24, 664, 18, '#6b7a90', 'right');
   }, btns);
@@ -3853,9 +3929,12 @@ function startCountdown() {
   clearMonkeys();
   monkeyCount = 1;
   syncMonkeySlot();
-  const fd = freeDistance(headPos, inFront(1, 0, headPos.y + 0.6).sub(headPos), 3.2);
-  board.place(Math.max(1.2, Math.min(3, fd - 0.2)), 0, 0.6);
-  board.mesh.scale.setScalar(1.3);
+  // Rundenanzeige: schwebt oben im Blickfeld, folgt dem Kopf mit Verzögerung, liegt immer vor allem (nie in einer Wand)
+  board.mesh.scale.setScalar(0.42);
+  board.mesh.material.depthTest = false;
+  board.mesh.renderOrder = 60;
+  boardYaw = headYaw();
+  placeBoardHud(true);
   board.visible = true;
   boardDirty = true;
 }
@@ -4547,6 +4626,8 @@ function frameInner() {
   updateArrows(dt);
   updateMachines(dt);
   updateDust(dt);
+  updateGuides();
+  if (board.visible && (state === 'playing' || state === 'countdown')) placeBoardHud(false);
   updateBolts(dt);
   updateMonkeys(dt);
   updateTraps(dt);
@@ -4588,6 +4669,6 @@ window.__game = {
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,
-  profile: async (ms) => { profStat.sum = profStat.n = profStat.max = 0; await new Promise(r => setTimeout(r, ms)); return { jsMsAvg: +(profStat.sum / Math.max(1, profStat.n)).toFixed(2), jsMsMax: +profStat.max.toFixed(1), frames: profStat.n }; },
+  guides, profile: async (ms) => { profStat.sum = profStat.n = profStat.max = 0; await new Promise(r => setTimeout(r, ms)); return { jsMsAvg: +(profStat.sum / Math.max(1, profStat.n)).toFixed(2), jsMsMax: +profStat.max.toFixed(1), frames: profStat.n }; },
   setFaces, get monkeyCount() { return monkeyCount; }, lure, traps, pullTrap, roundFx, upgradeWeapon, set wave(v) { wave = v; }, set toSpawn(v) { toSpawn = v; }, spawnWeapon, resetWeapons, settings, tryFire, arrows, machines, upg, perks, useMachine, get points() { return points; }, set points(v) { points = v; }, wallbuys, mbox, useBox, tryBuy, giveWeapon, get holster() { return holster; }, plasmas, setTool, setupTriggerDown, setupTriggerUp, alignToLine, loadSlot, saveSlot, serializeRoom, setupWallbuys, setupMysteryBox, surfaceAt, updateSetup
 };

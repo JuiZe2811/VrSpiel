@@ -5,6 +5,26 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 31 – Leuchtende Hilfen für alle Waffen, neue Rundenanzeige
+
+**Leuchtende Hilfen** – damit jeder sofort versteht, was zu tun ist (Einstellungen → Bedienung → „Leuchtende Hilfen“):
+- Eine **pulsierende Markierung mit kurzem Hinweis** zeigt immer genau auf die Stelle, die du als Nächstes brauchst:
+  - Gesichert → „B/Y: entsichern“
+  - Magazin leer → „A/X: Magazin raus“ (am Magazinschacht)
+  - kein Magazin drin → „Magazin greifen“ (am Gürtel), mit Magazin in der Hand → „↑ Magazin hier rein“ (am Schacht)
+  - Patronen-Waffen → „Patrone greifen“ / „Patrone hier rein“ (an der Ladeöffnung)
+  - Durchladen nötig → leuchtet **am Schlitten / Spannhebel / Kammerstängel / Vorderschaft**: „Schlitten ziehen“, „Spannhebel ziehen“, „Kammerstängel greifen“ → „zurück … und vor“, „Vorderschaft zurück & vor“
+  - Reserve leer → rot „Keine Munition!“
+- Die Hilfen werden immer über allem gezeichnet, auch wenn die Waffe davor ist.
+
+**Leichteres Handling**
+- Magazine und Patronen rasten schon aus größerem Abstand ein (17 cm statt 14 cm, mit Flinkhand 22 cm).
+- Spannhebel / Schlitten lassen sich aus größerem Abstand greifen.
+
+**Neue Rundenanzeige**
+- Die Anzeige mit Welle, Leben und Punkten **schwebt jetzt kompakt oben in deinem Blickfeld** (1,3 m vor dir) und wird **immer über allem gezeichnet** – sie kann nie mehr in einer Wand stecken.
+- Sie folgt deinem Kopf mit Verzögerung: erst wenn du dich deutlich wegdrehst, gleitet sie nach.
+
 ## Neu in Version 30 – Große Leistungs-Optimierung
 
 Gemessen mit 14 Zombies im Raum: **Zeichenaufrufe pro Bild von 768 auf ~200 gesenkt**, Bildrate im Test fast verdoppelt.
