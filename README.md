@@ -5,6 +5,13 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 34 – Neues Monster-Modell für den Riesen
+
+- Der Riese (kommt in den Wellen 8, 13, 18 usw.) ist jetzt ein echtes 3D-Monster: riesiges Maul mit Zähnen, dicker Bauch und lange Krallen (`models/giant.glb`).
+- Das Modell wurde für die Quest verschlankt: von 58.000 auf etwa 17.500 Dreiecke, 0,7 MB.
+- Es hat keine eigene Textur. Fahle Haut, dunkle Flecken und Blut um Maul und Krallen werden beim Laden gefärbt.
+- Das Monster bewegt sich mit allen bisherigen Riesen-Animationen: Gehen, Schlagen, Stampfen und Todesanimation. Kopftreffer und Schaden funktionieren wie vorher.
+
 ## Neu in Version 33 – Der Boss kämpft mit Waffen
 
 - **Jede Boss-Runde hat er eine bessere Waffe:** Welle 5 Pistole → 10 Revolver → 15 Maschinenpistole → 20 Pump-Flinte → 25 Sturmgewehr → 30 Maschinengewehr → 35 Panzerbüchse → 40 Minigun. Ab Welle 45 wechselt er zwischen den drei stärksten, und jede weitere Stufe trifft härter und schießt schneller.

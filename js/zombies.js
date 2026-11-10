@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=33';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=33';
-import { SFX3D } from './sfx.js?v=33';
-import { burst, addDebris, shockwave } from './effects.js?v=33';
-import { cachedGeo } from './util.js?v=33';
+import { room, surfacesOf, isOpening } from './room.js?v=34';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=34';
+import { SFX3D } from './sfx.js?v=34';
+import { burst, addDebris, shockwave } from './effects.js?v=34';
+import { cachedGeo } from './util.js?v=34';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=34';
 
 // =============================================================================
 // Zombies: kommen durch Türen und Fenster (reißen erst die Bretter ab),
@@ -29,7 +30,7 @@ export function registerBoss(h) { Object.assign(bossHooks, h); }
 export const lure = { active: false, pos: new THREE.Vector3(), v: 0 };
 export function setLure(pos) { if (pos) { lure.pos.set(pos.x, 0, pos.z); if (!lure.active) lure.v++; lure.active = true; } else if (lure.active) { lure.active = false; lure.v++; for (const z of zombies) z.pathT = 0; } }
 export function setZombieHooks(h) { Object.assign(hooks, h); }
-export function initZombies(s, hitCallback, bumpCallback, stompCallback) { scene = s; onPlayerHit = hitCallback; if (bumpCallback) onBump = bumpCallback; if (stompCallback) onStomp = stompCallback; }
+export function initZombies(s, hitCallback, bumpCallback, stompCallback) { scene = s; loadGiantModel(); onPlayerHit = hitCallback; if (bumpCallback) onBump = bumpCallback; if (stompCallback) onStomp = stompCallback; }
 
 // ---- Aussehen -------------------------------------------------------------------
 // Alle Formen und Texturen werden geteilt (kein Speicherleck bei vielen Zombies).
@@ -325,6 +326,7 @@ export let skinningOn = true;
 export function setSkinning(on) { skinningOn = on; }
 // GPU-Speicher eines entfernten Zombies freigeben (Körper-Geometrie + Knochen-Textur)
 function freeZombie(z) {
+  if (z.monster && !z.monster.freed) { z.monster.freed = true; z.monster.model.traverse(o => { if (o.isSkinnedMesh) o.skeleton.dispose(); }); }
   if (!z.skinned || z.freed) return;
   z.freed = true;
   z.skinned.geometry.dispose();
@@ -614,6 +616,7 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
   zombie.root.position.z = zombie.pos.z;
   zombie.root.traverse(o => { if (o.isMesh && o.userData.part) o.userData.zombie = zombie; });
   skinify(zombie);
+  if (type === 'giant') attachMonster(zombie); // Riese: Monster-Modell statt Baukasten-Körper
   // unsichtbarer Körper: geworfene Dinge prallen ab und treffen den Zombie
   zombie.kin = addKinematicBox(new THREE.Vector3(0.2 * T.width * scale, 0.8 * scale, 0.16 * scale), 0.8 * scale, (other, v, p) => bumpZombie(zombie, other, v, p));
   zombie.kinCrawl = false;
@@ -701,12 +704,12 @@ export function damageZombie(mesh, point, dir, dmg, quiet = false) {
     const k = partName === 'armL' ? 0 : 1;
     z.hp -= dmg * 0.5;
     z.armHp[k] -= dmg;
-    if (z.armHp[k] <= 0 && !z.armLost[k]) detach(z, z.arms[k].shoulder, 'arm', k);
+    if (z.armHp[k] <= 0 && !z.armLost[k] && !z.monster) detach(z, z.arms[k].shoulder, 'arm', k);
   } else {
     const k = partName === 'legL' ? 0 : 1;
     z.hp -= dmg * 0.6;
     z.legHp[k] -= dmg;
-    if (z.legHp[k] <= 0 && !z.legLost[k]) { detach(z, z.legs[k].hip, 'leg', k); z.crawl = true; }
+    if (z.legHp[k] <= 0 && !z.legLost[k] && !z.monster) { detach(z, z.legs[k].hip, 'leg', k); z.crawl = true; }
   }
   const res = { part: partName, headshot, kill: false, limp: z.legHp.some(h => h < 30) && !z.crawl, pos: z.pos.clone(), type: z.type, zombie: z, dot: quiet };
   if (z.hp <= 0) {
@@ -718,6 +721,7 @@ export function damageZombie(mesh, point, dir, dmg, quiet = false) {
 }
 // Einschussloch + Blutspur bleiben am getroffenen Körperteil
 function addWound(z, mesh, point) {
+  if (z.monster) return; // Monster-Modell: keine Einschusslöcher am unsichtbaren Baukasten-Körper
   if ((z.wounds || 0) >= (woundsMax) ) return;
   if (!mesh.geometry && mesh.userData.proxy) { // Skinned-Körper: Loch am Knochen befestigen
     z.wounds = (z.wounds || 0) + 1;
@@ -786,7 +790,7 @@ export function explosionDamage(center, radius, maxDmg) {
     z.hp -= z.T.boss ? Math.min(300, maxDmg * f) : maxDmg * f;
     z.hurtT = 0.4;
     burst(z.skull.getWorldPosition(new THREE.Vector3()), 0x6a0000, 12);
-    if (f > 0.45 && !z.T.boss) {
+    if (f > 0.45 && !z.T.boss && !z.monster) {
       for (let k = 0; k < 2; k++) {
         if (Math.random() < f * 0.6 && !z.legLost[k]) { detach(z, z.legs[k].hip, 'leg', k); z.crawl = true; }
         if (Math.random() < f * 0.5 && !z.armLost[k]) detach(z, z.arms[k].shoulder, 'arm', k);
@@ -1223,6 +1227,7 @@ export function updateZombies(dt, head, opts = {}) {
     z.root.position.z = z.pos.z;
     z.root.rotation.y = z.yaw;
   }
+  for (const z of zombies) if (z.monster) syncMonster(z); // Monster-Modell des Riesen folgt der fertigen Haltung
   for (let i = limbs.length - 1; i >= 0; i--) {
     limbs[i].t -= dt;
     if (limbs[i].t <= 0) { removeDynamic(limbs[i].phys); limbs[i].obj.scale.setScalar(0.0001); limbs[i].obj.updateMatrixWorld(true); scene.remove(limbs[i].obj); limbs.splice(i, 1); }

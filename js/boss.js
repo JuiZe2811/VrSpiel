@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss } from './zombies.js?v=33';
-import { burst, shockwave, puff, sparks } from './effects.js?v=33';
-import { SFX, SFX3D } from './sfx.js?v=33';
-import { makePanel } from './util.js?v=33';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=33';
-import './weaponkit.js?v=33';
-import { roomOccluders } from './room.js?v=33';
+import { zombies, walkable, registerBoss } from './zombies.js?v=34';
+import { burst, shockwave, puff, sparks } from './effects.js?v=34';
+import { SFX, SFX3D } from './sfx.js?v=34';
+import { makePanel } from './util.js?v=34';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=34';
+import './weaponkit.js?v=34';
+import { roomOccluders } from './room.js?v=34';
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
 let template = null;
