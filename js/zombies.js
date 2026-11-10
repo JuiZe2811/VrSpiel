@@ -320,6 +320,13 @@ const PART_CODES = { torso: 1, head: 2, armL: 3, armR: 4, legL: 5, legR: 6 };
 const PART_NAMES = [null, 'torso', 'head', 'armL', 'armR', 'legL', 'legR'];
 export let skinningOn = true;
 export function setSkinning(on) { skinningOn = on; }
+// GPU-Speicher eines entfernten Zombies freigeben (Körper-Geometrie + Knochen-Textur)
+function freeZombie(z) {
+  if (!z.skinned || z.freed) return;
+  z.freed = true;
+  z.skinned.geometry.dispose();
+  z.skinned.skeleton.dispose();
+}
 function skinify(z) {
   if (!skinningOn) { z.hitTorso = z.torso.children[1]; return; }
   const root = z.root;
@@ -614,6 +621,7 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
 export function clearZombies() {
   for (const z of zombies) {
     if (z.root.parent) z.root.parent.remove(z.root);
+    freeZombie(z);
     if (z.kin) { removeBody(z.kin); z.kin = null; }
     if (z.phys) { removeDynamic(z.phys); z.phys = null; }
   }
@@ -825,6 +833,7 @@ function makeCorpse(z) {
 function removeCorpse(z) {
   if (z.phys) { removeDynamic(z.phys); z.phys = null; }
   if (z.root.parent) z.root.parent.remove(z.root);
+  freeZombie(z);
   const i = zombies.indexOf(z);
   if (i >= 0) zombies.splice(i, 1);
 }
@@ -1021,8 +1030,8 @@ export function updateZombies(dt, head, opts = {}) {
       z.legs.forEach((l, k) => { l.knee.rotation.x = THREE.MathUtils.damp(l.knee.rotation.x, 0.5 + k * 0.3, 4, dt); });
       z.neck.rotation.x = THREE.MathUtils.damp(z.neck.rotation.x, 0.9, 4, dt);
       z.jaw.rotation.x = 0.45;
-      if (z.gibbed) { if (z.deadT > 0.5) { scene.remove(z.root); zombies.splice(i, 1); } continue; } // zerplatzt: keine Leiche
-      if (animateDeath(z, dt)) { scene.remove(z.root); zombies.splice(i, 1); }
+      if (z.gibbed) { if (z.deadT > 0.5) { scene.remove(z.root); freeZombie(z); zombies.splice(i, 1); } continue; } // zerplatzt: keine Leiche
+      if (animateDeath(z, dt)) { scene.remove(z.root); freeZombie(z); zombies.splice(i, 1); }
       continue;
     }
     if (z.frozenT > 0) { // erstarrt
