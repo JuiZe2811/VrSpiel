@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=31';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=31';
-import { SFX3D } from './sfx.js?v=31';
-import { burst, addDebris, shockwave } from './effects.js?v=31';
-import { cachedGeo } from './util.js?v=31';
+import { room, surfacesOf, isOpening } from './room.js?v=32';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=32';
+import { SFX3D } from './sfx.js?v=32';
+import { burst, addDebris, shockwave } from './effects.js?v=32';
+import { cachedGeo } from './util.js?v=32';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // =============================================================================
@@ -22,6 +22,9 @@ const UP = new THREE.Vector3(0, 1, 0);
 const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
 
 let hooks = { explode: null, spitHit: null, shatter: null };
+// Boss (eigenes Modul): eigene Bewegung/Angriffe, nutzt aber Treffer, Schaden und Waffen der Zombies
+let bossHooks = { update: null, clear: null };
+export function registerBoss(h) { Object.assign(bossHooks, h); }
 // Lockvogel: aktive Position, zu der alle Zombies laufen
 export const lure = { active: false, pos: new THREE.Vector3(), v: 0 };
 export function setLure(pos) { if (pos) { lure.pos.set(pos.x, 0, pos.z); if (!lure.active) lure.v++; lure.active = true; } else if (lure.active) { lure.active = false; lure.v++; for (const z of zombies) z.pathT = 0; } }
@@ -619,6 +622,7 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
   return zombie;
 }
 export function clearZombies() {
+  if (bossHooks.clear) bossHooks.clear();
   for (const z of zombies) {
     if (z.root.parent) z.root.parent.remove(z.root);
     freeZombie(z);
@@ -689,7 +693,8 @@ export function damageZombie(mesh, point, dir, dmg, quiet = false) {
     if (dmg >= 30) z.stagger = Math.max(z.stagger || 0, Math.min(0.6, dmg * 0.006));
   }
   let headshot = false;
-  if (z.frozenT > 0) dmg *= 25; // gefroren: zerspringt
+  if (z.T.boss) dmg = Math.min(dmg, 300); // Boss: kein Sofort-Tod durch Eis, Fallen oder Power-ups
+  else if (z.frozenT > 0) dmg *= 25; // gefroren: zerspringt
   if (partName === 'head') { z.hp -= dmg * 3; headshot = true; }
   else if (partName === 'torso') z.hp -= dmg;
   else if (partName.startsWith('arm')) {
@@ -706,7 +711,7 @@ export function damageZombie(mesh, point, dir, dmg, quiet = false) {
   const res = { part: partName, headshot, kill: false, limp: z.legHp.some(h => h < 30) && !z.crawl, pos: z.pos.clone(), type: z.type, zombie: z, dot: quiet };
   if (z.hp <= 0) {
     res.kill = true;
-    if (headshot && dmg * 3 >= 150) { z.head.visible = false; z.headless = true; burst(point, 0x7a0000, 30); }
+    if (headshot && dmg * 3 >= 150 && !z.T.boss) { z.head.visible = false; z.headless = true; burst(point, 0x7a0000, 30); }
     kill(z, dir);
   }
   return res;
@@ -755,6 +760,13 @@ export function killAll(from) {
   for (const z of zombies) {
     if (z.state === 'dead') continue;
     const dir = new THREE.Vector3(z.pos.x - from.x, 0, z.pos.z - from.z).normalize();
+    if (z.T.boss) { // Atombombe: Boss verliert nur ein Stück Leben
+      z.hp -= 300; z.hurtT = 0.4;
+      const r = { part: 'torso', headshot: false, kill: false, pos: z.pos.clone(), type: z.type, zombie: z, explosion: true, nuke: true };
+      if (z.hp <= 0) { r.kill = true; kill(z, dir); }
+      results.push(r);
+      continue;
+    }
     z.hp = 0;
     burst(z.skull.getWorldPosition(new THREE.Vector3()), 0x6a0000, 14);
     kill(z, dir);
@@ -771,10 +783,10 @@ export function explosionDamage(center, radius, maxDmg) {
     const f = 1 - d / radius;
     if (f <= 0) continue;
     const dir = new THREE.Vector3(z.pos.x - center.x, 0, z.pos.z - center.z).normalize();
-    z.hp -= maxDmg * f;
+    z.hp -= z.T.boss ? Math.min(300, maxDmg * f) : maxDmg * f;
     z.hurtT = 0.4;
     burst(z.skull.getWorldPosition(new THREE.Vector3()), 0x6a0000, 12);
-    if (f > 0.45) {
+    if (f > 0.45 && !z.T.boss) {
       for (let k = 0; k < 2; k++) {
         if (Math.random() < f * 0.6 && !z.legLost[k]) { detach(z, z.legs[k].hip, 'leg', k); z.crawl = true; }
         if (Math.random() < f * 0.5 && !z.armLost[k]) detach(z, z.arms[k].shoulder, 'arm', k);
@@ -840,7 +852,7 @@ function removeCorpse(z) {
 function kill(z, dir) {
   z.state = 'dead';
   z.deadT = 0;
-  if (z.frozenT > 0) { // in Eissplitter zerspringen
+  if (z.frozenT > 0 && !z.T.boss) { // in Eissplitter zerspringen
     const at = z.root.position.clone().setY(1);
     z.gibbed = true;
     z.root.visible = false;
@@ -1021,6 +1033,7 @@ export function updateZombies(dt, head, opts = {}) {
   for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
     if (!z) continue; // Liste kann sich während des Updates ändern
+    if (z.T.boss) { if (bossHooks.update) bossHooks.update(z, dt, head, opts); continue; }
     z.hurtT = Math.max(0, z.hurtT - dt);
     if (z.stagger > 0) z.stagger -= dt;
     if (z.state === 'dead') {
@@ -1265,6 +1278,7 @@ function updateSpits(dt, head, opts) {
 const iceMat = new THREE.MeshStandardMaterial({ color: 0xbfe8ff, emissive: 0x3a7aa0, emissiveIntensity: 0.6, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.55, depthWrite: false });
 export function freezeZombie(z, t = 5) {
   if (z.state === 'dead') return;
+  if (z.T.boss) t = Math.min(t, 1.2); // Boss friert nur kurz ein
   z.frozenT = Math.max(z.frozenT || 0, t);
   if (!z.ice) {
     z.ice = new THREE.Group();

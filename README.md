@@ -5,6 +5,18 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 32 – Boss-Runde jede 5. Welle
+
+- **Jede 5. Welle ist eine Boss-Runde:** Es kommen keine Zombies, nur der Boss (eigenes 3D-Modell, `models/boss.glb`). Die Welle ist geschafft, wenn er besiegt ist.
+- **Jedes Mal schwerer und mit neuen Angriffen:**
+  - Stufe 1 (Welle 5): Sturmangriff und Stampfer (roter Druckwellen-Ring am Boden, ausweichen!)
+  - Stufe 2 (Welle 10): dazu Bretterwurf (Bretter fliegen im Bogen auf dich zu)
+  - Stufe 3 (Welle 15): dazu Teleport (taucht hinter dir auf und schlägt zu) und Wut-Modus bei wenig Leben (rot, schneller, Angriffe direkt hintereinander)
+  - Stufe 4 (Welle 20) und höher: dazu Wirbelwind. Mit jeder Stufe hat er mehr Leben, ist schneller, trifft härter und wird etwas größer.
+- **Fair:** Er hat einen Lebensbalken über dem Kopf, und jeder Angriff wird angekündigt (Ausholen). Ein Kopfschuss zählt dreifach. Einfrieren, Fallen und die Atombombe kosten ihn nur ein Stück Leben, sie töten ihn nicht sofort.
+- **Belohnung:** 1000 Punkte × Stufe, „Volle Munition“ und ein Medipack.
+- Der Riese kommt jetzt in den Wellen 8, 13, 18 usw.
+
 ## Neu in Version 31 – Leuchtende Hilfen für alle Waffen, neue Rundenanzeige
 
 **Leuchtende Hilfen** – damit jeder sofort versteht, was zu tun ist (Einstellungen → Bedienung → „Leuchtende Hilfen“):

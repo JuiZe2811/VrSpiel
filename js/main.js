@@ -1,16 +1,17 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=31';
+import { VERSION } from './version.js?v=32';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=31';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=31';
-import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=31';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=31';
-import { facesButtonVisible, setFaces } from './faces.js?v=31';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=31';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=31';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=31';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=31';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=32';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=32';
+import { WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=32';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=32';
+import { facesButtonVisible, setFaces } from './faces.js?v=32';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=32';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=32';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=32';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=32';
+import { initBoss, spawnBoss, bossReady, currentBoss } from './boss.js?v=32';
 
 // =============================================================================
 // Grundgerüst
@@ -33,6 +34,7 @@ scene.environment = envTex;
 scene.add(room.group);
 initEffects(scene);
 initZombies(scene, (dmg, z) => playerHit(dmg, z), (res, p) => handleZombieHit(res, p, '🎯 '), (z, big) => onGiantStomp(z, big));
+initBoss(scene, { playerHit: (d, z) => playerHit(d, z), pulse: (i, ms) => hands.forEach(h => pulse(h, i, ms)), speak: (t) => speak(t) });
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 200);
 camera.position.set(0, 1.6, 0);
@@ -1135,7 +1137,7 @@ function drawRoundFx() {
       ctx.shadowBlur = 12; ctx.shadowColor = '#000';
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 50px system-ui, sans-serif';
       ctx.fillText(`WELLE ${f.to}`, w / 2, 48);
-      const sub = f.to % 5 === 0 && gameMode !== 'training' ? '☠ EIN RIESE KOMMT ☠' : f.to === 3 ? 'Neu: Brocken' : f.to === 4 ? 'Neu: Platzer' : f.to === 5 ? 'Neu: Spucker' : f.to === UPGRADE_TIERS[1].wave ? 'Aufrüster: Stufe ★★ freigeschaltet' : f.to === UPGRADE_TIERS[2].wave ? 'Aufrüster: Stufe ★★★ freigeschaltet' : '';
+      const sub = f.to % 5 === 0 && gameMode !== 'training' ? (bossReady() ? `👑 BOSS-RUNDE · STUFE ${f.to / 5} 👑` : '☠ EIN RIESE KOMMT ☠') : f.to > 5 && f.to % 5 === 3 && gameMode !== 'training' ? '☠ EIN RIESE KOMMT ☠' : f.to === 3 ? 'Neu: Brocken' : f.to === 4 ? 'Neu: Platzer' : f.to === 5 ? 'Neu: Spucker' : f.to === UPGRADE_TIERS[1].wave ? 'Aufrüster: Stufe ★★ freigeschaltet' : f.to === UPGRADE_TIERS[2].wave ? 'Aufrüster: Stufe ★★★ freigeschaltet' : '';
       if (sub) { ctx.fillStyle = '#ffcc33'; ctx.font = 'bold 34px system-ui, sans-serif'; ctx.fillText(sub, w / 2, 372); }
     }
   });
@@ -2159,7 +2161,7 @@ function updateTraps(dt) {
       const c = z.root.position.clone().setY(1);
       if (t.kind === 'electric') {
         lightningLine(t.posts[Math.floor(Math.random() * 4)].getWorldPosition(new THREE.Vector3()), c);
-        handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, new THREE.Vector3(0, 1, 0), 9999, true), c, '⚡ ');
+        handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, new THREE.Vector3(0, 1, 0), z.T.boss ? 40 : 9999, true), c, '⚡ ');
       } else {
         if (!z.burnT) burning.add(z);
         z.burnT = 3;
@@ -2691,7 +2693,7 @@ const DIFFS = {
 };
 let diffKey = load('vrspiel-schwierigkeit', 'normal');
 if (!DIFFS[diffKey]) diffKey = 'normal';
-let lowHpWarned = false, bruteWarned = false, pendingDeath = false, bossPending = false;
+let lowHpWarned = false, bruteWarned = false, pendingDeath = false, bossPending = false, bossWave = false, bossSpawnT = 0;
 let streak = 0, lastKillT = -10, streakMsg = null, lastBreakSec = 0;
 function topList(mode) { return load('vrspiel-top-' + mode, []); }
 function addTop(mode, entry) {
@@ -3898,6 +3900,7 @@ function resetMap() {
   if (p0 && (p0.phys || (p0.holder < 0 && p0 !== deskW && !p0.inBelt))) holsterPistol(p0);
 }
 function startCountdown() {
+  bossSpawnT = 0;
   state = 'countdown';
   resetMap();
   countdown = 3.999;
@@ -3955,7 +3958,10 @@ function nextWave() {
   toSpawn = Math.max(2, Math.round((gameMode === 'training' ? 2 + wave : Math.min(70, 4 + wave * 2.4)) * DIFFS[diffKey].count * settings.amount));
   refillGrenades();
   bruteWarned = false;
-  bossPending = gameMode !== 'training' && wave % 5 === 0;
+  // jede 5. Welle: Boss-Runde – nur der Boss, keine Zombies. Der Riese kommt stattdessen in Welle 8, 13, 18 …
+  bossWave = gameMode !== 'training' && wave % 5 === 0 && bossReady();
+  bossPending = gameMode !== 'training' && (bossWave ? false : wave % 5 === 0 || (wave > 5 && wave % 5 === 3));
+  if (bossWave) { toSpawn = 0; bossSpawnT = 2.5; }
   spawnT = 1.5;
   waveBreak = 0;
   setupPlanks(); // Bretter werden vor jeder Welle wieder angenagelt
@@ -3964,6 +3970,7 @@ function nextWave() {
 }
 function endRound(died = false) {
   state = 'over';
+  bossSpawnT = 0;
   clearMonkeys();
   musicStop();
   killcamT = 0;
@@ -4059,6 +4066,17 @@ function updateGame(dt) {
     if (waveBreak <= 0) nextWave();
     return;
   }
+  // Boss-Runde: kurz warten, dann erscheint der Boss (allein)
+  if (bossSpawnT > 0) {
+    bossSpawnT -= dt;
+    if (bossSpawnT <= 0) {
+      const lvl = Math.floor(wave / 5);
+      if (spawnBoss(lvl, headPos, DIFFS[diffKey].hp)) speak(lvl === 1 ? 'Der Boss ist da!' : `Der Boss ist zurück – Stufe ${lvl}!`);
+      else bossPending = true, toSpawn = 1; // Modell fehlt: Riese als Ersatz
+      boardDirty = true;
+    }
+    return;
+  }
   // Zombies nach und nach erscheinen lassen
   if (toSpawn > 0) {
     spawnT -= dt;
@@ -4086,7 +4104,14 @@ function handleZombieHit(res, point, prefix = '') {
   if (!res) return;
   if (res.kill) {
     floorDecal(res.pos, 'blood', THREE.MathUtils.randFloat(0.5, 0.9));
-    if (inRound() && res.type === 'giant') spawnPowerup(res.pos); // der Riese lässt immer ein Power-up fallen
+    if (inRound() && res.type === 'boss') { // Boss besiegt: großer Bonus + volle Munition + Medipack
+      const lvl = res.zombie.level || 1;
+      award(1000 * lvl);
+      spawnPowerup(res.pos, 'ammo');
+      spawnMedkit(res.pos.clone().add(new THREE.Vector3(0.6, 0, 0)));
+      speak('Boss besiegt!');
+      streakMsg = { text: `👑 BOSS BESIEGT +${1000 * lvl}`, t: 3 };
+    } else if (inRound() && res.type === 'giant') spawnPowerup(res.pos); // der Riese lässt immer ein Power-up fallen
     else if (inRound() && Math.random() < (playerHp < 50 ? 0.12 : 0.05)) spawnMedkit(res.pos);
     else if (inRound() && !res.nuke && powerups.length < 2 && Math.random() < 0.045) spawnPowerup(res.pos);
     else if (inRound() && lowAmmo() && !powerups.some(p0 => p0.type === 'ammo') && Math.random() < 0.09) spawnPowerup(res.pos, 'ammo'); // wenig Munition: öfter „Volle Munition“
@@ -4666,6 +4691,7 @@ function frameInner() {
 // Für automatisierte Tests
 applySettings();
 window.__game = {
+  get boss() { return currentBoss(); },
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,
