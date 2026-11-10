@@ -206,6 +206,8 @@ export const SFX = {
   }
 };
 
+// Pause: alle Klänge anhalten
+export function setAudioPaused(on) { if (!audioCtx) return; try { if (on) audioCtx.suspend(); else audioCtx.resume(); } catch { /* egal */ } }
 export const audioNow = () => (audioCtx ? audioCtx.currentTime : null);
 
 // ---- Räumlicher Klang (Zombies) ------------------------------------------------

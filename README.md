@@ -5,6 +5,18 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 45 – Pause-Menü und Munition an der Wand
+
+**Pause-Menü** (jederzeit während einer Runde):
+- **VR:** Stick drücken (an einem der beiden Controller) oder Y/B mit der freien Hand (die keine Waffe hält). **PC:** Esc.
+- Das Spiel steht komplett still: Zombies, Zeit, Physik und Geräusche. Schüsse und Würfe sind gesperrt.
+- Knöpfe: **▶ Weiter** · **⚙ Einstellungen** (danach zurück in die Pause) · **🏠 Runde beenden → Hauptmenü**.
+
+**Munition an der Wand:**
+- Wer die Waffe schon hat (in der Hand, im Holster, auf dem Rücken oder die Start-Pistole an der Hüfte), bekommt an derselben Wand **Munition**: Waffe komplett auffüllen, Magazin und Reserve.
+- Das **Schild an der Wand** zeigt dann statt des Waffenpreises „🔄 Munition: 💰 …“ an, inklusive der Sterne der Waffe.
+- **Aufgerüstete Waffen** bekommen dort ebenfalls Munition, aber teurer: ★ ×2,5 · ★★ ×4 · ★★★ ×5,5 (zum Beispiel Unterhebel 500 → 1.250 → 2.750).
+
 ## Neu in Version 44 – Visiere nach dem Aufrüsten repariert
 
 - **Ursache:** Beim Aufrüsten bekam die ganze Waffe das Tarnmuster, auch die Visier-Teile. Das Rohr des Rotpunkt-Visiers wurde dadurch von hinten unsichtbar, und durch das Visier sah man nur noch eine graue Scheibe. Kimme und Korn bekamen das grelle, bewegte Muster und waren kaum noch zu erkennen.

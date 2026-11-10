@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=44';
+import { VERSION } from './version.js?v=45';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=44';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=44';
-import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=44';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=44';
-import { facesButtonVisible, setFaces } from './faces.js?v=44';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=44';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=44';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=44';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=44';
-import { giantModelReady, giantWarmup } from './giantmodel.js?v=44';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=44';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=45';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=45';
+import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=45';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=45';
+import { facesButtonVisible, setFaces } from './faces.js?v=45';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=45';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=45';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=45';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=45';
+import { giantModelReady, giantWarmup } from './giantmodel.js?v=45';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=45';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -44,6 +44,7 @@ const DIFFS = {
 let diffKey = (() => { try { return JSON.parse(localStorage.getItem('vrspiel-schwierigkeit')) || 'normal'; } catch { return 'normal'; } })();
 if (!DIFFS[diffKey]) diffKey = 'normal';
 const DIFF = () => DIFFS[diffKey];
+let paused = false; // Pause-Menü (siehe setPaused)
 const scene = new THREE.Scene();
 scene.matrixWorldAutoUpdate = false; // Leistung: Matrizen werden einmal pro Bild in frameInner aktualisiert (nicht nochmal in jedem render)
 const desktopBackground = new THREE.Color(0x30343c);
@@ -1631,7 +1632,9 @@ function spend(price, where) {
   return false;
 }
 const audioCtxOk = () => true;
-const ownedWeapon = (id) => arsenal.find(w => w.id === id && (w.holder >= 0 || w.holstered || w === deskW));
+const ownedWeapon = (id) => arsenal.find(w => w.id === id && !w.inMachine && (w.holder >= 0 || w.holstered || w.inBelt || w === deskW));
+// Munition an der Wand: aufgerüstete Waffen kosten mehr (★ ×2,5 · ★★ ×4 · ★★★ ×5,5)
+const ammoPrice = (w, wbDef) => Math.round(price.ammo(wbDef) * (1 + 1.5 * (w.def.up || 0)) / 50) * 50;
 // gekaufte Waffe in die Hand (VR) bzw. vor die Kamera (PC) geben
 function giveWeapon(id, h) {
   const w = spawnWeapon(id);
@@ -1750,7 +1753,18 @@ const wbGlowTex = (() => {
 function updateWallbuys() {
   for (const wb of wallbuys) {
     const own = ownedWeapon(wb.id);
-    const afford = free() || points >= (own ? price.ammo(wb.def) : price.weapon(wb.def));
+    const cost = own ? ammoPrice(own, wb.def) : price.weapon(wb.def);
+    const afford = free() || points >= cost;
+    // Schild aktualisieren: Waffe gekauft → zeigt den Munitionspreis (aufgerüstet: teurer)
+    const key = own ? 'a' + (own.def.up || 0) : 'w';
+    if (wb.labelKey !== key) {
+      wb.labelKey = key;
+      wb.label.draw((ctx, w, h) => {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, w, h);
+        text(ctx, own ? `${wb.def.name}${own.def.up ? ' ' + UPGRADE_TIERS[own.def.up - 1].stars : ''}` : wb.def.name, 14, h * 0.32, 30, '#ffe7a8', 'left', true);
+        text(ctx, own ? `🔄 Munition: 💰 ${cost}` : `💰 ${price.weapon(wb.def)}  ·  Munition ${price.ammo(wb.def)}`, 14, h * 0.75, 26, own ? '#9fe8ff' : '#ffd21f', 'left', true);
+      });
+    }
     wb.glow.material.color.setHex(afford ? 0xffc23a : 0xff3a2a);
     wb.glow.material.opacity = (afford ? 0.55 : 0.25) + Math.sin(elapsed * 3 + wb.phase) * 0.12;
     wb.holder.rotation.y = Math.sin(elapsed * 0.8 + wb.phase) * 0.12;
@@ -1767,10 +1781,12 @@ function wallbuyNear(p, maxD = 0.22) {
 function tryBuy(wb, h) {
   const where = wb.group.position.clone().addScaledVector(wb.s.normal, 0.2);
   const own = ownedWeapon(wb.id);
-  if (own) {
-    if (!spend(price.ammo(wb.def), where)) return false;
+  if (own) { // Waffe schon da: Munition kaufen (komplett auffüllen) – auch für aufgerüstete Waffen, dann teurer
+    const cost = ammoPrice(own, wb.def);
+    if (!spend(cost, where)) return false;
     refillAmmo(own);
-    floatingText('Munition aufgefüllt', where, '#9fe8ff');
+    SFX.magIn();
+    floatingText(`Munition aufgefüllt −${cost}`, where, '#9fe8ff');
     return true;
   }
   if (!spend(price.weapon(wb.def), where)) return false;
@@ -3887,6 +3903,7 @@ function enterMenu() {
 }
 function refreshMenu() {
   if (menuView === 'settings') { refreshSettings(); return; }
+  if (paused) { menuPanel.visible = false; pausePanel.visible = true; refreshPause(); return; } // aus den Einstellungen zurück in die Pause
   const r = lastResult;
   const nOpen = openings().length;
   const top = topList(gameMode);
@@ -4527,6 +4544,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   raycaster.setFromCamera(mouseNdc, camera);
   const ui = raycaster.intersectObjects(uiPanels.filter(p => p.visible).map(p => p.mesh), false)[0];
   if (ui) { const b = ui.object.userData.ui.buttonAt(ui.uv); if (b) { b.onClick(); SFX.ui(); } return; }
+  if (paused) return; // in der Pause nur Menü-Knöpfe
   if (state === 'setup') { setupTriggerDown('mouse'); return; }
   const mk = medkits.find(m => raycaster.ray.distanceToPoint(m.obj.position) < 0.2);
   if (mk) { collectMedkit(mk); return; }
@@ -4540,6 +4558,7 @@ window.addEventListener('pointerup', (e) => {
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('wheel', (e) => { if (deskW && deskW.def.sight === 'scope') deskW.zoom = THREE.MathUtils.clamp(deskW.zoom - Math.sign(e.deltaY), 4, 12); });
 window.addEventListener('keydown', (e) => {
+  if (paused && e.code !== 'Escape') return; // in der Pause keine Spiel-Tasten
   if (renderer.xr.isPresenting) return;
   const n = parseInt(e.key, 10);
   if (n >= 1 && n <= 9 && arsenal[n - 1]) equipDesk(arsenal[n - 1]);
@@ -4583,6 +4602,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'r' || e.key === 'R') desktopReload();
   if (e.key === 'v' || e.key === 'V') toggleMode(deskW);
   if (e.code === 'Space') { aiming = !aiming; e.preventDefault(); }
+  if (e.code === 'Escape') setPaused(!paused);
 });
 function updateWeaponDesktop(w, dt) {
   w.aim = THREE.MathUtils.damp(w.aim, aiming ? 1 : 0, 12, dt);
@@ -4719,7 +4739,63 @@ function warmupModels() {
   burst(at, 0x3a3a3a, 4); puff(at, 0x555555, 0.6, 0.3, 0.6, 0.7); shockwave(at);
   later(0.6, () => { for (const o of objs) o.visible = false; });
 }
+// ---- Pause-Menü: jederzeit in der Runde (VR: Stick drücken oder Y/B mit freier Hand · PC: Esc) ----------
+const pausePanel = new UIPanel(0.9, 0.62, 700);
+pausePanel.border = '#7dc8ff';
+pausePanel.visible = false;
+function refreshPause() {
+  pausePanel.set((ctx, w) => {
+    text(ctx, '⏸ Pause', w / 2, 52, 48, '#fff', 'center', true);
+    text(ctx, `Welle ${wave} · 💰 ${free() ? '∞' : points} · ❤ ${Math.ceil(playerHp)} · ${DIFF().icon} ${DIFF().label}`, w / 2, 104, 24, '#cfd8e3');
+    text(ctx, 'Pause/weiter: Stick drücken oder Y/B (PC: Esc)', w / 2, 398, 18, '#8796ad');
+  }, [
+    ...row(140, 70, [{ id: 'resume', label: '▶ Weiter', font: 36, onClick: () => setPaused(false) }], 630, 60),
+    ...row(226, 62, [{ id: 'psettings', label: '⚙ Einstellungen', font: 28, onClick: () => { pausePanel.visible = false; menuView = 'settings'; menuPanel.visible = true; menuPanel.place(0.95, 0, -0.1); refreshMenu(); } }], 630, 60),
+    ...row(304, 62, [{ id: 'quit', label: '🏠 Runde beenden → Hauptmenü', font: 26, onClick: () => { setPaused(false); endRound(false); } }], 630, 60)
+  ]);
+}
+function setPaused(on) {
+  if (on === paused) return;
+  if (on && state !== 'playing') return;
+  paused = on;
+  setAudioPaused(on);
+  if (on) {
+    refreshPause();
+    pausePanel.visible = true;
+    pausePanel.place(0.9, 0, -0.1);
+    for (const h of hands) pulse(h, 0.4, 40);
+  } else {
+    pausePanel.visible = false;
+    if (menuView === 'settings') { menuView = 'main'; menuPanel.visible = false; }
+    clock.getDelta(); // die Pausenzeit nicht als einen riesigen Zeitschritt nachholen
+  }
+}
+const pauseButton = (h) => down(h, 'stick') || (down(h, 'b') && !heldWeapon(h) && !(h.held && h.held.type !== 'weapon'));
+// Bild während der Pause: nur Kopf, Zeigestrahl und Menü – das Spiel steht still
+function pauseFrame(xr) {
+  clock.getDelta();
+  if (!xr) camera.rotation.set(lookPitch, lookYaw, 0, 'YXZ');
+  camera.updateMatrixWorld(true);
+  getViewCamera().getWorldPosition(headPos);
+  if (xr) {
+    readInputs();
+    for (const h of hands) {
+      h.ray.updateMatrixWorld(true);
+      if (!h.src) { h.pointer.visible = false; continue; }
+      const pt = pointerTarget(h);
+      const hover = pt && pt.kind === 'ui' ? pt.panel.buttonAt(pt.uv) : null;
+      if (h.uiHover !== hover) { if (h.uiHover) h.uiHover.panel.setHover(null); h.uiHover = hover; if (hover) { hover.panel.setHover(hover); pulse(h, 0.1, 10); } }
+      h.pointer.visible = true;
+      h.pointer.scale.z = pt && pt.kind === 'ui' ? pt.dist : 1.5;
+      if (down(h, 'trigger') && hover) { hover.onClick(); pulse(h, 0.3, 20); if (!paused) break; }
+      else if (pauseButton(h) && pausePanel.visible) { setPaused(false); break; }
+    }
+  }
+  scene.updateMatrixWorld();
+  renderer.render(scene, camera);
+}
 function frameInner() {
+  if (paused) { pauseFrame(renderer.xr.isPresenting); return; }
   const rawDt = clock.getDelta();
   const dt = Math.min(rawDt, 0.05);
   autoPerf(rawDt);
@@ -4745,6 +4821,7 @@ function frameInner() {
   updateBelt(dt);
   if (xr) {
     readInputs();
+    if (state === 'playing' && hands.some(h => h.src && pauseButton(h))) { setPaused(true); pauseFrame(true); return; }
     // Bedienfelder folgen, wenn man sich weit entfernt
     for (const p of [setupPanel, menuPanel]) if (p.visible && headPos.distanceTo(p.anchor) > 1.3) p === menuPanel ? enterMenu() : p.place(0.85, 0.65, -0.4);
     updateHandsXR(dt);
@@ -4806,7 +4883,7 @@ function frameInner() {
 // Für automatisierte Tests
 applySettings();
 window.__game = {
-  get boss() { return currentBoss(); },
+  get boss() { return currentBoss(); }, get paused() { return paused; }, setPaused, tryBuy, ammoPrice,
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, set diff(v) { diffKey = v; refreshMenu(); }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,
