@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath } from './zombies.js?v=42';
-import { burst, shockwave, puff, sparks } from './effects.js?v=42';
-import { SFX, SFX3D } from './sfx.js?v=42';
-import { makePanel } from './util.js?v=42';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=42';
-import './weaponkit.js?v=42';
-import { roomOccluders } from './room.js?v=42';
+import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath } from './zombies.js?v=43';
+import { burst, shockwave, puff, sparks } from './effects.js?v=43';
+import { SFX, SFX3D } from './sfx.js?v=43';
+import { makePanel } from './util.js?v=43';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=43';
+import './weaponkit.js?v=43';
+import { roomOccluders } from './room.js?v=43';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
@@ -210,6 +210,7 @@ function fireGun(z, head) {
   w.parts.flash.visible = true;
   w.parts.flash.rotation.z = Math.random() * 6;
   z.flashT = 0.05;
+  z.kick = 1; // Rückstoß-Animation
   SFX.shot({ ...WEAPON_DEFS[g.id], snd: { ...WEAPON_DEFS[g.id].snd, vol: WEAPON_DEFS[g.id].snd.vol * 0.75 }, upgraded: false });
   puff(from, 0xcccccc, 0.06, 0.4, 0.2, 0.3);
 }
@@ -365,6 +366,9 @@ function placeGun(z, aiming, dt) {
 }
 
 // ---- Animationen (Knochen) ------------------------------------------------------------------
+// Lebendige, aber billige Animation: nur Knochen-Drehungen (keine Animations-Dateien, kaum Rechenaufwand).
+// Dazu kommen Atmen, Kopf folgt dem Spieler, Becken-/Schulterschwung beim Gehen, Rückstoß beim Schießen,
+// Trefferzucken zur Seite, Sprung beim Stampfer, Brüllen und ein Zusammenbrechen beim Tod.
 function animate(z, dt, pose) {
   const B = z.B;
   z.root.updateMatrixWorld(true);
@@ -372,32 +376,51 @@ function animate(z, dt, pose) {
   const s = Math.sin(z.phase), c = Math.cos(z.phase);
   const walk = pose.walk || 0;
   const lean = pose.lean || 0, armsUp = pose.armsUp || 0, rArm = pose.rArm || 0, tpose = pose.tpose || 0, crouch = pose.crouch || 0, aim = pose.aim || 0;
+  const armsBack = pose.armsBack || 0, headBack = pose.headBack || 0, limp = pose.limp || 0;
   const twoHand = z.gun && WEAPON_DEFS[z.gun.def.id].twoHand !== false && z.gun.def.id !== 'pistol' && z.gun.def.id !== 'revolver' && z.gun.def.id !== 'mpk';
-  // Oberkörper
+  z.animT = (z.animT || 0) + dt;
+  z.kick = Math.max(0, (z.kick || 0) - dt * 9);                       // Rückstoß klingt schnell ab
+  const breathe = Math.sin(z.animT * (z.rage ? 5 : 2.2)) * (z.rage ? 0.05 : 0.03) * (1 - limp);
+  const shake = z.rage && !limp ? (Math.random() - 0.5) * 0.03 : 0;   // Wut: zittert vor Zorn
+  // Kopf folgt dem Spieler (begrenzt), Brüllen: Kopf in den Nacken
+  let look = 0;
+  if (z.lookPt && !limp) {
+    const want = Math.atan2(z.lookPt.x - z.pos.x, z.lookPt.z - z.pos.z);
+    look = THREE.MathUtils.clamp(Math.atan2(Math.sin(want - z.yaw), Math.cos(want - z.yaw)), -0.8, 0.8);
+  }
+  z.lookS = THREE.MathUtils.damp(z.lookS || 0, look, 8, dt);
+  // Treffer: zuckt zurück und zur getroffenen Seite
   const hurt = Math.max(0, z.hurtT) * 2.5;
-  setBone(B, 'Spine', rot(AX, lean * 0.5 - hurt * 0.4 + crouch * 0.25));
-  setBone(B, 'Spine1', rot(AX, lean * 0.3));
-  setBone(B, 'Neck', rot(AX, -lean * 0.4));
+  const twist = hurt * 0.35 * (z.hurtTwist || 1);
+  // Becken & Oberkörper: Gehen schwingt das Becken, die Schultern drehen gegen
+  setBone(B, 'Hips', comb(rot(UP, s * 0.12 * walk), rot(AZ, c * 0.05 * walk)));
+  setBone(B, 'Spine', comb(rot(UP, -s * 0.1 * walk + twist), rot(AX, lean * 0.5 - hurt * 0.4 + crouch * 0.25 - z.kick * 0.08 + shake)));
+  setBone(B, 'Spine1', rot(AX, lean * 0.3 + breathe));
+  setBone(B, 'Spine2', rot(AX, -breathe * 0.5 - headBack * 0.15));
+  setBone(B, 'Neck', comb(rot(UP, z.lookS * 0.45), rot(AX, -lean * 0.4 - headBack * 0.5 + limp * 0.6)));
+  setBone(B, 'Head', comb(rot(UP, z.lookS * 0.45), rot(AX, -headBack * 0.4 - z.kick * 0.05)));
   // Beine: Schritt-Zyklus, Hocke
   setBone(B, 'LeftUpLeg', rot(AX, -s * 0.5 * walk - crouch * 0.9));
   setBone(B, 'LeftLeg', rot(AX, Math.max(0, -c) * 0.8 * walk + crouch * 1.4));
   setBone(B, 'RightUpLeg', rot(AX, s * 0.5 * walk - crouch * 0.9));
   setBone(B, 'RightLeg', rot(AX, Math.max(0, c) * 0.8 * walk + crouch * 1.4));
-  // Arme: Gehen pendeln, hoch (Stampfer), T-Pose (Wirbelwind), rechter Arm zum Werfen
-  // Zielen: rechter Arm nach vorn gestreckt, bei Gewehren stützt der linke Arm mit
+  // Arme: Gehen pendeln, hoch (Stampfer), T-Pose (Wirbelwind/Brüllen), nach hinten (Sturmangriff), schlaff (Tod)
+  // Zielen: rechter Arm nach vorn gestreckt, bei Gewehren stützt der linke Arm mit; Rückstoß reißt den Arm hoch
   const lAim = twoHand ? aim : 0;
-  const lArm = comb(rot(AZ, 1.2 * tpose), rot(UP, -0.5 * lAim), rot(AX, s * 0.45 * walk * (1 - lAim) - armsUp * 2.6 - lAim * 1.3));
-  const rArmQ = comb(rot(AZ, -1.2 * tpose), rot(UP, 0.15 * aim), rot(AX, -s * 0.45 * walk * (1 - aim) - armsUp * 2.6 - rArm * 2.8 - aim * 1.45));
+  const swing = (1 - limp) * walk;
+  const lArm = comb(rot(AZ, 1.2 * tpose), rot(UP, -0.5 * lAim), rot(AX, s * 0.45 * swing * (1 - lAim) - armsUp * 2.6 - lAim * 1.3 + armsBack * 0.7 - z.kick * 0.2 * lAim));
+  const rArmQ = comb(rot(AZ, -1.2 * tpose), rot(UP, 0.15 * aim), rot(AX, -s * 0.45 * swing * (1 - aim) - armsUp * 2.6 - rArm * 2.8 - aim * 1.45 + armsBack * 0.7 - z.kick * 0.35));
   setBone(B, 'LeftArm', lArm);
   setBone(B, 'RightArm', rArmQ);
-  setBone(B, 'LeftForeArm', rot(AX, -0.3 * walk * (1 - lAim) - 0.4 * armsUp - 0.5 * lAim));
-  setBone(B, 'RightForeArm', rot(AX, -0.3 * walk * (1 - aim) - 0.4 * armsUp - 0.6 * rArm));
-  z.body.position.y = -crouch * 0.18 * z.scale + Math.abs(s) * 0.03 * walk;
+  setBone(B, 'LeftForeArm', rot(AX, -0.3 * swing * (1 - lAim) - 0.4 * armsUp - 0.5 * lAim - breathe));
+  setBone(B, 'RightForeArm', rot(AX, -0.3 * swing * (1 - aim) - 0.4 * armsUp - 0.6 * rArm - z.kick * 0.15));
+  z.body.position.y = -crouch * 0.18 * z.scale + Math.abs(s) * 0.03 * walk + (pose.hop || 0) * 0.25 * z.scale;
 }
 
 // ---- Haupt-Update -------------------------------------------------------------------------
 function updateBoss(z, dt, head, opts) {
   const player = new THREE.Vector3(head.x, 0, head.z);
+  z.lookPt = player;
   z.t += dt;
   z.hurtT = Math.max(0, (z.hurtT || 0) - dt);
   updateProjectiles(dt, head);
@@ -428,7 +451,10 @@ function updateBoss(z, dt, head, opts) {
     // Waffe fällt zu Boden
     const gw = z.gun.w.root;
     if (gw.position.y > 0.04) { z.gunVy = (z.gunVy || 0) - 9.8 * dt; gw.position.y = Math.max(0.04, gw.position.y + z.gunVy * dt); gw.rotation.z += dt * 3; z.gun.w.parts.flash.visible = false; }
-    z.body.rotation.x = -Math.min(1.5, z.deadT * 2.2);
+    // erst in die Knie sacken, dann vornüber fallen
+    const kneel = Math.min(1, z.deadT / 0.55), fall = Math.min(1, Math.max(0, (z.deadT - 0.5) / 0.6));
+    animate(z, dt, { crouch: kneel * 0.85 * (1 - fall * 0.5), lean: 0.3 + fall * 0.3, limp: 1 });
+    z.body.rotation.x = fall * fall * 1.45;
     if (z.deadT > 1.6) { z.root.position.y -= dt * 0.5; if (Math.random() < dt * 10) burst(z.root.position.clone().setY(0.1), 0x2a221c, 3); }
     if (z.deadT > 4) { clearBoss(); const i = zombies.indexOf(z); if (i >= 0) zombies.splice(i, 1); }
     return;
@@ -506,7 +532,8 @@ function updateBoss(z, dt, head, opts) {
     pose = { crouch: 0.45 * Math.sin(k * Math.PI), lean: -0.2 };
     if (k >= 1) { z.mode = 'move'; z.t = 0; z.cool = 0.2; }
   } else if (z.mode === 'intro') {
-    pose = { armsUp: Math.max(0, Math.sin(Math.min(1, z.t / 1.6) * Math.PI)) };
+    const r = Math.max(0, Math.sin(Math.min(1, z.t / 1.6) * Math.PI)); // Brüllen: Arme ausbreiten, Kopf in den Nacken
+    pose = { tpose: r * 0.8, armsUp: r * 0.25, headBack: r, lean: -0.15 * r };
     face(z, player, dt);
     if (z.t > 1.8) { z.mode = 'move'; z.t = 0; }
   } else if (z.mode === 'move') {
@@ -548,8 +575,8 @@ function updateBoss(z, dt, head, opts) {
   } else if (z.mode === 'wind') {
     const a = z.atk, k = Math.min(1, z.t / ((a.id === 'shoot' ? G.aim : a.wind) / rage));
     face(z, player, dt, 10);
-    if (a.id === 'charge') pose = { lean: 0.6 * k, crouch: 0.35 * k };
-    else if (a.id === 'stomp') pose = { armsUp: k, crouch: -0.1 * k };
+    if (a.id === 'charge') pose = { lean: 0.6 * k, crouch: 0.35 * k, armsBack: k }; // wie ein Sprinter vor dem Start
+    else if (a.id === 'stomp') pose = { armsUp: k, crouch: 0.25 * k, headBack: 0.5 * k }; // holt aus
     else if (a.id === 'shoot') pose = { aim: Math.min(1, k * 2.5) };
     else if (a.id === 'grenade') pose = { armsUp: 0.45 * k, lean: -0.25 * k };
     else if (a.id === 'blink') { pose = { crouch: 0.3 * k }; z.root.scale.setScalar(1 - k * 0.9); }
@@ -587,11 +614,11 @@ function updateBoss(z, dt, head, opts) {
     if (a.id === 'charge') {
       const blocked = moveBoss(z, z.pos.clone().addScaledVector(z.chargeDir, 1), (3.4 + z.level * 0.3) * rage, dt);
       z.phase += dt * 14;
-      pose = { walk: 1.4, lean: 0.6 };
+      pose = { walk: 1.4, lean: 0.6, armsBack: 0.6 };
       if (!z.attackHit && hyp(player.x - z.pos.x, player.z - z.pos.z) < 0.75) { z.attackHit = true; hitPlayer(z, 18 + z.level * 4); }
       if (blocked || z.t > 1.3) { z.mode = 'recover'; z.t = 0; if (blocked) { SFX3D.bang(z.root.position.clone().setY(1)); burst(z.root.position.clone().setY(1.2), 0x888888, 12); } }
     } else if (a.id === 'stomp') {
-      pose = { armsUp: Math.max(0, 1 - z.t * 4), crouch: Math.max(0, 0.4 - z.t) };
+      pose = { armsUp: Math.max(0, 1 - z.t * 4), crouch: Math.max(0, 0.5 - z.t * 1.2), hop: z.t < 0.12 ? Math.sin(z.t / 0.12 * Math.PI) * 0.4 : 0 }; // Sprung + Aufprall
       if (z.t > 0.6) { z.mode = 'recover'; z.t = 0; }
     } else if (a.id === 'shoot') {
       face(z, player, dt, 8);
@@ -624,7 +651,7 @@ function updateBoss(z, dt, head, opts) {
     }
   } else if (z.mode === 'recover') {
     face(z, player, dt, 3);
-    pose = { lean: -0.1, crouch: 0.1 };
+    pose = { lean: -0.1, crouch: 0.1, headBack: 0.2 }; // durchatmen
     if (z.t > (z.rage ? 0.35 : 0.9)) { z.mode = 'move'; z.t = 0; z.cool = Math.max(0.8, 2.4 - z.level * 0.22) * (0.7 + Math.random() * 0.5); if (Math.random() < (z.rage ? 0.6 : 0.3)) z.cool = 0.15; /* Kombo: gleich nochmal */ }
   }
   z.root.position.x = z.pos.x;

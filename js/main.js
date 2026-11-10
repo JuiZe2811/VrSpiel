@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=42';
+import { VERSION } from './version.js?v=43';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=42';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=42';
-import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=42';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=42';
-import { facesButtonVisible, setFaces } from './faces.js?v=42';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=42';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=42';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=42';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=42';
-import { giantModelReady, giantWarmup } from './giantmodel.js?v=42';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=42';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=43';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate } from './sfx.js?v=43';
+import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=43';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=43';
+import { facesButtonVisible, setFaces } from './faces.js?v=43';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=43';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=43';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=43';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=43';
+import { giantModelReady, giantWarmup } from './giantmodel.js?v=43';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=43';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -203,7 +203,7 @@ const isFree = (h) => !h.held && !h.grab && !h.pull;
 // Alle Waffen, die gerade in der Welt existieren (Startwaffe + gekaufte/gezogene)
 const arsenal = [];
 // Reserve-Munition (begrenzt): Magazine am Gürtel zehren davon, „Volle Munition“ und Wandkauf füllen auf
-const reserveMax = (def) => Math.max(def.capacity, Math.round((def.feed === 'mag' ? def.capacity * (def.tier >= 4 ? 2 : 4) : Math.max(6, def.capacity * 3)) * DIFF().ammo));
+const reserveMax = (def) => Math.max(def.capacity, Math.round((def.feed === 'mag' ? def.capacity * (def.tier >= 4 ? 2 : 4) : Math.max(6, def.capacity * 3)) * DIFF().ammo * (def.reserveK || 1)));
 function refillAmmo(w) { refillWeapon(w); w.reserve = reserveMax(w.def); boardDirty = true; }
 function spawnWeapon(id, starter = false) {
   const w = createWeapon(id);
@@ -1870,7 +1870,8 @@ function upgradedDef(base, n) {
   const T = UPGRADE_TIERS[n - 1];
   return Object.assign({}, base, {
     name: base.name + ' ' + T.stars, upgraded: true, up: n, dmg: Math.round((base.dmg ?? 30) * T.dmg),
-    capacity: Math.max(base.capacity + n, Math.round(base.capacity * T.cap)), rpm: base.rpm * T.rpm, spread: base.spread * (1 - 0.15 * n)
+    capacity: Math.max(base.capacity + n, Math.round(base.capacity * T.cap)), rpm: base.rpm * T.rpm, spread: base.spread * (1 - 0.15 * n),
+    reserveK: 1 + 0.5 * n // Reserve-Munition: ★ ×1,5 · ★★ ×2 · ★★★ ×2,5 (zusätzlich zum größeren Magazin)
   });
 }
 function upgradeWeapon(w) {
@@ -1878,8 +1879,10 @@ function upgradeWeapon(w) {
   w.def = upgradedDef(WEAPON_DEFS[w.id], n);
   if (!w.camoMeshes) { w.camoMeshes = []; w.root.traverse(o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial && !o.material.map && !o.material.transparent && o.material.toneMapped !== false) w.camoMeshes.push(o); }); }
   for (const o of w.camoMeshes) o.material = camoMats[n - 1];
-  refillAmmo(w);
+  refillAmmo(w); // aufgerüstet = immer komplett neue Munition (volles, größeres Magazin + mehr Reserve)
   if (w.holder >= 0 || w === deskW) setBeltWeapon(w.id, w.def, w);
+  const base = WEAPON_DEFS[w.id];
+  floatingText(`${UPGRADE_TIERS[n - 1].stars} Magazin ${base.capacity}→${w.def.capacity} · Reserve ${w.reserve}`, w.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.25, 0)), '#ffd84a');
   boardDirty = true;
 }
 const bottleMats = {};

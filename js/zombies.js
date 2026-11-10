@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=42';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=42';
-import { SFX3D } from './sfx.js?v=42';
-import { burst, addDebris, shockwave } from './effects.js?v=42';
-import { cachedGeo } from './util.js?v=42';
+import { room, surfacesOf, isOpening } from './room.js?v=43';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=43';
+import { SFX3D } from './sfx.js?v=43';
+import { burst, addDebris, shockwave } from './effects.js?v=43';
+import { cachedGeo } from './util.js?v=43';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=42';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=43';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -648,7 +648,7 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
     path: null, pathT: 0, attackT: 1, actionT: 0, deadT: 0, hurtT: 0, groanT: rand(1, 4), opening: null, enterT: 0, crawl: false, fallDir: 1, headless: false,
     // Leistung: alle später benutzten Felder gleich hier anlegen (gleiche Objekt-Form für alle Zombies,
     // Zahlenfelder bleiben Zahlen) – sonst erzeugt jede Änderung pro Bild neuen Speicher-Müll und es ruckelt
-    atkK: opts.atk || 1, castsShadow: true, stuckT: 0, stuckX: 0, stuckZ: 0, stuckN: 0, skipT: 0, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
+    atkK: opts.atk || 1, roarAnim: 0, stompAnim: 0, jawOpen: 0, castsShadow: true, stuckT: 0, stuckX: 0, stuckZ: 0, stuckN: 0, skipT: 0, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
     headSnap: 0, hurtTwist: 1, knockT: 0, knockBack: 0, frozenT: 0, burnT: 0, burnTick: 0, burnUp: false, roarT: 2, stompT: 4, smokeT: 0, landT: 0, spinDir: 0,
     lureV: -1, slot: 0, attackVariant: 0, exploded: false, gibbed: false, landed: false, spat: false, kinCrawl: false, freed: false,
     hurtDir: new THREE.Vector3(0, 0, 1), enterFrom: null, fallVec: null, d0: null, deathStyle: '', ice: null, kin: null, phys: null, proxies: null,
@@ -1296,11 +1296,12 @@ function updateOne(i, dt, head, opts, player) {
   }
   if (z.type === 'giant' && (z.state === 'walk' || z.state === 'attack')) {
     z.roarT = (z.roarT ?? 2) - dt;
-    if (z.roarT <= 0) { z.roarT = rand(7, 12); SFX3D.roar(z.skull.getWorldPosition(tmpV2)); }
+    if (z.roarT <= 0) { z.roarT = rand(7, 12); z.roarAnim = 1.6; SFX3D.roar(z.skull.getWorldPosition(tmpV2)); }
     z.stompT = (z.stompT ?? 4) - dt;
     const dPl = hyp(player.x - z.pos.x, player.z - z.pos.z);
     if (z.stompT <= 0 && dPl < 2.8 && !(z.stagger > 0)) {
       z.stompT = rand(5, 7);
+      z.stompAnim = 0.7;
       shockwave(z.root.position.clone().setY(0.1));
       burst(z.root.position.clone().setY(0.1), 0x5a5048, 20);
       SFX3D.bang(z.root.position.clone());
@@ -1308,9 +1309,26 @@ function updateOne(i, dt, head, opts, player) {
       if (!opts.harmless && dPl < 2.6) onPlayerHit(12, z);
     }
   }
+  // Riese: Brüllen (Arme auseinander, Kopf zurück, Maul weit auf) und Stampfer (Arme hoch, Wucht nach unten)
+  if (z.type === 'giant') {
+    if (z.roarAnim > 0) {
+      z.roarAnim -= dt;
+      const k = Math.sin(Math.min(1, (1.6 - z.roarAnim) / 1.6) * Math.PI);
+      for (const a of z.arms) { a.shoulder.rotation.z = -a.side * 1.1 * k; a.shoulder.rotation.x *= 1 - k; a.elbow.rotation.x = -0.5 * k; }
+      z.neck.rotation.x = 0.25 - 0.8 * k;
+      z.jawOpen = Math.max(z.jawOpen, k);
+    }
+    if (z.stompAnim > 0) {
+      z.stompAnim -= dt;
+      const t = 0.7 - z.stompAnim, up = t < 0.35 ? Math.sin(t / 0.35 * Math.PI / 2) : Math.max(0, 1 - (t - 0.35) * 5);
+      for (const a of z.arms) { a.shoulder.rotation.x = -2.7 * up; a.elbow.rotation.x = -0.4 * up; }
+      z.body.rotation.x = (t < 0.35 ? -0.12 : 0.25) * Math.max(0, z.stompAnim / 0.7);
+    }
+  }
   // Kiefer schnappt auf und zu
   z.jawT += dt * (z.state === 'attack' ? 9 : 2.5);
-  z.jaw.rotation.x = 0.15 + Math.max(0, Math.sin(z.jawT)) * (z.state === 'attack' ? 0.6 : 0.35);
+  z.jaw.rotation.x = 0.15 + Math.max(0, Math.sin(z.jawT)) * (z.state === 'attack' ? 0.6 : 0.35) + z.jawOpen * 0.7;
+  z.jawOpen = Math.max(0, z.jawOpen - dt * 2);
   // Treffer-Reaktion: kurz nach hinten zucken
   if (z.hurtT > 0) { z.torso.rotation.x = -z.hurtT * 1.6; z.torso.rotation.y = z.hurtT * 1.4 * (z.hurtTwist || 0); }
   else { z.torso.rotation.x *= 0.8; z.torso.rotation.y *= 0.8; }

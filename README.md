@@ -5,6 +5,29 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 43 – Aufrüsten mit mehr Munition, bessere Boss-Animationen
+
+**Aufrüsten (Pack-a-Punch):** Jede Stufe füllt die Waffe immer komplett auf, gibt ein größeres Magazin und viel mehr Reserve. Danach wird angezeigt, wie viel es jetzt ist. Beispiel Sturmgewehr:
+
+| Stufe | Magazin | Reserve |
+|---|---|---|
+| normal | 30 | 120 |
+| ★ | 45 | 270 |
+| ★★ | 57 | 456 |
+| ★★★ | 69 | 690 |
+
+**Boss-Animationen** (nur Knochen-Drehungen, also praktisch kein zusätzlicher Rechenaufwand):
+- **Er wirkt lebendig:** Er atmet (in Wut schneller und zitternd), sein Kopf folgt dir, und beim Gehen schwingen Becken und Schultern.
+- **Kampf:**
+  - Beim Schießen reißt der Rückstoß den Arm hoch.
+  - Bei Treffern zuckt er zurück und zur getroffenen Seite.
+  - Beim Auftritt brüllt er mit ausgebreiteten Armen und dem Kopf im Nacken.
+  - Beim Sturmangriff nimmt er die Arme zurück wie ein Sprinter.
+  - Beim Stampfer holt er aus, springt und schlägt auf.
+  - Nach einem Angriff atmet er kurz durch.
+- **Tod:** Er sackt erst in die Knie, fällt dann vornüber, und die Waffe fällt zu Boden.
+- **Riese:** Beim Brüllen breitet er die Arme aus, legt den Kopf zurück und reißt das Maul auf. Beim Stampfer reißt er die Arme hoch und schlägt mit Wucht nach unten.
+
 ## Neu in Version 42 – Boden aufräumen und flüssiger in hohen Wellen
 
 **Boden aufräumen:** Zu Beginn der Wellen 4, 7, 10, 13 usw. (also alle 3 Wellen) werden Blut- und Brandflecken, leere Magazine, Hülsen und Trümmer entfernt. Waffen, Messer, Power-ups und Medipacks bleiben liegen.
