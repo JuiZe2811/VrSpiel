@@ -5,6 +5,28 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 50 – Fehler behoben, sechs neue Getränke
+
+**Boss lief aus dem Raum – behoben:**
+- **Sicherheitsnetz:** Beim Erstellen der Wegkarte wird der Innenraum bestimmt, also alles, was vom Spieler aus ohne Tür oder Wand erreichbar ist. Gerät der Boss oder der Riese im Kampf trotzdem einmal hinaus, wird er sofort auf die nächste Stelle im Raum zurückgesetzt (Prüfung alle 0,4–0,5 s).
+- **Explosionen** schieben Zombies jetzt schrittweise, also nicht mehr durch dünne Wände hindurch.
+- **Klettern** an einem Tisch oder Bett an der Wand: Das Ziel liegt nie mehr hinter der Wand.
+
+**Nachladen klappte manchmal nicht – behoben:**
+- **Falsche Magazine:** Mit zwei Waffen in den Händen zeigte der Gürtel oft die Magazine der *anderen* Waffe, die nicht passen. Jetzt zeigt er immer die Munition der Waffe, die nachgeladen werden muss, und ein gegriffenes Magazin ist immer für die Waffe in der anderen Hand.
+- **Leere Magazine:** Bei leerer Reserve gab der Gürtel ein leeres Magazin heraus. Man lud scheinbar nach, aber nichts passierte. Jetzt gibt es stattdessen den Hinweis „Keine Munition mehr“.
+
+**Sechs neue Getränke** (jetzt 10; im Raum-Editor beim Automaten-Werkzeug durchschaltbar, bei „Automatisch aufstellen: Alles“ werden alle aufgestellt, soweit Platz ist):
+
+| Getränk | Preis | Wirkung |
+|---|---|---|
+| ‼ **Doppelschlag** | 3.000 | 35 % mehr Schaden mit allen Waffen |
+| ◎ **Adlerauge** | 2.000 | Kopfschüsse +1 Faktor (×4 statt ×3), 40 % weniger Streuung |
+| ⛨ **Panzerweste** | 2.500 | 30 % weniger Schaden |
+| ♥+ **Blutdurst** | 2.000 | Jeder Kill heilt 4 Leben |
+| ϟ **Elektroschock** | 2.000 | Beim Nachladen ein Blitzschlag um dich herum (2,6 m): Schaden (wächst mit den Wellen) und lähmt; höchstens alle 2,5 s |
+| ▤ **Munitionsgürtel** | 1.500 | 50 % mehr Reserve-Munition, sofort aufgefüllt |
+
 ## Neu in Version 49 – Sechs neue Waffen, Balance, Fehlersuche
 
 **Neue Waffen** (jetzt 36 insgesamt):

@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=49';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=49';
-import { SFX3D } from './sfx.js?v=49';
-import { burst, addDebris, shockwave } from './effects.js?v=49';
-import { cachedGeo } from './util.js?v=49';
+import { room, surfacesOf, isOpening } from './room.js?v=50';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=50';
+import { SFX3D } from './sfx.js?v=50';
+import { burst, addDebris, shockwave } from './effects.js?v=50';
+import { cachedGeo } from './util.js?v=50';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=49';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=50';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -491,7 +491,7 @@ function tearPlank(o, zombiePos) {
 }
 
 // ---- Laufwege: Raster über dem Raum (A*) ----------------------------------------
-const nav = { cell: 0.15, minX: 0, minZ: 0, w: 0, h: 0, blocked: null, hgt: null };
+const nav = { cell: 0.15, minX: 0, minZ: 0, w: 0, h: 0, blocked: null, hgt: null, door: null, inside: null };
 const CLIMB_MAX = 1.05; // Tische/Betten bis zu dieser Höhe können Zombies hochklettern
 const STEP = 0.2;       // ab diesem Höhenunterschied wird geklettert bzw. heruntergesprungen
 const RADIUS = 0.16; // Abstand zu Wänden/Möbeln (klein genug, dass Zombies auch durch enge Lücken passen)
@@ -510,6 +510,7 @@ export function buildNav(head) {
   nav.h = Math.ceil((maxZ - minZ) / nav.cell);
   nav.blocked = new Uint8Array(nav.w * nav.h);
   nav.hgt = new Float32Array(nav.w * nav.h);
+  nav.door = new Uint8Array(nav.w * nav.h);
   // Tische (auch Betten, die als Tisch eingezeichnet sind): begehbar in ihrer Höhe – Zombies klettern hoch
   const climbable = (s) => s.type === 'table' && s.height <= CLIMB_MAX;
   const boxes = room.surfaces.filter(s => (s.type === 'table' && !climbable(s)) || s.type === 'chair' || s.type === 'bench' || s.type === 'mbox');
@@ -533,6 +534,7 @@ export function buildNav(head) {
       const d = (x - w.a.x) * w.normal.x + (z - w.a.z) * w.normal.z;
       if (u < -RADIUS || u > w.width + RADIUS || Math.abs(d) > RADIUS) continue;
       if (!doors.some(([u0, u1]) => u > u0 && u < u1)) { blocked = true; break; }
+      nav.door[j * nav.w + i] = 1; // Türdurchgang
     }
     nav.blocked[j * nav.w + i] = blocked ? 1 : 0;
     for (const s of tops) { // Höhe der Oberfläche (Zelle liegt auf dem Tisch/Bett)
@@ -540,6 +542,36 @@ export function buildNav(head) {
       if (Math.abs(dx * s.X.x + dz * s.X.z) <= s.hx && Math.abs(dx * s.Z.x + dz * s.Z.z) <= s.hz) nav.hgt[j * nav.w + i] = Math.max(nav.hgt[j * nav.w + i], s.height);
     }
   }
+  // Innenraum: alles, was vom Spieler aus ohne Tür/Wand erreichbar ist (für das Sicherheitsnetz gegen Herauslaufen)
+  nav.inside = new Uint8Array(nav.w * nav.h);
+  const st = nearestFree(Math.floor((head.x - minX) / nav.cell), Math.floor((head.z - minZ) / nav.cell));
+  if (st) {
+    const q = [st[1] * nav.w + st[0]];
+    nav.inside[q[0]] = 1;
+    for (let k = 0; k < q.length; k++) {
+      const c = q[k], ci = c % nav.w, cj = (c / nav.w) | 0;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ni = ci + di, nj = cj + dj, n = nj * nav.w + ni;
+        if (inGrid(ni, nj) && !nav.inside[n] && !nav.blocked[n] && !nav.door[n]) { nav.inside[n] = 1; q.push(n); }
+      }
+    }
+  }
+}
+export function isInside(x, z) {
+  if (!nav.inside) return true;
+  const i = Math.floor((x - nav.minX) / nav.cell), j = Math.floor((z - nav.minZ) / nav.cell);
+  return !inGrid(i, j) || !!nav.inside[j * nav.w + i];
+}
+// nächste Stelle im Innenraum (Ring-Suche); null wenn keine gefunden
+export function nearestInside(x, z) {
+  if (!nav.inside) return null;
+  const i0 = Math.floor((x - nav.minX) / nav.cell), j0 = Math.floor((z - nav.minZ) / nav.cell);
+  for (let r = 1; r < 40; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
+    if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+    const i = i0 + di, j = j0 + dj;
+    if (inGrid(i, j) && nav.inside[j * nav.w + i]) return new THREE.Vector3(nav.minX + (i + 0.5) * nav.cell, 0, nav.minZ + (j + 0.5) * nav.cell);
+  }
+  return null;
 }
 // Bodenhöhe an einer Stelle (0 = Boden, sonst Tisch-/Bettoberfläche)
 export function groundAt(x, z) {
@@ -879,8 +911,7 @@ export function explosionDamage(center, radius, maxDmg) {
       }
     }
     if (z.state !== 'outside' && z.state !== 'tear' && z.state !== 'enter') {
-      const nx = z.pos.x + dir.x * f * 0.8, nz = z.pos.z + dir.z * f * 0.8;
-      if (walkable(nx, nz)) { z.pos.x = nx; z.pos.z = nz; }
+      for (let k = 0; k < 8; k++) { const nx = z.pos.x + dir.x * f * 0.1, nz = z.pos.z + dir.z * f * 0.1; if (!walkable(nx, nz)) break; z.pos.x = nx; z.pos.z = nz; } // schrittweise: nie durch Wände
       z.stagger = 1;
     }
     const res = { part: 'torso', headshot: false, kill: false, pos: z.pos.clone(), type: z.type, zombie: z, explosion: true };
@@ -1042,7 +1073,8 @@ function moveTowards(z, target, speed, dt, checkNav = true) {
 function startClimb(z, d, h) {
   const len = Math.hypot(d.x, d.z) || 1, ux = d.x / len, uz = d.z / len;
   let x1 = z.pos.x + ux * 0.45, z1 = z.pos.z + uz * 0.45;
-  if (groundAt(x1, z1) < h - 0.05) { x1 = z.pos.x + ux * 0.25; z1 = z.pos.z + uz * 0.25; }
+  if (groundAt(x1, z1) < h - 0.05 || !walkable(x1, z1)) { x1 = z.pos.x + ux * 0.25; z1 = z.pos.z + uz * 0.25; }
+  if (!walkable(x1, z1)) { x1 = z.pos.x + ux * 0.12; z1 = z.pos.z + uz * 0.12; }
   const lift = h - z.groundY;
   const speedK = THREE.MathUtils.clamp(z.speed / 0.55, 0.7, 1.8);
   z.climb = { t: 0, dur: (1.0 + 1.3 * lift) / speedK * (z.type === 'giant' ? 0.8 : 1), y0: z.groundY, y1: h, x0: z.pos.x, z0: z.pos.z, x1, z1 };
@@ -1274,6 +1306,9 @@ function updateOne(i, dt, head, opts, player) {
     z.jaw.rotation.x = 0.2 + k * 0.7;
     if (!z.spat && k > 0.6) { z.spat = true; launchSpit(z, head); }
     if (z.actionT <= 0) { z.state = 'walk'; z.neck.rotation.x = 0.25; }
+  } else if (z.type === 'giant' && (z.state === 'walk' || z.state === 'attack') && !z.climb && (z.insideT = (z.insideT || 0) - dt) <= 0 && ((z.insideT = 0.5), !isInside(z.pos.x, z.pos.z))) {
+    const back = nearestInside(z.pos.x, z.pos.z); // Riese ist irgendwie aus dem Raum geraten: zurück hinein
+    if (back) { z.pos.x = back.x; z.pos.z = back.z; z.path = null; z.pathT = 0; burst(z.root.position.clone().setY(0.4), 0x555555, 12); }
   } else if (z.climb && (z.state === 'walk' || z.state === 'attack')) {
     climbStep(z, dt);
   } else if (z.state === 'walk' || z.state === 'attack') {

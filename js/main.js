@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=49';
+import { VERSION } from './version.js?v=50';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=49';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=49';
-import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=49';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=49';
-import { facesButtonVisible, setFaces } from './faces.js?v=49';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=49';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=49';
-import { initEffects, headRef, spawnTracer, spawnBeam, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=49';
-import { walkable, initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=49';
-import { giantModelReady, giantWarmup } from './giantmodel.js?v=49';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=49';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=50';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=50';
+import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=50';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=50';
+import { facesButtonVisible, setFaces } from './faces.js?v=50';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=50';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=50';
+import { initEffects, headRef, spawnTracer, spawnBeam, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=50';
+import { hpScale, walkable, initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=50';
+import { giantModelReady, giantWarmup } from './giantmodel.js?v=50';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=50';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -45,6 +45,7 @@ let diffKey = (() => { try { return JSON.parse(localStorage.getItem('vrspiel-sch
 if (!DIFFS[diffKey]) diffKey = 'normal';
 const DIFF = () => DIFFS[diffKey];
 let paused = false; // Pause-Menü (siehe setPaused)
+const perks = new Set(); // getrunkene Getränke (früh angelegt: wird schon beim Start für die Munition gebraucht)
 const scene = new THREE.Scene();
 scene.matrixWorldAutoUpdate = false; // Leistung: Matrizen werden einmal pro Bild in frameInner aktualisiert (nicht nochmal in jedem render)
 const desktopBackground = new THREE.Color(0x30343c);
@@ -204,7 +205,7 @@ const isFree = (h) => !h.held && !h.grab && !h.pull;
 // Alle Waffen, die gerade in der Welt existieren (Startwaffe + gekaufte/gezogene)
 const arsenal = [];
 // Reserve-Munition (begrenzt): Magazine am Gürtel zehren davon, „Volle Munition“ und Wandkauf füllen auf
-const reserveMax = (def) => Math.max(def.capacity, Math.round((def.feed === 'mag' ? def.capacity * (def.tier >= 4 ? 2 : 4) : Math.max(6, def.capacity * 3)) * DIFF().ammo * (def.reserveK || 1)));
+const reserveMax = (def) => Math.max(def.capacity, Math.round((def.feed === 'mag' ? def.capacity * (def.tier >= 4 ? 2 : 4) : Math.max(6, def.capacity * 3)) * DIFF().ammo * (def.reserveK || 1) * (perks.has('muni') ? 1.5 : 1)));
 function refillAmmo(w) { refillWeapon(w); w.reserve = reserveMax(w.def); boardDirty = true; }
 function spawnWeapon(id, starter = false) {
   const w = createWeapon(id);
@@ -397,8 +398,25 @@ function removeLooseMag(obj) {
   const i = looseMags.indexOf(obj);
   if (i >= 0) looseMags.splice(i, 1);
 }
+// Elektroschock (Getränk): beim Nachladen ein Blitzschlag rund um den Spieler (höchstens alle 2,5 s)
+let shockT = -10;
+function electroShock() {
+  if (!perks.has('elektro') || !inRound() || elapsed - shockT < 2.5) return;
+  shockT = elapsed;
+  SFX.zap();
+  const dmg = 60 * Math.max(1, Math.pow(hpScale(wave), 0.75));
+  for (const z of [...zombies]) {
+    if (z.state === 'dead' || hyp(z.pos.x - headPos.x, z.pos.z - headPos.z) > 2.6) continue;
+    const c = z.root.position.clone().setY(1);
+    lightningLine(headPos.clone().setY(headPos.y - 0.5), c);
+    handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, c.clone().sub(headPos).setY(0).normalize(), dmg, true), c, 'ϟ ');
+    if (z.state !== 'dead') z.slowT = Math.max(z.slowT || 0, 1.5);
+  }
+  burst(headPos.clone().setY(headPos.y - 0.6), 0x66ddff, 20);
+}
 function ejectMag(w) {
   if (w.def.feed !== 'mag' || !w.magInserted) return;
+  electroShock();
   w.magInserted = false;
   const mag = w.parts.mag;
   mag.updateWorldMatrix(true, false);
@@ -483,7 +501,7 @@ function tryFire(w, desktopRay) {
     w.sockets.sightRear.getWorldPosition(origin);
     w.sockets.sightFront.getWorldPosition(dir).sub(origin).normalize();
   }
-  let spread = w.def.spread;
+  let spread = w.def.spread * (perks.has('kopf') ? 0.6 : 1);
   if (w.def.twoHand && !w.twoHanding && h) spread += 0.012; // einhändig unruhiger
   const muzzlePos = w.sockets.muzzle.getWorldPosition(new THREE.Vector3());
   flashLight.position.copy(muzzlePos);
@@ -540,7 +558,7 @@ function tryFire(w, desktopRay) {
       if (!z) { if (hh.object.userData.plank) { burst(hh.point, 0xb08850, 6); continue; } hit = hh; break; }
       if (seen.has(z)) continue;
       seen.add(z);
-      const res = damageZombie(hh.object, hh.point, d, dmg * Math.pow(w.def.pierceKeep || 0.8, pierced), false, w.def.headMult || 3);
+      const res = damageZombie(hh.object, hh.point, d, dmg * Math.pow(w.def.pierceKeep || 0.8, pierced), false, headMultOf(w));
       onBulletHit(w, z, res, hh.point, dmg);
       if (w.def.incendiary && res && !res.kill) ignite(z, w.def.incendiary);
       if (w.def.explodeKill && res && res.kill && res.headshot) killBlast(hh.point);
@@ -556,7 +574,7 @@ function tryFire(w, desktopRay) {
     if (ud.surface) { if (p < 4) wallImpact(hit, d); if (w.def.ricochet) ricochet(w, hit, d, dmg * 0.8, w.def.ricochet); continue; }
     if (ud.plank) { burst(hit.point, 0xb08850, 6); continue; }
     if (ud.zombie) {
-      if (!w.def.pierce) { const res = damageZombie(hit.object, hit.point, d, dmg, false, w.def.headMult || 3); if (w.def.incendiary && res && !res.kill) ignite(ud.zombie, w.def.incendiary); onBulletHit(w, ud.zombie, res, hit.point, dmg); handleZombieHit(res, hit.point); }
+      if (!w.def.pierce) { const res = damageZombie(hit.object, hit.point, d, dmg, false, headMultOf(w)); if (w.def.incendiary && res && !res.kill) ignite(ud.zombie, w.def.incendiary); onBulletHit(w, ud.zombie, res, hit.point, dmg); handleZombieHit(res, hit.point); }
       // Blut spritzt auf die Wand/den Tisch dahinter
       if (Math.random() < 0.6) {
         raycaster.set(hit.point, d);
@@ -590,7 +608,8 @@ function continueBurst(w, fire) {
   w.inBurst = false;
 }
 // Schaden einer Waffe (aufgerüstet: doppelt)
-const weaponDmg = (w) => (w.def.dmg ?? DAMAGE[w.id] ?? 30) * (activeInstakill() ? 50 : 1);
+const weaponDmg = (w) => (w.def.dmg ?? DAMAGE[w.id] ?? 30) * (activeInstakill() ? 50 : 1) * (perks.has('doppel') ? 1.35 : 1);
+const headMultOf = (w) => (w.def.headMult || 3) + (perks.has('kopf') ? 1 : 0); // Adlerauge: Kopfschuss +1
 
 // =============================================================================
 // Gürtel mit Munition und Messer
@@ -776,6 +795,12 @@ function setBeltWeapon(id, def = null, w = null) {
 }
 const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 function updateBelt(dt) {
+  // Gürtel zeigt immer Munition für eine Waffe, die man gerade in der Hand hat (bei zwei Waffen: die, die nachgeladen werden muss)
+  const hw = [heldWeapon(hands[0]), heldWeapon(hands[1]), deskW].filter(Boolean);
+  if (hw.length && !hw.includes(beltW)) {
+    const need = hw.find(w => (w.def.feed === 'mag' ? !w.magInserted || w.magRounds === 0 : w.tube < w.def.capacity)) || hw[0];
+    setBeltWeapon(need.id, need.def, need);
+  }
   getViewCamera().getWorldQuaternion(tmpQ);
   // Hüfte sitzt unter dem Hals (beim Runterschauen bleibt der Gürtel stehen)
   const neck = tmpV.set(0, -0.08, 0.1).applyQuaternion(tmpQ).add(headPos);
@@ -867,6 +892,10 @@ function tryBeltGrab(h) {
   if (best.kind === 'knife') holdItem(h, 'knife', makeKnife());
   else if (best.kind === 'grenade') holdItem(h, 'grenade', makeGrenade(), { slot: best });
   else if (best.kind === 'mag') {
+    // Magazin immer für die Waffe in der ANDEREN Hand (die man gerade nachlädt)
+    const target = heldWeapon(otherHand(h));
+    if (target && target !== beltW && target.def.feed === 'mag') setBeltWeapon(target.id, target.def, target);
+    if (beltW && beltW.reserve <= 0) { best.available = true; best.obj.visible = true; SFX.dry(); floatingNoAmmo(beltW); return false; } // keine leeren Magazine austeilen
     const n = beltW ? Math.min(beltDef.capacity, beltW.reserve) : beltDef.capacity;
     if (beltW) beltW.reserve -= n;
     holdItem(h, 'mag', makeMag(beltWeaponId), { weaponId: beltWeaponId, rounds: n });
@@ -1531,7 +1560,7 @@ function ricochet(w, hit, d, dmg, bounces) {
   sparks(hit.point, n, 4);
   if (!h2) return;
   const ud = h2.object.userData;
-  if (ud.zombie) handleZombieHit(damageZombie(h2.object, h2.point, nd, dmg, false, w.def.headMult || 3), h2.point, '↯ ');
+  if (ud.zombie) handleZombieHit(damageZombie(h2.object, h2.point, nd, dmg, false, headMultOf(w)), h2.point, '↯ ');
   else if (ud.surface) ricochet(w, h2, nd, dmg * 0.8, bounces - 1);
 }
 // Schallkanone: alle Zombies im Kegel bekommen Schaden, werden zurückgeworfen und fallen um
@@ -1869,10 +1898,16 @@ const PERKS = {
   eisen: { name: 'Eisenhaut', icon: '♥', color: '#ff3a4a', price: 2500, desc: 'Doppelte Lebenspunkte' },
   flink: { name: 'Flinkhand', icon: '⚡', color: '#3aff7a', price: 2000, desc: 'Doppelt so schnell nachladen' },
   turbo: { name: 'Schnellfeuer', icon: '»', color: '#ffa53a', price: 2000, desc: 'Ein Drittel mehr Feuerrate' },
-  leben: { name: 'Zweites Leben', icon: '✚', color: '#4ab8ff', price: 1500, desc: 'Einmal wiederbeleben' }
+  leben: { name: 'Zweites Leben', icon: '✚', color: '#4ab8ff', price: 1500, desc: 'Einmal wiederbeleben' },
+  // v50: sechs weitere Getränke
+  doppel: { name: 'Doppelschlag', icon: '‼', color: '#ff5ad0', price: 3000, desc: '35 % mehr Schaden mit allen Waffen' },
+  kopf: { name: 'Adlerauge', icon: '◎', color: '#ffd84a', price: 2000, desc: 'Kopfschüsse stärker, weniger Streuung' },
+  weste: { name: 'Panzerweste', icon: '⛨', color: '#9fb0c4', price: 2500, desc: '30 % weniger Schaden' },
+  vampir: { name: 'Blutdurst', icon: '♥+', color: '#d0203a', price: 2000, desc: 'Jeder Kill heilt 4 Leben' },
+  elektro: { name: 'Elektroschock', icon: 'ϟ', color: '#48d8ff', price: 2000, desc: 'Nachladen schockt Zombies in der Nähe' },
+  muni: { name: 'Munitionsgürtel', icon: '▤', color: '#9fd06a', price: 1500, desc: '50 % mehr Reserve-Munition' }
 };
 const PERK_ORDER = Object.keys(PERKS);
-const perks = new Set();
 const maxHp = () => (perks.has('eisen') ? 200 : 100);
 const reloadK = () => (perks.has('flink') ? 0.5 : 1);
 // Aufrüst-Stufen: höhere Stufen erst in späteren Wellen
@@ -2093,7 +2128,7 @@ function setupMachines() {
   const avoid = wallbuys.map(wb => wb.s.pos);
   const ownP = surfacesOf('perk'), ownU = surfacesOf('upgrade');
   const auto = settings.autoPlace === 'all';
-  const perkSpots = ownP.length || !auto ? ownP.map(s0 => ({ pos: s0.pos, normal: s0.normal, kind: s0.kind })) : freeWallSpots(4, 0, avoid, 0.9, [2.3, -2.3, 2.75, -2.75], 2.4).map((sp, i) => ({ ...sp, kind: PERK_ORDER[i] }));
+  const perkSpots = ownP.length || !auto ? ownP.map(s0 => ({ pos: s0.pos, normal: s0.normal, kind: s0.kind })) : freeWallSpots(PERK_ORDER.length, 0, avoid, 0.9, [2.3, -2.3, 2.75, -2.75, 1.85, -1.85, 3.1, -3.1, 1.4, -1.4], 2.4).map((sp, i) => ({ ...sp, kind: PERK_ORDER[i] }));
   for (const sp of perkSpots) if (PERKS[sp.kind]) buildPerkMachine(sp, sp.kind);
   const upSpot = ownU[0] || (auto ? freeWallSpots(1, 0, [...avoid, ...perkSpots.map(p0 => p0.pos)], 1.0, [0.9], 2.4)[0] : null);
   if (upSpot) buildUpgrader(upSpot);
@@ -2110,6 +2145,7 @@ function machineNear(p) {
 function applyPerk(kind) {
   perks.add(kind);
   if (kind === 'eisen') playerHp = Math.min(maxHp(), playerHp + 100);
+  if (kind === 'muni') for (const w of arsenal) refillAmmo(w); // gleich mit mehr Munition auffüllen
   boardDirty = true;
 }
 function useMachine(m, h) {
@@ -4299,7 +4335,7 @@ function showHitDirection(from) {
 function playerHit(dmg, z) {
   if (z && z.root) showHitDirection(z.root.position.clone().setY(headPos.y));
   if (state !== 'playing') return;
-  playerHp -= dmg * DIFF().dmg;
+  playerHp -= dmg * DIFF().dmg * (perks.has('weste') ? 0.7 : 1);
   hurtFlash = 1;
   if (playerHp < 30 && playerHp > 0 && !lowHpWarned) { lowHpWarned = true; speak('Du bist schwer verletzt'); }
   if (playerHp >= 45) lowHpWarned = false;
@@ -4431,6 +4467,7 @@ function handleZombieHit(res, point, prefix = '') {
         if (streak <= 5 || streak % 3 === 0) speak(name.replace('!', ''));
       }
       award(killPts(res) * mult);
+      if (perks.has('vampir')) playerHp = Math.min(maxHp(), playerHp + 4); // Blutdurst
       if (res.headshot) stats.headshots++;
       // letzter Zombie der Welle: kurze Zeitlupe
       if (settings.killcam && toSpawn === 0 && aliveCount() === 0 && wave > 0) { killcamT = 1.6; SFX.slowmo(); }
@@ -4670,6 +4707,7 @@ function autoReload(w) {
   if (w.def.feed === 'mag' ? (w.magInserted && w.magRounds >= w.def.capacity) : w.tube >= w.def.capacity) { if (w.chamber !== 'live') cycleAction(w); return; }
   const avail = (w.reserve || 0) + (w.def.feed === 'mag' && w.magInserted ? w.magRounds : 0);
   if (avail <= 0) { SFX.dry(); floatingNoAmmo(w); return; }
+  if (w.def.feed !== 'mag') electroShock(); // (Magazin-Waffen schocken über ejectMag)
   w.desktopBusy = true;
   let t = 0;
   if (w.def.feed === 'mag') {
@@ -5072,7 +5110,7 @@ function frameInner() {
 // Für automatisierte Tests
 applySettings();
 window.__game = {
-  get boss() { return currentBoss(); }, get paused() { return paused; }, get nameEntry() { return nameEntry; }, namePanel, topPanel, set score(v) { score = v; }, setPaused, tryBuy, ammoPrice,
+  get boss() { return currentBoss(); }, perks, get paused() { return paused; }, get nameEntry() { return nameEntry; }, namePanel, topPanel, set score(v) { score = v; }, setPaused, tryBuy, ammoPrice,
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, set diff(v) { diffKey = v; refreshMenu(); }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,

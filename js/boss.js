@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt } from './zombies.js?v=49';
-import { burst, shockwave, puff, sparks } from './effects.js?v=49';
-import { SFX, SFX3D } from './sfx.js?v=49';
-import { makePanel } from './util.js?v=49';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=49';
-import './weaponkit.js?v=49';
-import { roomOccluders } from './room.js?v=49';
+import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt, isInside, nearestInside } from './zombies.js?v=50';
+import { burst, shockwave, puff, sparks } from './effects.js?v=50';
+import { SFX, SFX3D } from './sfx.js?v=50';
+import { makePanel } from './util.js?v=50';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=50';
+import './weaponkit.js?v=50';
+import { roomOccluders } from './room.js?v=50';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
@@ -492,6 +492,17 @@ function updateBoss(z, dt, head, opts) {
     z.dodgeCool = Math.max(2, 3.5 - z.level * 0.15);
     z.hitsRecent = 0;
     if (z.mode === 'dodge') { SFX.whoosh(); puff(z.root.position.clone().setY(0.3), 0x777777, 0.3, 0.5, 0.2, 0.5); }
+  }
+  // Sicherheitsnetz: im Kampf muss der Boss im Raum sein – sonst sofort zurück hinein
+  if (z.mode !== 'approach' && z.mode !== 'tear' && z.mode !== 'enter' && z.mode !== 'climb') {
+    z.insideT = (z.insideT || 0) - dt;
+    if (z.insideT <= 0) {
+      z.insideT = 0.4;
+      if (!isInside(z.pos.x, z.pos.z)) {
+        const back = nearestInside(z.pos.x, z.pos.z);
+        if (back) { z.pos.x = back.x; z.pos.z = back.z; z.groundY = groundAt(back.x, back.z); z.navP = null; if (z.mode === 'attack' || z.mode === 'dodge') { z.mode = 'move'; z.t = 0; } puff(z.root.position.clone().setY(1), 0x444444, 0.5, 0.8, 0.4, 0.7); }
+      }
+    }
   }
   // Zielpunkt folgt dem Kopf des Spielers mit Verzögerung – wer sich bewegt, weicht aus
   const track = Math.min(6.5, 3 + z.level * 0.35) * (z.rage ? 1.3 : 1); // zielt schneller nach
