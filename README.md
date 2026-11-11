@@ -5,6 +5,20 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 47 – Zombies klettern hoch, Bestenliste mit Namen
+
+**Hochklettern:**
+- Zombies, Riese und Boss klettern auf **Tische und Betten** (alles, was im Raum-Editor als Tisch eingezeichnet ist, bis etwa 1 m Höhe). Wer sich aufs Bett stellt, ist nicht mehr sicher.
+- **Animation:** Hände auf die Kante, hochziehen, ein Knie hoch, aufrichten. Das dauert etwas: Renner etwa 1 s, normale Zombies und der Boss länger, umso länger, je höher die Fläche. Herunter geht es mit einem kurzen Sprung bzw. Fall.
+- In der Wegfindung kostet Klettern extra. Zombies laufen also lieber außen herum, wenn das geht, und klettern nur, wenn du oben stehst oder es der kürzere Weg ist.
+- Der Boss kommt bei einem erhöhten Spieler immer wieder heran und klettert hoch, statt nur zu schießen.
+- Getestet mit einem 55 cm hohen Bett unter dem Spieler: Alle kommen oben an (Renner 3,8 s, Zombie 8,8 s, Boss 10,6 s, Riese 12,6 s, jeweils inklusive Anlauf).
+
+**Bestenliste mit Namen:**
+- Am Ende einer Runde, die für die **Top 10** reicht, erscheint eine **Tastatur zum Namen-Eingeben**: in VR mit dem Zeigestrahl, am PC auch per Tastatur (Enter = speichern). Der zuletzt benutzte Name ist schon vorausgefüllt.
+- Die **Bestenliste** (Top 10 mit Name, Punkten, Welle und Schwierigkeit) steht neben dem Hauptmenü, der eigene neue Eintrag ist hervorgehoben.
+- Runden mit **späterem Start** (Start in Welle 5, 10 …) und das Training kommen nicht in die Liste.
+
 ## Neu in Version 46 – Spezial-Fähigkeiten beim Aufrüsten, Startwelle
 
 **Besondere Fähigkeiten beim Aufrüsten** (zusätzlich zu Schaden, Magazin und Reserve), damit sich auch Scharfschützengewehre und Flinten lohnen:

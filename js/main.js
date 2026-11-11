@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=46';
+import { VERSION } from './version.js?v=47';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=46';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=46';
-import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=46';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=46';
-import { facesButtonVisible, setFaces } from './faces.js?v=46';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=46';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=46';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=46';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=46';
-import { giantModelReady, giantWarmup } from './giantmodel.js?v=46';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=46';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=47';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=47';
+import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=47';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=47';
+import { facesButtonVisible, setFaces } from './faces.js?v=47';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=47';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=47';
+import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=47';
+import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=47';
+import { giantModelReady, giantWarmup } from './giantmodel.js?v=47';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=47';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -2818,13 +2818,16 @@ function speak(textStr) {
 let lowHpWarned = false, bruteWarned = false, pendingDeath = false, bossPending = false, bossWave = false, bossSpawnT = 0;
 let streak = 0, lastKillT = -10, streakMsg = null, lastBreakSec = 0;
 function topList(mode) { return load('vrspiel-top-' + mode, []); }
+const TOP_N = 10;
 function addTop(mode, entry) {
   const list = topList(mode);
   list.push(entry);
   list.sort((a, b) => b.score - a.score);
-  store('vrspiel-top-' + mode, list.slice(0, 5));
+  store('vrspiel-top-' + mode, list.slice(0, TOP_N));
   return list.indexOf(entry);
 }
+const qualifiesTop = (mode, sc) => { const l = topList(mode); return sc > 0 && (l.length < TOP_N || sc > l[l.length - 1].score); };
+
 
 // =============================================================================
 // Hände: greifen, loslassen, zeigen (VR)
@@ -3167,6 +3170,76 @@ function text(ctx, str, x, y, size, color = '#fff', align = 'center', bold = fal
 function row(y, h, labels, W, pad = 30, gap = 18) {
   const bw = (W - pad * 2 - gap * (labels.length - 1)) / labels.length;
   return labels.map((b, i) => ({ ...b, x: pad + i * (bw + gap), y, w: bw, h }));
+}
+
+// ---- Bestenliste: Name eingeben (virtuelle Tastatur in VR, am PC auch per Tastatur) -------------
+const namePanel = new UIPanel(1.15, 0.8, 680);
+namePanel.border = '#ffcc33';
+namePanel.visible = false;
+let nameEntry = null; // { entry, name }
+const KEY_ROWS = ['QWERTZUIOPÜ', 'ASDFGHJKLÖÄ', 'YXCVBNM-'];
+function refreshNamePanel() {
+  const e = nameEntry;
+  if (!e) return;
+  const W = Math.round(1.15 * 680);
+  const keys = [];
+  KEY_ROWS.forEach((r, ri) => keys.push(...row(196 + ri * 74, 64, [...r].map(ch => ({ id: 'k' + ch, label: ch, font: 30, onClick: () => typeName(ch) })), W, 24 + ri * 30, 7)));
+  keys.push(...row(418, 64, [
+    { id: 'kspace', label: '␣ Leertaste', font: 24, onClick: () => typeName(' ') },
+    { id: 'kdel', label: '⌫ Löschen', font: 24, onClick: () => typeName('\b') },
+    { id: 'kok', label: '✔ Speichern', font: 28, onClick: saveName, disabled: !e.name.trim() }
+  ], W, 24, 10));
+  namePanel.set((ctx, w) => {
+    text(ctx, `🏆 Platz ${e.place + 1} in der Bestenliste!`, w / 2, 40, 38, '#ffcc33', 'center', true);
+    text(ctx, `${e.entry.score} Punkte · Welle ${e.entry.wave} · ${DIFFS[e.entry.diff] ? DIFFS[e.entry.diff].label : ''}`, w / 2, 84, 24, '#cfd8e3');
+    roundRect(ctx, 60, 108, w - 120, 64, 12); ctx.fillStyle = '#0e1218'; ctx.fill(); ctx.strokeStyle = '#8796ad'; ctx.lineWidth = 2; ctx.stroke();
+    text(ctx, (e.name || '') + (Math.floor(elapsed * 2) % 2 ? '|' : ' '), w / 2, 141, 38, '#fff', 'center', true);
+    text(ctx, 'Name eingeben (am PC auch per Tastatur, Enter = speichern)', w / 2, 510, 18, '#8796ad');
+  }, keys);
+}
+function typeName(ch) {
+  if (!nameEntry) return;
+  if (ch === '\b') nameEntry.name = nameEntry.name.slice(0, -1);
+  else if (nameEntry.name.length < 14) nameEntry.name += ch;
+  refreshNamePanel();
+}
+function askName(entry) {
+  nameEntry = { entry, name: load('vrspiel-name', ''), place: topList(gameMode).filter(x => x.score >= entry.score).length };
+  menuPanel.visible = false; startButton.visible = false; topPanel.visible = false;
+  namePanel.visible = true;
+  namePanel.place(0.95, 0, -0.12);
+  refreshNamePanel();
+}
+function saveName() {
+  if (!nameEntry || !nameEntry.name.trim()) return;
+  const name = nameEntry.name.trim();
+  store('vrspiel-name', name);
+  const place = addTop(gameMode, { ...nameEntry.entry, name });
+  nameEntry = null;
+  namePanel.visible = false;
+  if (lastResult) { lastResult.place = place; lastResult.name = name; }
+  SFX.bonus();
+  enterMenu();
+}
+// Bestenliste neben dem Menü (Top 10 mit Namen)
+const topPanel = new UIPanel(0.7, 0.8, 680);
+topPanel.border = '#ffcc33';
+topPanel.visible = false;
+function refreshTopPanel() {
+  const list = topList(gameMode);
+  const mine = lastResult && lastResult.place >= 0 ? lastResult.place : -1;
+  topPanel.set((ctx, w, h) => {
+    text(ctx, `🏆 Bestenliste · ${MODES[gameMode].label}`, w / 2, 40, 30, '#ffcc33', 'center', true);
+    if (!list.length) { text(ctx, 'Noch keine Einträge', w / 2, h / 2, 24, '#8796ad'); return; }
+    list.slice(0, TOP_N).forEach((e, i) => {
+      const y = 92 + i * 44;
+      if (i === mine) { ctx.fillStyle = 'rgba(255,204,51,0.18)'; ctx.fillRect(14, y - 21, w - 28, 42); }
+      text(ctx, `${i + 1}.`, 46, y, 24, i < 3 ? '#ffcc33' : '#cfd8e3', 'right', true);
+      text(ctx, (e.name || '—').slice(0, 14), 58, y, 24, '#fff', 'left', true);
+      text(ctx, String(e.score), w - 150, y, 24, '#ffd21f', 'right', true);
+      text(ctx, `W${e.wave} ${DIFFS[e.diff] ? DIFFS[e.diff].icon : ''}`, w - 24, y, 20, '#9ad', 'right');
+    });
+  });
 }
 
 const setupPanel = new UIPanel(1.0, 0.84, 760);
@@ -3874,6 +3947,7 @@ function enterSetup() {
   clearZombies();
   clearPlanks();
   menuPanel.visible = board.visible = false;
+  topPanel.visible = namePanel.visible = false; nameEntry = null;
   startButton.visible = false;
   setupPanel.visible = true;
   setupPanel.place(0.85, 0.65, -0.4);
@@ -3935,6 +4009,10 @@ function enterMenu() {
   startButton.position.copy(inFront(Math.max(0.9, sdist), -0.05, headPos.y + 0.05));
   startButton.lookAt(headPos);
   refreshMenu();
+  // Bestenliste rechts neben dem Menü
+  topPanel.visible = gameMode !== 'training';
+  topPanel.place(Math.min(1.1, freeDistance(headPos, inFront(1, -0.6, headPos.y).sub(headPos), 1.4) - 0.15), -0.62, -0.15);
+  refreshTopPanel();
 }
 function refreshMenu() {
   if (menuView === 'settings') { refreshSettings(); return; }
@@ -3954,7 +4032,7 @@ function refreshMenu() {
     }
     text(ctx, MODES[gameMode].desc, w / 2, 168, 23, '#9ad', 'center', true);
     text(ctx, DIFF().desc, w / 2, 384, 18, diffKey === 'hardcore' ? '#ff6a5a' : '#ffd28a');
-    text(ctx, top.length ? '🏆 ' + top.slice(0, 5).map((e, i) => `${i + 1}. ${e.score} (W${e.wave}, ${DIFFS[e.diff] ? DIFFS[e.diff].label : ''})`).join('  ') : '🏆 Noch keine Bestenliste', w / 2, 410, 19, '#9ad');
+    text(ctx, top.length ? '🏆 ' + top.slice(0, 3).map((e, i) => `${i + 1}. ${e.name ? e.name + ' ' : ''}${e.score} (W${e.wave})`).join('   ') : '🏆 Noch keine Bestenliste', w / 2, 410, 19, '#9ad');
     text(ctx, '⚙ Bedienung', 30, 506, 20, '#9ad', 'left', true);
     text(ctx, 'Kopf x3 · 💰 Punkte → Wandkäufe & Glückskiste · Waffe über die Schulter = Holster', w / 2, 610, 19, '#cfd8e3');
     text(ctx, `Version ${VERSION}`, w - 24, 664, 18, '#6b7a90', 'right');
@@ -4033,6 +4111,7 @@ function startCountdown() {
   countdown = 3.999;
   lastResult = null;
   menuPanel.visible = false;
+  topPanel.visible = namePanel.visible = false; nameEntry = null;
   startButton.visible = false;
   clearZombies();
   clearDecals();
@@ -4116,11 +4195,14 @@ function endRound(died = false) {
   clearZombies();
   hurtFlash = 0;
   const acc = stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0;
-  const place = startedAt > 1 ? -1 : addTop(gameMode, { score, wave, kills: stats.kills, diff: diffKey, date: Date.now() }); // späterer Start: nicht in die Bestenliste
+  // Bestenliste: nur Runden ab Welle 1 (späterer Start zählt nicht); bei einem Platz in den Top 10 Namen eingeben
+  const entry = { score, wave, kills: stats.kills, diff: diffKey, date: Date.now() };
+  const qualifies = startedAt === 1 && gameMode !== 'training' && qualifiesTop(gameMode, score);
+  const place = qualifies ? topList(gameMode).filter(x => x.score >= score).length : -1;
   lastResult = { score, kills: stats.kills, headshots: stats.headshots, acc, wave, place, died, streak: stats.bestStreak || 0 };
-  speak(died ? 'Du wurdest gefressen' : place === 0 ? 'Neuer Rekord!' : 'Runde beendet');
+  speak(died ? 'Du wurdest gefressen' : place === 0 ? 'Neuer Rekord!' : qualifies ? 'Ab in die Bestenliste!' : 'Runde beendet');
   if (died) SFX.jingle([392, 370, 349, 330, 196], 0.4); else SFX.jingle([784, 659, 523, 392], 0.35);
-  enterMenu();
+  if (qualifies) askName(entry); else enterMenu();
 }
 function currentRange() {
   const ws = hands.map(heldWeapon).filter(Boolean);
@@ -4596,6 +4678,13 @@ window.addEventListener('pointerup', (e) => {
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('wheel', (e) => { if (deskW && deskW.def.sight === 'scope') deskW.zoom = THREE.MathUtils.clamp(deskW.zoom - Math.sign(e.deltaY), 4, 12); });
 window.addEventListener('keydown', (e) => {
+  if (nameEntry) { // Name für die Bestenliste tippen
+    if (e.key === 'Enter') saveName();
+    else if (e.key === 'Backspace') typeName('\b');
+    else if (e.key.length === 1 && /[\p{L}\d \-]/u.test(e.key)) typeName(e.key.toUpperCase());
+    e.preventDefault();
+    return;
+  }
   if (paused && e.code !== 'Escape') return; // in der Pause keine Spiel-Tasten
   if (renderer.xr.isPresenting) return;
   const n = parseInt(e.key, 10);
@@ -4921,7 +5010,7 @@ function frameInner() {
 // Für automatisierte Tests
 applySettings();
 window.__game = {
-  get boss() { return currentBoss(); }, get paused() { return paused; }, setPaused, tryBuy, ammoPrice,
+  get boss() { return currentBoss(); }, get paused() { return paused; }, get nameEntry() { return nameEntry; }, namePanel, topPanel, set score(v) { score = v; }, setPaused, tryBuy, ammoPrice,
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, set diff(v) { diffKey = v; refreshMenu(); }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,

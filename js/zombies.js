@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=46';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=46';
-import { SFX3D } from './sfx.js?v=46';
-import { burst, addDebris, shockwave } from './effects.js?v=46';
-import { cachedGeo } from './util.js?v=46';
+import { room, surfacesOf, isOpening } from './room.js?v=47';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=47';
+import { SFX3D } from './sfx.js?v=47';
+import { burst, addDebris, shockwave } from './effects.js?v=47';
+import { cachedGeo } from './util.js?v=47';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=46';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=47';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -491,7 +491,9 @@ function tearPlank(o, zombiePos) {
 }
 
 // ---- Laufwege: Raster über dem Raum (A*) ----------------------------------------
-const nav = { cell: 0.15, minX: 0, minZ: 0, w: 0, h: 0, blocked: null };
+const nav = { cell: 0.15, minX: 0, minZ: 0, w: 0, h: 0, blocked: null, hgt: null };
+const CLIMB_MAX = 1.05; // Tische/Betten bis zu dieser Höhe können Zombies hochklettern
+const STEP = 0.2;       // ab diesem Höhenunterschied wird geklettert bzw. heruntergesprungen
 const RADIUS = 0.16; // Abstand zu Wänden/Möbeln (klein genug, dass Zombies auch durch enge Lücken passen)
 export function buildNav(head) {
   const walls = surfacesOf('wall');
@@ -507,7 +509,11 @@ export function buildNav(head) {
   nav.w = Math.ceil((maxX - minX) / nav.cell);
   nav.h = Math.ceil((maxZ - minZ) / nav.cell);
   nav.blocked = new Uint8Array(nav.w * nav.h);
-  const boxes = room.surfaces.filter(s => s.type === 'table' || s.type === 'chair' || s.type === 'bench' || s.type === 'mbox');
+  nav.hgt = new Float32Array(nav.w * nav.h);
+  // Tische (auch Betten, die als Tisch eingezeichnet sind): begehbar in ihrer Höhe – Zombies klettern hoch
+  const climbable = (s) => s.type === 'table' && s.height <= CLIMB_MAX;
+  const boxes = room.surfaces.filter(s => (s.type === 'table' && !climbable(s)) || s.type === 'chair' || s.type === 'bench' || s.type === 'mbox');
+  const tops = room.surfaces.filter(climbable);
   // Türen je Wand vorab als begehbare Abschnitte berechnen
   const wallInfo = walls.map(w => ({
     // Türen großzügig zuordnen (auch leicht schief/versetzt eingezeichnet) und immer mindestens 0,8 m breit freihalten,
@@ -529,7 +535,17 @@ export function buildNav(head) {
       if (!doors.some(([u0, u1]) => u > u0 && u < u1)) { blocked = true; break; }
     }
     nav.blocked[j * nav.w + i] = blocked ? 1 : 0;
+    for (const s of tops) { // Höhe der Oberfläche (Zelle liegt auf dem Tisch/Bett)
+      const dx = x - s.center.x, dz = z - s.center.z;
+      if (Math.abs(dx * s.X.x + dz * s.X.z) <= s.hx && Math.abs(dx * s.Z.x + dz * s.Z.z) <= s.hz) nav.hgt[j * nav.w + i] = Math.max(nav.hgt[j * nav.w + i], s.height);
+    }
   }
+}
+// Bodenhöhe an einer Stelle (0 = Boden, sonst Tisch-/Bettoberfläche)
+export function groundAt(x, z) {
+  if (!nav.hgt) return 0;
+  const i = Math.floor((x - nav.minX) / nav.cell), j = Math.floor((z - nav.minZ) / nav.cell);
+  return inGrid(i, j) ? nav.hgt[j * nav.w + i] : 0;
 }
 const cellOf = (x, z) => [Math.floor((x - nav.minX) / nav.cell), Math.floor((z - nav.minZ) / nav.cell)];
 const inGrid = (i, j) => i >= 0 && j >= 0 && i < nav.w && j < nav.h;
@@ -557,12 +573,13 @@ function nearestFree(i, j) {
 }
 // freie Sichtlinie auf dem Raster (in kleinen Schritten prüfen, mit etwas Seitenabstand)
 function lineFree(a, b) {
-  const dx = b.x - a.x, dz = b.z - a.z, len = Math.sqrt(dx * dx + dz * dz);
+  const dx = b.x - a.x, dz = b.z - a.z, len = Math.sqrt(dx * dx + dz * dz), h0 = groundAt(a.x, a.z);
   const n = Math.ceil(len / (nav.cell * 0.5));
   const px = len > 0 ? -dz / len * 0.08 : 0, pz = len > 0 ? dx / len * 0.08 : 0;
   for (let k = 1; k <= n; k++) {
     const t = k / n, x = a.x + dx * t, z = a.z + dz * t;
     if (!walkable(x, z) || !walkable(x + px, z + pz) || !walkable(x - px, z - pz)) return false;
+    if (Math.abs(groundAt(x, z) - h0) > STEP) return false;
   }
   return true;
 }
@@ -595,7 +612,7 @@ function findPath(from, to) {
       if (di && dj && (!isFreeCell(ci + di, cj) || !isFreeCell(ci, cj + dj))) continue; // keine Ecken schneiden
       const nk = nj * W + ni;
       if (closed[nk]) continue;
-      const ng = gScore[cur] + (di && dj ? 1.414 : 1);
+      const ng = gScore[cur] + (di && dj ? 1.414 : 1) + (Math.abs(nav.hgt[nk] - nav.hgt[cur]) > STEP ? 6 : 0); // Klettern kostet Zeit
       if (ng < gScore[nk]) { gScore[nk] = ng; fScore[nk] = ng + hyp(ni - gx, nj - gy); came[nk] = cur; push(nk); }
     }
   }
@@ -648,7 +665,7 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
     path: null, pathT: 0, attackT: 1, actionT: 0, deadT: 0, hurtT: 0, groanT: rand(1, 4), opening: null, enterT: 0, crawl: false, fallDir: 1, headless: false,
     // Leistung: alle später benutzten Felder gleich hier anlegen (gleiche Objekt-Form für alle Zombies,
     // Zahlenfelder bleiben Zahlen) – sonst erzeugt jede Änderung pro Bild neuen Speicher-Müll und es ruckelt
-    atkK: opts.atk || 1, roarAnim: 0, stompAnim: 0, jawOpen: 0, castsShadow: true, stuckT: 0, stuckX: 0, stuckZ: 0, stuckN: 0, skipT: 0, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
+    atkK: opts.atk || 1, groundY: 0, climb: null, roarAnim: 0, stompAnim: 0, jawOpen: 0, castsShadow: true, stuckT: 0, stuckX: 0, stuckZ: 0, stuckN: 0, skipT: 0, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
     headSnap: 0, hurtTwist: 1, knockT: 0, knockBack: 0, frozenT: 0, burnT: 0, burnTick: 0, burnUp: false, burnDmg: 0, roarT: 2, stompT: 4, smokeT: 0, landT: 0, spinDir: 0,
     lureV: -1, slot: 0, attackVariant: 0, exploded: false, gibbed: false, landed: false, spat: false, kinCrawl: false, freed: false,
     hurtDir: new THREE.Vector3(0, 0, 1), enterFrom: null, fallVec: null, d0: null, deathStyle: '', ice: null, kin: null, phys: null, proxies: null,
@@ -1013,10 +1030,45 @@ function moveTowards(z, target, speed, dt, checkNav = true) {
   const step = Math.min(len, speed * dt);
   d.multiplyScalar(step / len);
   const nx = z.pos.x + d.x, nz = z.pos.z + d.z;
+  // höhere Fläche (Tisch, Bett) vor ihm: hochklettern statt dagegen laufen
+  if (checkNav && groundAt(nx, nz) - z.groundY > STEP) { startClimb(z, d, groundAt(nx, nz)); return false; }
   if (!checkNav || !walkable(z.pos.x, z.pos.z) || walkable(nx, nz)) { z.pos.x = nx; z.pos.z = nz; }
   else if (walkable(nx, z.pos.z)) z.pos.x = nx;
   else if (walkable(z.pos.x, nz)) z.pos.z = nz;
+  if (checkNav) z.groundY = groundAt(z.pos.x, z.pos.z); // (herunter geht es von selbst – siehe Fallen unten)
   return len - step < 0.05;
+}
+// ---- Klettern: Hände auf die Kante, hochziehen, Bein nachziehen, aufrichten -----------------
+function startClimb(z, d, h) {
+  const len = Math.hypot(d.x, d.z) || 1, ux = d.x / len, uz = d.z / len;
+  let x1 = z.pos.x + ux * 0.45, z1 = z.pos.z + uz * 0.45;
+  if (groundAt(x1, z1) < h - 0.05) { x1 = z.pos.x + ux * 0.25; z1 = z.pos.z + uz * 0.25; }
+  const lift = h - z.groundY;
+  const speedK = THREE.MathUtils.clamp(z.speed / 0.55, 0.7, 1.8);
+  z.climb = { t: 0, dur: (1.0 + 1.3 * lift) / speedK * (z.type === 'giant' ? 0.8 : 1), y0: z.groundY, y1: h, x0: z.pos.x, z0: z.pos.z, x1, z1 };
+  z.yaw = Math.atan2(ux, uz);
+  if (Math.random() < 0.6) SFX3D.growl(z.skull.getWorldPosition(tmpV2), z.type);
+}
+function climbStep(z, dt) {
+  const c = z.climb;
+  c.t += dt;
+  const k = Math.min(1, c.t / c.dur);
+  const ez = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+  const reach = ez(k / 0.3), pull = ez((k - 0.3) / 0.5), stand = ez((k - 0.8) / 0.2);
+  // Höhe und Position: erst greifen, dann hochziehen und über die Kante schieben
+  z.root.position.y = c.y0 + (c.y1 - c.y0) * pull;
+  z.pos.x = c.x0 + (c.x1 - c.x0) * ez((k - 0.45) / 0.55);
+  z.pos.z = c.z0 + (c.z1 - c.z0) * ez((k - 0.45) / 0.55);
+  // Haltung: Arme nach vorn/oben auf die Kante, Oberkörper nach vorn, ein Knie hoch
+  const armUp = reach * (1 - stand);
+  for (const a of z.arms) { a.shoulder.rotation.x = -2.2 * armUp + Math.sin(c.t * 9 + a.side) * 0.15 * pull * (1 - stand); a.shoulder.rotation.z = 0; a.elbow.rotation.x = -0.5 * armUp - 0.9 * pull * (1 - stand); }
+  z.body.rotation.x = (0.25 * reach + 0.55 * pull) * (1 - stand) + 0.12 * stand;
+  z.body.position.y = -0.12 * pull * (1 - stand);
+  const [l0, l1] = z.legs;
+  l0.hip.rotation.x = -1.5 * pull * (1 - stand); l0.knee.rotation.x = 1.8 * pull * (1 - stand);
+  l1.hip.rotation.x = 0.4 * pull * (1 - stand); l1.knee.rotation.x = 0.6 * pull * (1 - stand);
+  z.neck.rotation.x = 0.25 - 0.3 * reach * (1 - stand);
+  if (k >= 1) { z.groundY = c.y1; z.root.position.y = c.y1; z.climb = null; z.pathT = 0; z.path = null; }
 }
 // Gehen / Humpeln / Kriechen
 function animateWalk(z, dt, speed) {
@@ -1221,6 +1273,8 @@ function updateOne(i, dt, head, opts, player) {
     z.jaw.rotation.x = 0.2 + k * 0.7;
     if (!z.spat && k > 0.6) { z.spat = true; launchSpit(z, head); }
     if (z.actionT <= 0) { z.state = 'walk'; z.neck.rotation.x = 0.25; }
+  } else if (z.climb && (z.state === 'walk' || z.state === 'attack')) {
+    climbStep(z, dt);
   } else if (z.state === 'walk' || z.state === 'attack') {
     // Lockvogel (Trommel-Affe): alle Zombies im Raum laufen zu ihm statt zum Spieler
     const lured = lure.active;
@@ -1336,6 +1390,11 @@ function updateOne(i, dt, head, opts, player) {
   z.recentDmg = Math.max(0, (z.recentDmg || 0) - dt * 120);
   z.bumpT = Math.max(0, (z.bumpT || 0) - dt);
   if (z.pendingBump) applyBump(z);
+  // auf Tischen/Betten in deren Höhe stehen; herunter geht es schnell (Sprung/Fall)
+  if (!z.climb && (z.state === 'walk' || z.state === 'attack' || z.state === 'spit')) {
+    const gy = z.groundY;
+    if (Math.abs(z.root.position.y - gy) > 0.002) z.root.position.y = z.root.position.y > gy ? Math.max(gy, z.root.position.y - dt * 3.5) : gy;
+  }
   if (z.kin) {
     if (z.crawl && !z.kinCrawl) { z.kinCrawl = true; resizeKinematic(z.kin, new THREE.Vector3(0.25, 0.18, 0.5), 0.18); }
     setKinematicPose(z.kin, z.pos.x, z.root.position.y, z.pos.z, z.yaw);

@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath } from './zombies.js?v=46';
-import { burst, shockwave, puff, sparks } from './effects.js?v=46';
-import { SFX, SFX3D } from './sfx.js?v=46';
-import { makePanel } from './util.js?v=46';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=46';
-import './weaponkit.js?v=46';
-import { roomOccluders } from './room.js?v=46';
+import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt } from './zombies.js?v=47';
+import { burst, shockwave, puff, sparks } from './effects.js?v=47';
+import { SFX, SFX3D } from './sfx.js?v=47';
+import { makePanel } from './util.js?v=47';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=47';
+import './weaponkit.js?v=47';
+import { roomOccluders } from './room.js?v=47';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
@@ -324,8 +324,20 @@ function moveBoss(z, target, speed, dt) {
   const step = Math.min(len, speed * dt);
   d.multiplyScalar(step / len);
   const nx = z.pos.x + d.x, nz = z.pos.z + d.z;
-  if (walkable(nx, nz) || !walkable(z.pos.x, z.pos.z)) { z.pos.x = nx; z.pos.z = nz; return false; } // (steht er in einer Sperrzone, darf er heraus)
+  // Tisch/Bett vor ihm: beim normalen Laufen hochklettern, bei Angriffen (Sturmangriff …) ist dort Schluss
+  const h = groundAt(nx, nz);
+  if (h - (z.groundY || 0) > 0.2) {
+    if (z.mode === 'move') {
+      const ux = d.x / step, uz = d.z / step;
+      z.climb = { t: 0, dur: 0.9 + 1.0 * (h - (z.groundY || 0)), y0: z.groundY || 0, y1: h, x0: z.pos.x, z0: z.pos.z, x1: z.pos.x + ux * 0.45, z1: z.pos.z + uz * 0.45 };
+      z.yaw = Math.atan2(ux, uz);
+      z.mode = 'climb'; z.t = 0;
+    }
+    return true;
+  }
+  if (walkable(nx, nz) || !walkable(z.pos.x, z.pos.z)) { z.pos.x = nx; z.pos.z = nz; z.groundY = groundAt(nx, nz); return false; } // (steht er in einer Sperrzone, darf er heraus)
   if (walkable(nx, z.pos.z)) z.pos.x = nx; else if (walkable(z.pos.x, nz)) z.pos.z = nz; else return true; // Wand
+  z.groundY = groundAt(z.pos.x, z.pos.z);
   return false;
 }
 function clearPath(a, b) { // jede Stelle auf der Strecke begehbar?
@@ -525,9 +537,19 @@ function updateBoss(z, dt, head, opts) {
       pose = { walk: 0.6, crouch: o.type === 'window' ? Math.sin(k * Math.PI) * 0.6 : 0, lean: o.type === 'window' ? 0.4 * Math.sin(k * Math.PI) : 0 };
       if (k >= 1) { z.mode = 'intro'; z.t = 0; }
     }
+  } else if (z.mode === 'climb') { // Hände auf die Kante, hochziehen, Bein nach, aufrichten
+    const c = z.climb, k = Math.min(1, z.t / c.dur);
+    const ez = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+    const reach = ez(k / 0.3), pull = ez((k - 0.3) / 0.5), stand = ez((k - 0.8) / 0.2);
+    z.climbY = c.y0 + (c.y1 - c.y0) * pull;
+    const m = ez((k - 0.45) / 0.55);
+    z.pos.x = c.x0 + (c.x1 - c.x0) * m; z.pos.z = c.z0 + (c.z1 - c.z0) * m;
+    pose = { armsUp: 0.75 * reach * (1 - stand), lean: (0.3 * reach + 0.5 * pull) * (1 - stand), crouch: 0.6 * pull * (1 - stand) };
+    if (k >= 1) { z.groundY = c.y1; z.climb = null; z.mode = 'move'; z.t = 0; z.pathT = 0; z.navP = null; }
   } else if (z.mode === 'dodge') { // schneller Seitensprung, danach sofort Gegenangriff
     const k = Math.min(1, z.t / 0.35);
     z.pos.lerpVectors(z.dodgeFrom, z.dodgeTo, 1 - (1 - k) * (1 - k));
+    z.groundY = groundAt(z.pos.x, z.pos.z);
     face(z, player, dt, 10);
     pose = { crouch: 0.45 * Math.sin(k * Math.PI), lean: -0.2 };
     if (k >= 1) { z.mode = 'move'; z.t = 0; z.cool = 0.2; }
@@ -538,7 +560,9 @@ function updateBoss(z, dt, head, opts) {
     if (z.t > 1.8) { z.mode = 'move'; z.t = 0; }
   } else if (z.mode === 'move') {
     // Abstand halten (2–3 m), dabei seitlich ausweichen
-    const far = G.near ? 2.6 : 4.2, close = G.near ? 1.5 : 2.6;
+    let far = G.near ? 2.6 : 4.2, close = G.near ? 1.5 : 2.6;
+    // Spieler steht erhöht (Bett/Tisch)? Dann kommt er immer wieder ran und klettert hoch (7 von 12 Sekunden)
+    if (groundAt(head.x, head.z) - (z.groundY || 0) > 0.2) { z.upT = (z.upT || 0) + dt; if (z.upT % 12 < 7) { far = 0.9; close = 0.5; } } else z.upT = 0;
     // freie Sicht zum Spieler? sonst wie die Zombies dem berechneten Weg folgen (um Ecken, durch Türen)
     z.losT = (z.losT || 0) - dt;
     if (z.losT <= 0) { z.losT = 0.2; z.los = clearPath(z.pos, player); }
@@ -603,7 +627,8 @@ function updateBoss(z, dt, head, opts) {
         const tgt = player.clone().addScaledVector(dir, 1.3);
         // nur auf freie Stellen im Raum (Weg vom Spieler dorthin darf keine Wand kreuzen)
         if (clearPath(player, tgt)) z.pos.copy(tgt); else { const side = new THREE.Vector3(-dir.z, 0, dir.x); const t2 = player.clone().addScaledVector(side, 1.3), t3 = player.clone().addScaledVector(side, -1.3); if (clearPath(player, t2)) z.pos.copy(t2); else if (clearPath(player, t3)) z.pos.copy(t3); }
-        z.root.position.set(z.pos.x, 0, z.pos.z);
+        z.groundY = groundAt(z.pos.x, z.pos.z);
+        z.root.position.set(z.pos.x, z.groundY, z.pos.z);
         z.root.scale.setScalar(1);
         puff(z.root.position.clone().setY(1), 0x444444, 0.5, 0.8, 0.4, 0.8);
         SFX3D.growl(z.root.position.clone().setY(1.6), 'brute');
@@ -656,6 +681,12 @@ function updateBoss(z, dt, head, opts) {
   }
   z.root.position.x = z.pos.x;
   z.root.position.z = z.pos.z;
+  // Höhe: beim Klettern laut Animation, sonst auf Boden/Tisch (herunter: kurzer Fall)
+  if (z.mode === 'climb') z.root.position.y = z.climbY;
+  else if (z.mode !== 'approach' && z.mode !== 'tear' && z.mode !== 'enter') {
+    const gy = z.groundY || 0;
+    z.root.position.y = z.root.position.y > gy ? Math.max(gy, z.root.position.y - dt * 3.5) : gy;
+  }
   z.root.rotation.y = z.yaw;
   animate(z, dt, pose);
   z.root.updateMatrixWorld(true);
