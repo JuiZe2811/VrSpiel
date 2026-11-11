@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Burg-Abwehr</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #111; font-family: system-ui, sans-serif; }
+    #info {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      color: #fff; text-align: center; background: rgba(0,0,0,.55);
+      padding: 10px 16px; border-radius: 10px; font-size: 13px; line-height: 1.45;
+      max-width: 92vw; pointer-events: none;
+    }
+    #info b { color: #ffd34d; }
+    #status {
+      position: absolute; bottom: 70px; left: 16px; color: #fff; background: rgba(0,0,0,.55);
+      padding: 8px 12px; border-radius: 8px; font-size: 14px; pointer-events: none; white-space: pre-line; display: none;
+    }
+    #camBtn {
+      position: absolute; bottom: 20px; right: 16px; padding: 10px 14px; border-radius: 8px; border: 1px solid #fff;
+      background: rgba(0,0,0,.6); color: #fff; font: 13px system-ui, sans-serif; cursor: pointer; max-width: 42vw;
+    }
+    #crosshair {
+      position: absolute; left: 0; top: 0; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+      border-radius: 50%; background: rgba(255,255,255,.8); pointer-events: none;
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+        "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="info">
+    <b>Burg-Abwehr</b> (Mittelalter) – Quest 3: „START AR“ drücken und zuerst den Spielbereich einrichten (Wände, Türen, Fenster, Möbel).<br />
+    PC-Test: 1–9 Waffe · Linksklick zuschlagen (Bogen: halten = spannen) · Rechte Maus ziehen = umschauen · F Dolch werfen · G Brandbombe · P Brett · B Wandkauf · K Schatztruhe · J Trank · U Schmiede · M Affe · T Falle · Enter Start
+  </div>
+  <div id="status"></div>
+  <div id="crosshair"></div>
+  <button id="camBtn">📷 Kamera fürs Zielfernrohr erlauben (optional)</button>
+  <script type="module" src="js/main.js?v=50"></script>
+</body>
+</html>

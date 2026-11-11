@@ -5,6 +5,12 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Ableger: Burg-Abwehr (Mittelalter)
+
+Im Ordner [`mittelalter/`](mittelalter/README.md) liegt ein eigenes Spiel auf derselben Grundlage (Raum, Physik, Bewegung).
+Du kämpfst mit Schwertern, Äxten, Speer und Bogen gegen Skelett-Krieger.
+Gestartet wird es über `mittelalter/index.html`.
+
 ## Neu in Version 50 – Fehler behoben, sechs neue Getränke
 
 **Boss lief aus dem Raum – behoben:**
