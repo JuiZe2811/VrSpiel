@@ -5,6 +5,31 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 49 – Sechs neue Waffen, Balance, Fehlersuche
+
+**Neue Waffen** (jetzt 36 insgesamt):
+
+| Waffe | Fundort | Besonderheit | Aufgerüstet |
+|---|---|---|---|
+| **Querschläger-MP QS-9** | Wand (1.300) | Kugeln prallen bis zu 2× von Wänden ab, auch um Ecken | bis zu 5× abprallen |
+| **Schock-Flinte SF-3** (blau) | Wand (1.600) | Halbautomatische Schrotflinte, getroffene Zombies sind 2,5 s gelähmt (60 % langsamer) | länger gelähmt, mehr Kugeln |
+| **Spreng-Revolver** (rot) | Wand (1.700) | Explosiv-Geschosse: kleine Explosion am Ziel, trifft auch Zombies daneben | größere Explosion |
+| **Kopfjäger KJ-2** | Wand (2.000) | Kopfschuss ×5 statt ×3 | Kopfschuss bis ×8 + Durchschlag |
+| **Railgun RX-1** (weiß) | nur Glückskiste | Leuchtstrahl durchschlägt bis zu 12 Zombies in einer Linie | Durchschlag bis 24 |
+| **Schallkanone** (türkis) | nur Glückskiste | Druckwellen-Kegel: Schaden, wirft Zombies zurück und um | größere Reichweite und breiterer Kegel |
+
+**Balance:** Ich habe alle 36 Waffen nach Schaden pro Sekunde, Magazin und Preis verglichen. Angepasst:
+- **Bullpup:** etwas schwächer (war für seinen Preis die stärkste Wandwaffe).
+- **Pump-Flinte:** stärker (20 statt 15 pro Kugel, weil das Pumpen Zeit kostet).
+- **Unterhebel:** stärker (120 statt 85).
+- **Scharfschützengewehr:** stärker (210 statt 150), weil es teurer ist als das Jagdgewehr.
+- **Jagdgewehr:** etwas schwächer (170 statt 190).
+- **Ohne Aufrüsten wird es spät eng:** Die Zombies werden pro Welle zäher (Welle 20 etwa 4,5×, Welle 30 etwa 10× so viel Leben wie in Welle 1), der Waffenschaden bleibt gleich. Ab etwa Welle 15–20 muss man aufrüsten (★ ×2, ★★ ×3,2, ★★★ ×4,8 Schaden). Beispiel Sturmgewehr gegen einen Zombie in Welle 30: ohne Aufrüsten etwa 26 Treffer, mit ★★★ etwa 6.
+
+**Fehler behoben:** Stand der Boss mit dir auf dem Bett, wich er nach hinten aus, fiel herunter, kletterte wieder hoch, im Kreis, und griff nicht an. Jetzt bleibt er oben und kämpft, und seine Angriffs-Wartezeit läuft auch beim Klettern ab.
+
+**Geprüft:** 26 automatische Tests (Waffen, Nachladen, Holster, Automaten, Boss, Riese, Klettern, Pause, Bestenliste, Schwierigkeitsgrade, Fähigkeiten …) plus Chaos-Test: 0 Fehler. Leistung in Welle 24 mit 14 Zombies: etwa 1,6 ms Spiellogik pro Bild.
+
 ## Neu in Version 48 – Auch auf Bett und Tisch nicht mehr sicher
 
 - **Ursache:** Der Boss griff nur an, wenn der Laufweg zu dir frei war. Möbel, auf denen man steht (vor v47 auch Betten und Tische), galten als Hindernis, also griff er dort nie an.

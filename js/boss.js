@@ -540,6 +540,7 @@ function updateBoss(z, dt, head, opts) {
       if (k >= 1) { z.mode = 'intro'; z.t = 0; }
     }
   } else if (z.mode === 'climb') { // Hände auf die Kante, hochziehen, Bein nach, aufrichten
+    z.cool -= dt; // Angriff ist danach sofort bereit
     const c = z.climb, k = Math.min(1, z.t / c.dur);
     const ez = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
     const reach = ez(k / 0.3), pull = ez((k - 0.3) / 0.5), stand = ez((k - 0.8) / 0.2);
@@ -583,7 +584,8 @@ function updateBoss(z, dt, head, opts) {
       // feststecken → neu planen und kurz zur Seite
       z.stuckT = (z.stuckT || 0) + dt;
       if (z.stuckT > 0.8) { if (hyp(z.pos.x - (z.sx ?? 1e9), z.pos.z - (z.sz ?? 1e9)) < 0.1) z.pathT = 0; z.stuckT = 0; z.sx = z.pos.x; z.sz = z.pos.z; }
-    } else want = dist > far ? player.clone() : dist < close ? z.pos.clone().add(flat(z.pos).sub(player).normalize()) : z.pos.clone().add(new THREE.Vector3(-(player.z - z.pos.z), 0, player.x - z.pos.x).normalize().multiplyScalar(Math.sin(z.t * 0.7) > 0 ? 1 : -1));
+    } else if ((z.groundY || 0) > 0.2 && dist < close) want = z.pos.clone(); // oben auf Bett/Tisch: nicht rückwärts herunterfallen, sondern bleiben und kämpfen
+    else want = dist > far ? player.clone() : dist < close ? z.pos.clone().add(flat(z.pos).sub(player).normalize()) : z.pos.clone().add(new THREE.Vector3(-(player.z - z.pos.z), 0, player.x - z.pos.x).normalize().multiplyScalar(Math.sin(z.t * 0.7) > 0 ? 1 : -1));
     moveBoss(z, want, z.speed * rage * (z.los ? 1 : 1.25), dt);
     face(z, z.los ? player : want, dt);
     z.phase += dt * 6 * z.speed * rage;
