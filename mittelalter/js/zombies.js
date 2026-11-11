@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=50';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=50';
-import { SFX3D } from './sfx.js?v=50';
-import { burst, addDebris, shockwave } from './effects.js?v=50';
-import { cachedGeo } from './util.js?v=50';
+import { room, surfacesOf, isOpening } from './room.js?v=2';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=2';
+import { SFX3D } from './sfx.js?v=2';
+import { burst, addDebris, shockwave } from './effects.js?v=2';
+import { cachedGeo } from './util.js?v=2';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=50';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=2';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -743,7 +743,7 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
     // Leistung: alle später benutzten Felder gleich hier anlegen (gleiche Objekt-Form für alle Skelette,
     // Zahlenfelder bleiben Zahlen) – sonst erzeugt jede Änderung pro Bild neuen Speicher-Müll und es ruckelt
     atkK: opts.atk || 1, slowT: 0, groundY: 0, climb: null, roarAnim: 0, stompAnim: 0, jawOpen: 0, castsShadow: true, stuckT: 0, stuckX: 0, stuckZ: 0, stuckN: 0, skipT: 0, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
-    headSnap: 0, hurtTwist: 1, knockT: 0, knockBack: 0, frozenT: 0, burnT: 0, burnTick: 0, burnUp: false, burnDmg: 0, roarT: 2, stompT: 4, smokeT: 0, landT: 0, spinDir: 0,
+    headSnap: 0, hurtTwist: 1, strikeT: 0, windup: false, blockT: 0, knockT: 0, knockBack: 0, frozenT: 0, burnT: 0, burnTick: 0, burnUp: false, burnDmg: 0, roarT: 2, stompT: 4, smokeT: 0, landT: 0, spinDir: 0,
     lureV: -1, slot: 0, attackVariant: 0, exploded: false, gibbed: false, landed: false, spat: false, kinCrawl: false, freed: false,
     hurtDir: new THREE.Vector3(0, 0, 1), enterFrom: null, fallVec: null, d0: null, deathStyle: '', ice: null, kin: null, phys: null, proxies: null,
     skinned: null, hitTorso: null, pendingBump: null, monster: null
@@ -1196,17 +1196,24 @@ function animateTear(z, dt) {
   for (let _k = 0; _k < z.legs.length; _k++) { const l = z.legs[_k]; l.hip.rotation.x *= 0.9; l.knee.rotation.x *= 0.9; }
 }
 function animateAttack(z, dt) {
-  const t = 1 - Math.max(0, z.attackT) / 1.3; // 0..1 Schlagphase
-  const swing = Math.sin(Math.min(1, t * 1.6) * Math.PI);
-  if (z.attackVariant === 1 && !z.crawl) {
-    // Biss: packt zu und stößt mit dem Kopf nach vorne
-    for (let _k = 0; _k < z.arms.length; _k++) { const a = z.arms[_k]; a.shoulder.rotation.x = -1.5; a.shoulder.rotation.z = a.side * 0.35; a.elbow.rotation.x = -0.9; }
-    z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, 0.15 + swing * 0.45, 10, dt);
-    z.neck.rotation.x = 0.25 + swing * 0.5;
-  } else {
+  // Schwerthieb: Abwehrhaltung → Arm über den Kopf (Ausholen, ca. 0,6 s Vorwarnung) → Schlag nach unten
+  const R = z.arms[1], L = z.arms[0];
+  if (z.strikeT > 0) z.strikeT -= dt;
+  if (z.crawl) {
+    const swing = Math.sin(Math.min(1, (1 - Math.max(0, z.attackT) / 1.3) * 1.6) * Math.PI);
     for (let i = 0; i < z.arms.length; i++) { const a = z.arms[i]; a.shoulder.rotation.x = -1.2 - swing * 1.2 * (i ? 1 : 0.6); a.elbow.rotation.x = -0.6 + swing * 0.5; a.shoulder.rotation.z = 0; }
-    z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, z.crawl ? 1.45 : 0.2 + swing * 0.2, 8, dt);
-    z.neck.rotation.x = THREE.MathUtils.damp(z.neck.rotation.x, 0.25, 8, dt);
+    z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, 1.45, 8, dt);
+  } else {
+    let sx, ex, lean;
+    if (z.strikeT > 0) { const k = z.strikeT / 0.3; sx = -0.5 - 2.4 * k * k; ex = -0.1 - 0.9 * k; lean = 0.35 * (1 - k) + 0.1; }
+    else if (z.attackT < 0.6) { const k = 1 - Math.max(0, z.attackT) / 0.6; sx = -1.0 - 1.9 * k; ex = -0.4 - 0.9 * k; lean = 0.1 - 0.2 * k; }
+    else { sx = -1.0; ex = -0.4; lean = 0.15; }
+    R.shoulder.rotation.x = THREE.MathUtils.damp(R.shoulder.rotation.x, sx, z.strikeT > 0 ? 40 : 14, dt);
+    R.elbow.rotation.x = THREE.MathUtils.damp(R.elbow.rotation.x, ex, 18, dt);
+    R.shoulder.rotation.z = 0;
+    L.shoulder.rotation.x = THREE.MathUtils.damp(L.shoulder.rotation.x, -1.1, 10, dt); L.elbow.rotation.x = -0.6; L.shoulder.rotation.z = -L.side * 0.2;
+    z.body.rotation.x = THREE.MathUtils.damp(z.body.rotation.x, lean, 10, dt);
+    z.neck.rotation.x = THREE.MathUtils.damp(z.neck.rotation.x, 0.15, 8, dt);
   }
   for (let _k = 0; _k < z.legs.length; _k++) { const l = z.legs[_k]; l.hip.rotation.x *= 0.85; l.knee.rotation.x *= 0.85; }
 }
@@ -1379,10 +1386,13 @@ function updateOne(i, dt, head, opts, player) {
       z.state = 'attack';
       faceTowards(z, tgt, dt, 8);
       if (!(z.stagger > 0)) z.attackT -= dt; // taumelnd kein Angriff
+      else { z.attackT = Math.max(z.attackT, 0.75); z.windup = false; } // Treffer unterbricht das Ausholen
+      if (z.attackT < 0.6 && !z.windup) { z.windup = true; if (Math.random() < 0.7) SFX3D.growl(z.skull.getWorldPosition(tmpV2), z.type); }
       animateAttack(z, dt);
       if (z.attackT <= 0) {
         z.attackT = 1.3 / z.atkK;
-        z.attackVariant = Math.random() < 0.4 ? 1 : 0;
+        z.attackVariant = 0;
+        z.strikeT = 0.3; z.windup = false;
         SFX3D.swing(z.skull.getWorldPosition(tmpV2));
         if (Math.random() < 0.6) SFX3D.growl(z.skull.getWorldPosition(tmpV2), z.type);
         const armsLeft = z.armLost.filter(x => !x).length;
@@ -1390,7 +1400,8 @@ function updateOne(i, dt, head, opts, player) {
       }
     } else {
       z.state = 'walk';
-      z.attackT = Math.min(z.attackT, 0.5);
+      z.attackT = Math.max(0.75, Math.min(z.attackT, 0.9)); // beim Erreichen erst ausholen
+      z.windup = false;
       z.pathT -= dt;
       // feststecken erkennen: kaum vorwärts gekommen → sofort neu planen (auch über das Budget hinaus)
       z.stuckT += dt;
@@ -1460,6 +1471,7 @@ function updateOne(i, dt, head, opts, player) {
       z.body.rotation.x = (t < 0.35 ? -0.12 : 0.25) * Math.max(0, z.stompAnim / 0.7);
     }
   }
+  if (z.blockT > 0) { z.blockT -= dt; const L = z.arms[0]; L.shoulder.rotation.x = -1.55; L.shoulder.rotation.z = 0.55; L.elbow.rotation.x = -1.0; }
   // Kiefer schnappt auf und zu
   z.jawT += dt * (z.state === 'attack' ? 9 : 2.5);
   z.jaw.rotation.x = 0.15 + Math.max(0, Math.sin(z.jawT)) * (z.state === 'attack' ? 0.6 : 0.35) + z.jawOpen * 0.7;

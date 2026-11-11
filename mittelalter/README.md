@@ -1,36 +1,82 @@
 # Burg-Abwehr (Mittelalter)
 
 Dies ist ein Ableger von **Zombie-Abwehr** für die Meta Quest 3 (WebXR mit Passthrough), angesiedelt im Mittelalter.
-Raum-Einrichtung, Physik, Bewegung, Gürtel, Rückenholster, Wellen, Tränke, Schmiede und Bestenliste stammen aus dem Hauptspiel.
+Raum-Einrichtung, Physik, Bewegung, Gürtel, Rückenholster, Wellen und Bestenliste stammen aus dem Hauptspiel.
 Statt Zombies und Schusswaffen kämpfst du hier mit **Schwertern, Äxten, Speer und Bogen gegen Skelett-Krieger**.
 
 Starten: Öffne `mittelalter/index.html` über denselben Webserver wie das Hauptspiel.
-Bestenliste, Einstellungen und Gesichter sind vom Hauptspiel getrennt.
+Bestenliste und Einstellungen sind vom Hauptspiel getrennt.
 Gespeicherte Räume werden geteilt, damit du deinen Raum nicht noch einmal einrichten musst.
+
+## Neu: Reines Mittelalter, Schilde und echter Schwertkampf
+
+- **Alles Neumodische ist entfernt:**
+  - keine Schusswaffen, Magazine, Patronen, Zielfernrohre und Plasma-Waffen mehr
+  - kein Trommel-Affe und kein Kamera-Knopf mehr
+  - keine Getränkeautomaten und kein Aufrüster mehr; der Code dafür ist gelöscht, nicht nur versteckt
+- **Neue Stationen statt der Automaten:**
+  - Alchemisten-Tische mit leuchtenden Tränken und Pergament-Schildern
+  - eine Schmiede mit Amboss, Esse und Schleifstein zum Aufwerten
+  - eine Schatztruhe mit Wappen
+- **Neue Fallen:** Blitzrune (Runenkreis) und Feuergrube
+- **Der Boss** ist ein Schwarzer Ritter mit Krone, Bogen und Armbrust.
 
 ## Waffen
 
 | Waffe | Art | Besonderheit |
 |---|---|---|
-| Langschwert | Startwaffe (Scheide an der Hüfte) | Hieb & Stich, trifft bis zu 2 Gegner |
-| Streitaxt | Wandkauf | wuchtige Hiebe |
+| Langschwert | Startwaffe (Scheide an der rechten Hüfte) | Hieb & Stich, trifft bis zu 2 Gegner |
+| Kurzschwert | Wandkauf | leicht und schnell, ideal mit Schild |
+| Falchion | Wandkauf | schwere Hiebklinge |
+| Rapier | Wandkauf | schnelle Stiche, sehr starke Kopftreffer |
+| Streitaxt | Wandkauf | bricht durch Ritter-Schilde |
+| Streitkolben | Wandkauf | bricht durch Rüstung, betäubt |
 | Morgenstern | Wandkauf | betäubt getroffene Gegner |
-| Speer | Wandkauf | nur Stöße zählen, durchbohrt 3 Gegner, große Reichweite |
-| Zweihänder | Wandkauf | trifft bis zu 4 Gegner, mit zwei Händen führen |
-| Kurzbogen | Wandkauf | 30 Pfeile |
-| Langbogen | Wandkauf | schneller und stärker, durchschlägt 2 Gegner |
-| Flammenschwert | Schatztruhe | setzt Gegner in Brand |
-| Donnerhammer | Schatztruhe | Blitze springen auf Gegner über |
-| Frostbogen | Schatztruhe | Pfeile frieren Gegner ein |
+| Kriegsflegel | Wandkauf | Stachelkugel an einer Kette, die physikalisch mitschwingt |
+| Kriegshammer | Wandkauf | durchschlägt jede Rüstung, wirft Gegner um |
+| Speer | Wandkauf | nur Stöße zählen, durchbohrt 3 Gegner |
+| Hellebarde | Wandkauf | Stangenwaffe für Hieb und Stoß, trifft 3 Gegner |
+| Zweihänder | Wandkauf | trifft bis zu 4 Gegner |
+| Kurzbogen / Langbogen | Wandkauf | Sehne greifen, ziehen, loslassen |
+| Armbrust | Wandkauf | Sehne spannen, bis sie einrastet, dann mit dem Abzug schießen |
+| Flammenschwert, Donnerhammer, Frostaxt, Frostbogen | Schatztruhe | Feuer, Blitz oder Eis |
 
 Außerdem: **Wurfdolche** und **Brandbomben** am Gürtel.
+
+## Schilde (zweite Hand)
+
+| Schild | Hält | Woher |
+|---|---|---|
+| Holzschild | 5 Treffer | Startschild an der linken Hüfte; zerbricht er, liegt nach 20 s ein neuer bereit |
+| Rundschild | 8 Treffer | Wandkauf |
+| Drachenschild | 11 Treffer | Wandkauf |
+| Turmschild | 16 Treffer | Wandkauf |
+| Wappenschild | 13 Treffer, Stoß wirft um | Schatztruhe |
+
+- Halte den Schild zwischen dich und den Angreifer, dann wird der Schlag geblockt.
+  - Jeder Block kostet Haltbarkeit, und es entstehen sichtbare Risse.
+  - Am Ende zerbricht der Schild in Splitter.
+  - Der Angreifer prallt ab und taumelt.
+- Auch Pfeile der Bogenschützen kannst du mit dem Schild abfangen.
+- **Schildstoß:** Stößt du kräftig mit dem Schild nach vorne, wird das Skelett betäubt.
+- Ein beschädigter Schild lässt sich an der Wand reparieren. Das „Volle Köcher“-Power-up repariert ebenfalls.
+
+## Kampf wie im Mittelalter
+
+- **Ausholen:** Skelette heben vor jedem Hieb sichtbar das Schwert über den Kopf. Etwa eine halbe Sekunde vorher siehst du den Schlag kommen.
+- **Verteidigen:** Du kannst zurückweichen, mit dem Schild blocken oder mit der Klinge **parieren**.
+  - Zum Parieren hältst du die Klinge quer vor den Körper.
+  - Eine Parade fängt 70 % des Schadens ab und lässt den Gegner taumeln.
+- **Gegenangriff:** Harte Treffer lassen Skelette taumeln und unterbrechen ihr Ausholen. Schwere Waffen werfen sie um.
+- **Ritter:** Sie blocken Hiebe und Pfeile von vorne mit ihrem Schild.
+  - Dagegen helfen Axt, Hammer, Kolben, Flegel oder Hellebarde, ein Angriff von der Seite oder ein Schildstoß zum Betäuben.
 
 **Nahkampf (VR):**
 - Treffer zählen nur bei einem echten Schwung. Je schneller die Klinge, desto mehr Schaden.
 - Langsames Hineinhalten macht keinen Schaden.
 - Jedes Skelett wird pro Schwung nur einmal getroffen.
 - Kopftreffer richten mehr Schaden an.
-- Zweihänder, Speer und Hammer kannst du mit der zweiten Hand am Griff führen.
+- Zweihänder, Speer, Hellebarde und Kriegshammer kannst du mit der zweiten Hand führen.
 
 **Bogen (VR):**
 1. Halte den Bogen in einer Hand.
@@ -49,6 +95,8 @@ Ein voller Auszug bringt den vollen Schaden. Nachschub an Pfeilen gibt es am Wan
 - Bogen: Maus halten zum Spannen, loslassen zum Schießen
 - F: Dolch werfen
 - G: Brandbombe
+- Armbrust: Klick spannt bzw. schießt
+- Schild: ausrüsten (Zahl), dann blockt er Angriffe von vorne; Klick ist ein Schildstoß
 
 ## Gegner
 
@@ -78,6 +126,8 @@ Ein voller Auszug bringt den vollen Schaden. Nachschub an Pfeilen gibt es am Wan
 
 ## Technik
 
-- `js/medieval.js`: Modelle und Daten der Mittelalter-Waffen.
+- `js/medieval.js`: Modelle und Daten aller Waffen und Schilde.
+- `js/weapons.js`: schlankes Grundgerüst für den Modellbau, dazu Dolch und Brandbombe; Schusswaffen gibt es dort nicht mehr.
+- `js/main.js`: Schild-Block und Parade (`defendHit`), Schilde zerbrechen (`breakShield`), Flegel-Physik (`flailStep`), Armbrust (`xbowFire`).
 - `js/main.js`: Nahkampf über Klingen-Strahlen von Bild zu Bild (`meleeUpdate`), Bogen mit Sehnen-Griff (`bowUpdate` und `bowRelease`), Pfeilflug (`updateBowArrow`).
 - `js/zombies.js`: Die Skelette nutzen dieselbe Gelenk-Struktur wie die Zombies. Animationen, Trefferzonen, Klettern und abfallende Glieder funktionieren deshalb unverändert.

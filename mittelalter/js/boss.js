@@ -5,13 +5,12 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt, isInside, nearestInside } from './zombies.js?v=50';
-import { burst, shockwave, puff, sparks } from './effects.js?v=50';
-import { SFX, SFX3D } from './sfx.js?v=50';
-import { makePanel } from './util.js?v=50';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=50';
-import './weaponkit.js?v=50';
-import { roomOccluders } from './room.js?v=50';
+import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt, isInside, nearestInside } from './zombies.js?v=2';
+import { burst, shockwave, puff, sparks } from './effects.js?v=2';
+import { SFX, SFX3D } from './sfx.js?v=2';
+import { makePanel } from './util.js?v=2';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=2';
+import { roomOccluders } from './room.js?v=2';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
@@ -24,7 +23,7 @@ export function bossWarmup() {
   const m = cloneSkinned(template);
   m.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.material = o.material.clone(); o.castShadow = true; } }); // wie beim Erscheinen: eigene Materialien
   g.add(m);
-  for (const G of GUNS) { const w = buildWeapon(G.id); w.parts.flash.visible = true; g.add(w.root); } // alle Boss-Waffen (Rotpunkt-Glas, Mündungsfeuer …)
+  for (const G of GUNS) { const w = buildWeapon(G.id); g.add(w.root); } // alle Boss-Waffen
   const sc = document.createElement('canvas'); sc.width = sc.height = 4;
   g.add(new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(sc), color: 0x555555, transparent: true, opacity: 0.5, depthWrite: false }))); // Rauch
   g.add(new THREE.Mesh(laserGeo, new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending })));
@@ -40,7 +39,8 @@ export function initBoss(s, callbacks) {
   Object.assign(cb, callbacks);
   new GLTFLoader().load('models/boss.glb', (g) => {
     template = g.scene;
-    template.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; if (o.material) o.material.envMapIntensity = 0.5; } });
+    // Schwarzer Ritter: Kleidung wird zu dunkler Plattenrüstung (Muster der Textur bleibt als Gravur sichtbar)
+    template.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; const old = o.material; o.material = new THREE.MeshStandardMaterial({ map: old && old.map, color: 0x9aa0ac, metalness: 0.55, roughness: 0.45, envMapIntensity: 1.0 }); } });
   }, undefined, () => { template = null; });
   registerBoss({ update: updateBoss, clear: clearBoss });
 }
@@ -58,6 +58,26 @@ function setBone(B, name, q) {
 }
 const rot = (axis, a) => new THREE.Quaternion().setFromAxisAngle(axis, a);
 const comb = (...qs) => qs.reduce((acc, q) => acc.multiply(q), new THREE.Quaternion());
+
+// ---- Helm mit Krone und glühenden Augen (am Kopf-Knochen, in Metern unabhängig von der Modell-Skalierung)
+const helmIron = new THREE.MeshStandardMaterial({ color: 0x2c2f35, metalness: 0.85, roughness: 0.35 });
+const helmGold = new THREE.MeshStandardMaterial({ color: 0xd4ab45, metalness: 0.7, roughness: 0.3, emissive: 0x3a2a00 });
+const helmEye = new THREE.MeshBasicMaterial({ color: 0xff3a1a, toneMapped: false });
+const HG = { helm: new THREE.SphereGeometry(0.135, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), guard: new THREE.BoxGeometry(0.2, 0.12, 0.03), eye: new THREE.BoxGeometry(0.05, 0.012, 0.01), band: new THREE.TorusGeometry(0.13, 0.016, 6, 24), spike: new THREE.ConeGeometry(0.022, 0.08, 4) }; // einmal für alle Bosse
+function addCrownHelm(headBone, root) {
+  root.updateMatrixWorld(true);
+  const ws = headBone.getWorldScale(new THREE.Vector3());
+  const g = new THREE.Group();
+  g.scale.set(1 / ws.x, 1 / ws.y, 1 / ws.z);
+  const helm = new THREE.Mesh(HG.helm, helmIron);
+  helm.position.y = 0.1; g.add(helm);
+  const guard = new THREE.Mesh(HG.guard, helmIron); guard.position.set(0, 0.06, 0.12); g.add(guard);
+  for (const x of [-0.045, 0.045]) { const e = new THREE.Mesh(HG.eye, helmEye); e.position.set(x, 0.095, 0.137); g.add(e); }
+  const band = new THREE.Mesh(HG.band, helmGold); band.rotation.x = Math.PI / 2; band.position.y = 0.17; g.add(band);
+  for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; const c = new THREE.Mesh(HG.spike, helmGold); c.position.set(Math.sin(a) * 0.13, 0.22, Math.cos(a) * 0.13); g.add(c); }
+  g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+  headBone.add(g);
+}
 
 // ---- Erzeugen ------------------------------------------------------------------------
 let boss = null, projectiles = [], rings = [], bar = null;
@@ -79,6 +99,7 @@ export function spawnBoss(level, head, diffHp = 1) {
   model.scale.setScalar(S);
   const bones = {};
   model.traverse(o => { if (o.isBone) bones[o.name] = o; });
+  if (bones.Head) addCrownHelm(bones.Head, root);
   const B = { bones, base: {}, rootQInv: new THREE.Quaternion() };
   root.updateMatrixWorld(true);
   for (const n of ANIM_BONES) if (bones[n]) B.base[n] = bones[n].quaternion.clone();
@@ -160,12 +181,12 @@ export function clearBoss() {
 // (oder sich hinter Möbeln verstecken: Wände und Möbel halten sie auf).
 const GUNS = [
   { id: 'kurzbogen', name: 'Kurzbogen', shots: 3, rate: 0.5, dmg: 7, speed: 8.5, spread: 0.025, aim: 1.0 },
-  { id: 'crossbow', name: 'Armbrust', shots: 3, rate: 0.65, dmg: 12, speed: 9.5, spread: 0.02, aim: 0.95 },
+  { id: 'armbrust', name: 'Armbrust', shots: 3, rate: 0.65, dmg: 12, speed: 9.5, spread: 0.02, aim: 0.95 },
   { id: 'langbogen', name: 'Langbogen-Salven', shots: 9, rate: 0.12, dmg: 5, speed: 10.5, spread: 0.05, aim: 0.9 },
   { id: 'kurzbogen', name: 'Streupfeile', shots: 2, rate: 1.0, pellets: 6, dmg: 5, speed: 11, spread: 0.1, aim: 0.85, near: true },
-  { id: 'crossbow', name: 'Schnell-Armbrust', shots: 8, rate: 0.11, burst: 4, dmg: 6, speed: 12.5, spread: 0.04, aim: 0.8 },
+  { id: 'armbrust', name: 'Schnell-Armbrust', shots: 8, rate: 0.11, burst: 4, dmg: 6, speed: 12.5, spread: 0.04, aim: 0.8 },
   { id: 'langbogen', name: 'Pfeilhagel', shots: 16, rate: 0.09, dmg: 5, speed: 13.5, spread: 0.06, aim: 0.9 },
-  { id: 'crossbow', name: 'Ballisten-Armbrust', shots: 2, rate: 1.4, dmg: 32, speed: 24, spread: 0, aim: 1.6, laser: true },
+  { id: 'armbrust', name: 'Ballisten-Armbrust', shots: 2, rate: 1.4, dmg: 32, speed: 24, spread: 0, aim: 1.6, laser: true },
   { id: 'frostbogen', name: 'Sturmbogen', shots: 30, rate: 0.06, dmg: 4, speed: 14.5, spread: 0.075, aim: 1.4 }
 ];
 export const GRENADE_LEVEL = 5; // ab Stufe 5 (Welle 25) wirft er ab und zu Granaten
@@ -372,7 +393,6 @@ function placeGun(z, aiming, dt) {
   else _tgt.set(Math.sin(z.yaw), 0, Math.cos(z.yaw)).multiplyScalar(0.5).add(_hand).add(new THREE.Vector3(0, -0.7, 0));
   w.root.position.copy(_hand);
   w.root.quaternion.setFromRotationMatrix(_m4.lookAt(_hand, _tgt, UP));
-  if (z.flashT > 0 && (z.flashT -= dt) <= 0) w.parts.flash.visible = false;
 }
 
 // ---- Animationen (Knochen) ------------------------------------------------------------------
@@ -460,7 +480,7 @@ function updateBoss(z, dt, head, opts) {
     if (z.laser) z.laser.visible = false;
     // Waffe fällt zu Boden
     const gw = z.gun.w.root;
-    if (gw.position.y > 0.04) { z.gunVy = (z.gunVy || 0) - 9.8 * dt; gw.position.y = Math.max(0.04, gw.position.y + z.gunVy * dt); gw.rotation.z += dt * 3; z.gun.w.parts.flash.visible = false; }
+    if (gw.position.y > 0.04) { z.gunVy = (z.gunVy || 0) - 9.8 * dt; gw.position.y = Math.max(0.04, gw.position.y + z.gunVy * dt); gw.rotation.z += dt * 3; }
     // erst in die Knie sacken, dann vornüber fallen
     const kneel = Math.min(1, z.deadT / 0.55), fall = Math.min(1, Math.max(0, (z.deadT - 0.5) / 0.6));
     animate(z, dt, { crouch: kneel * 0.85 * (1 - fall * 0.5), lean: 0.3 + fall * 0.3, limp: 1 });
@@ -607,7 +627,7 @@ function updateBoss(z, dt, head, opts) {
       z.last = z.atk.id;
       z.mode = 'wind'; z.t = 0; z.attackHit = false;
       if (z.atk.id === 'shoot' && z.guns.length > 1) { // Waffe wechseln
-        z.gun.w.root.visible = false; z.gun.w.parts.flash.visible = false;
+        z.gun.w.root.visible = false;
         z.gun = z.guns[Math.floor(Math.random() * z.guns.length)];
         z.gun.w.root.visible = true; bar.last = -1; SFX.rackBack();
       }
