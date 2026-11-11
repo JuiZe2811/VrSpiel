@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { makePanel } from './util.js?v=48';
-import { heightAt } from './room.js?v=48';
-import { SFX } from './sfx.js?v=48';
+import { makePanel } from './util.js?v=49';
+import { heightAt } from './room.js?v=49';
+import { SFX } from './sfx.js?v=49';
 
 // Kurzlebige Effekte: Leuchtspuren, Partikel, Punkte-Text, Einschusslöcher, Hülsen
 let scene;
@@ -23,6 +23,16 @@ export function spawnTracer(from, to) {
   effects.push({ obj: m, life: 0.07, maxLife: 0.07, keepGeo: true, update(dt, k) { mat.opacity = 0.85 * k; }, dispose() { mat.dispose(); } });
 }
 
+// Railgun-Strahl: dicker, leuchtender Strahl, der kurz nachglüht
+export function spawnBeam(from, to, color = 0x66e0ff) {
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const m = new THREE.Mesh(tracerGeo, mat);
+  m.position.copy(from);
+  m.lookAt(to);
+  m.scale.set(6, 6, from.distanceTo(to));
+  scene.add(m);
+  effects.push({ obj: m, life: 0.35, maxLife: 0.35, keepGeo: true, update(dt, k) { mat.opacity = 0.95 * k; m.scale.x = m.scale.y = 6 * k + 1; }, dispose() { mat.dispose(); } });
+}
 // weiche Rauch-/Staubwolke (Sprite)
 const puffTex = (() => {
   const c = document.createElement('canvas');

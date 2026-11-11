@@ -90,7 +90,7 @@ export function tone(t, f0, f1, dur, v, type = 'sine', out = null) {
 }
 // Waffen-Charakter aus den Waffendaten ableiten
 function gunKind(def) {
-  if (def.projectile === 'plasma' || def.chain || def.freeze) return 'energy';
+  if (def.projectile === 'plasma' || def.chain || def.freeze || def.energy) return 'energy';
   if (def.projectile === 'bolt') return 'bow';
   if (def.projectile === 'grenade') return 'launcher';
   if (def.flame) return 'flame';

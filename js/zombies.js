@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=48';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=48';
-import { SFX3D } from './sfx.js?v=48';
-import { burst, addDebris, shockwave } from './effects.js?v=48';
-import { cachedGeo } from './util.js?v=48';
+import { room, surfacesOf, isOpening } from './room.js?v=49';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=49';
+import { SFX3D } from './sfx.js?v=49';
+import { burst, addDebris, shockwave } from './effects.js?v=49';
+import { cachedGeo } from './util.js?v=49';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=48';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=49';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -665,7 +665,7 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
     path: null, pathT: 0, attackT: 1, actionT: 0, deadT: 0, hurtT: 0, groanT: rand(1, 4), opening: null, enterT: 0, crawl: false, fallDir: 1, headless: false,
     // Leistung: alle später benutzten Felder gleich hier anlegen (gleiche Objekt-Form für alle Zombies,
     // Zahlenfelder bleiben Zahlen) – sonst erzeugt jede Änderung pro Bild neuen Speicher-Müll und es ruckelt
-    atkK: opts.atk || 1, groundY: 0, climb: null, roarAnim: 0, stompAnim: 0, jawOpen: 0, castsShadow: true, stuckT: 0, stuckX: 0, stuckZ: 0, stuckN: 0, skipT: 0, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
+    atkK: opts.atk || 1, slowT: 0, groundY: 0, climb: null, roarAnim: 0, stompAnim: 0, jawOpen: 0, castsShadow: true, stuckT: 0, stuckX: 0, stuckZ: 0, stuckN: 0, skipT: 0, stagger: 0, recentDmg: 0, twitch: 0, twitchT: Math.random() * 3, bumpT: 0, lastStep: 0, hitPts: 0, spitT: rand(1.5, 3), fuseT: 0.9, wounds: 0,
     headSnap: 0, hurtTwist: 1, knockT: 0, knockBack: 0, frozenT: 0, burnT: 0, burnTick: 0, burnUp: false, burnDmg: 0, roarT: 2, stompT: 4, smokeT: 0, landT: 0, spinDir: 0,
     lureV: -1, slot: 0, attackVariant: 0, exploded: false, gibbed: false, landed: false, spat: false, kinCrawl: false, freed: false,
     hurtDir: new THREE.Vector3(0, 0, 1), enterFrom: null, fallVec: null, d0: null, deathStyle: '', ice: null, kin: null, phys: null, proxies: null,
@@ -748,7 +748,7 @@ function detach(z, group, kind, sideIndex) {
   else z.legLost[sideIndex] = true;
 }
 // Trifft ein Projektil ein Körperteil: Ergebnis für Punkte/Anzeige
-export function damageZombie(mesh, point, dir, dmg, quiet = false) {
+export function damageZombie(mesh, point, dir, dmg, quiet = false, headMult = 3) {
   const z = mesh.userData.zombie;
   const partName = mesh.userData.part;
   if (!z || !partName || z.state === 'dead') return null;
@@ -780,7 +780,7 @@ export function damageZombie(mesh, point, dir, dmg, quiet = false) {
   let headshot = false;
   if (z.T.boss) dmg = Math.min(dmg, 180); // Boss: kein Sofort-Tod durch Eis, Fallen, Power-ups oder Riesen-Waffen
   else if (z.frozenT > 0) dmg *= 25; // gefroren: zerspringt
-  if (partName === 'head') { z.hp -= dmg * (z.T.boss ? 2 : 3); headshot = true; } // Boss: Kopfschuss nur ×2
+  if (partName === 'head') { z.hp -= dmg * (z.T.boss ? Math.min(2, headMult) : headMult); headshot = true; } // Boss: Kopfschuss höchstens ×2
   else if (partName === 'torso') z.hp -= dmg;
   else if (partName.startsWith('arm')) {
     const k = partName === 'armL' ? 0 : 1;
@@ -1199,6 +1199,7 @@ function updateOne(i, dt, head, opts, player) {
   z.groanT -= dt;
   if (z.groanT <= 0) { z.groanT = rand(2.5, 6); SFX3D.groan(z.skull.getWorldPosition(tmpV2), 1 / z.scale, z.type); }
   let speed = z.speed * (z.crawl ? 0.35 : z.legHp[0] < 30 || z.legHp[1] < 30 ? 0.55 : 1);
+  if (z.slowT > 0) { z.slowT -= dt; speed *= 0.4; if (Math.random() < dt * 6) burst(z.skull.getWorldPosition(tmpV2), 0x66ccff, 2); } // gelähmt (Schock-Flinte)
   if (z.stagger > 0 && (z.state === 'walk' || z.state === 'attack')) speed = 0; // taumelt
   const o = z.opening;
   if (z.state === 'rise') {

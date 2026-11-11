@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=48';
+import { VERSION } from './version.js?v=49';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=48';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=48';
-import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=48';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=48';
-import { facesButtonVisible, setFaces } from './faces.js?v=48';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=48';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=48';
-import { initEffects, headRef, spawnTracer, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=48';
-import { initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=48';
-import { giantModelReady, giantWarmup } from './giantmodel.js?v=48';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=48';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=49';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=49';
+import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=49';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=49';
+import { facesButtonVisible, setFaces } from './faces.js?v=49';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=49';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=49';
+import { initEffects, headRef, spawnTracer, spawnBeam, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=49';
+import { walkable, initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=49';
+import { giantModelReady, giantWarmup } from './giantmodel.js?v=49';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=49';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -500,6 +500,13 @@ function tryFire(w, desktopRay) {
     boardDirty = true;
     return true;
   }
+  if (w.def.sonic) { // Schallkanone: Druckwellen-Kegel
+    sonicShot(muzzlePos, dir, weaponDmg(w), w.def.upgraded);
+    if (w.def.autoCycle) { ejectChamber(w); if (!feed(w)) w.actionOpen = w.def.holdOpen; }
+    if (inRound()) stats.shots++;
+    boardDirty = true;
+    return true;
+  }
   if (w.def.flame || w.def.freeze) { // Flammen- bzw. Froststrahl (Kegel statt einzelner Kugel)
     if (w.def.flame) flameShot(muzzlePos, dir, weaponDmg(w), w.def.upgraded); else frostShot(muzzlePos, dir, weaponDmg(w), w.def.upgraded);
     if (w.def.autoCycle) { ejectChamber(w); if (!feed(w)) w.actionOpen = w.def.holdOpen; }
@@ -533,21 +540,23 @@ function tryFire(w, desktopRay) {
       if (!z) { if (hh.object.userData.plank) { burst(hh.point, 0xb08850, 6); continue; } hit = hh; break; }
       if (seen.has(z)) continue;
       seen.add(z);
-      const res = damageZombie(hh.object, hh.point, d, dmg * Math.pow(w.def.pierceKeep || 0.8, pierced));
+      const res = damageZombie(hh.object, hh.point, d, dmg * Math.pow(w.def.pierceKeep || 0.8, pierced), false, w.def.headMult || 3);
+      onBulletHit(w, z, res, hh.point, dmg);
       if (w.def.incendiary && res && !res.kill) ignite(z, w.def.incendiary);
       if (w.def.explodeKill && res && res.kill && res.headshot) killBlast(hh.point);
       handleZombieHit(res, hh.point, pierced ? '🎯 ' : '');
       hit = hh;
       if (++pierced >= w.def.pierce) break;
     }
-    if (p < 3) spawnTracer(muzzlePos, hit ? hit.point : origin.clone().addScaledVector(d, 60));
+    if (w.def.beam) { if (p === 0) spawnBeam(muzzlePos, hit ? hit.point : origin.clone().addScaledVector(d, 30), w.def.beam); }
+    else if (p < 3) spawnTracer(muzzlePos, hit ? hit.point : origin.clone().addScaledVector(d, 60));
     if (!hit) continue;
     const ud = hit.object.userData;
     if (ud.isStart) { startHit = hit; continue; }
-    if (ud.surface) { if (p < 4) wallImpact(hit, d); continue; }
+    if (ud.surface) { if (p < 4) wallImpact(hit, d); if (w.def.ricochet) ricochet(w, hit, d, dmg * 0.8, w.def.ricochet); continue; }
     if (ud.plank) { burst(hit.point, 0xb08850, 6); continue; }
     if (ud.zombie) {
-      if (!w.def.pierce) { const res = damageZombie(hit.object, hit.point, d, dmg); if (w.def.incendiary && res && !res.kill) ignite(ud.zombie, w.def.incendiary); handleZombieHit(res, hit.point); }
+      if (!w.def.pierce) { const res = damageZombie(hit.object, hit.point, d, dmg, false, w.def.headMult || 3); if (w.def.incendiary && res && !res.kill) ignite(ud.zombie, w.def.incendiary); onBulletHit(w, ud.zombie, res, hit.point, dmg); handleZombieHit(res, hit.point); }
       // Blut spritzt auf die Wand/den Tisch dahinter
       if (Math.random() < 0.6) {
         raycaster.set(hit.point, d);
@@ -1496,6 +1505,53 @@ function spawnFlamePart(pos, vel, mat, life = 0.55, size = 0.12) {
   scene.add(sp);
   flameParts.push({ obj: sp, vel, life, max: life, size });
 }
+// ---- Besondere Treffer-Wirkungen (v49) ---------------------------------------------------
+// Schock-Flinte lähmt, Spreng-Revolver explodiert am Ziel
+let blastSndT = 0;
+function onBulletHit(w, z, res, at, dmg) {
+  if (!res || !z) return;
+  if (w.def.stun && !res.kill) { z.slowT = Math.max(z.slowT || 0, w.def.stun); burst(at, 0x66ccff, 4); }
+  if (w.def.blast) {
+    burst(at, 0xff9a40, 10); puff(at, 0x666666, 0.25, 0.6, 0.3, 0.5);
+    if (elapsed - blastSndT > 0.08) { blastSndT = elapsed; SFX.explosion(0.35); }
+    for (const r of explosionDamage(at, w.def.blast.r, dmg * w.def.blast.k)) if (r.zombie !== z || r.kill) handleZombieHit(r, r.pos.clone().setY(1), '💥 ');
+  }
+}
+// Querschläger: Kugel prallt von der Wand ab (Einfallswinkel = Ausfallswinkel) und fliegt weiter
+function ricochet(w, hit, d, dmg, bounces) {
+  if (bounces <= 0 || !hit.face) return;
+  const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+  if (n.dot(d) > 0) n.negate();
+  const nd = d.clone().reflect(n).normalize();
+  const from = hit.point.clone().addScaledVector(n, 0.01);
+  raycaster.set(from, nd);
+  raycaster.far = 12;
+  const h2 = raycaster.intersectObjects([...zombieHitMeshes(), ...roomOccluders()], false)[0];
+  spawnTracer(from, h2 ? h2.point : from.clone().addScaledVector(nd, 6));
+  sparks(hit.point, n, 4);
+  if (!h2) return;
+  const ud = h2.object.userData;
+  if (ud.zombie) handleZombieHit(damageZombie(h2.object, h2.point, nd, dmg, false, w.def.headMult || 3), h2.point, '↯ ');
+  else if (ud.surface) ricochet(w, h2, nd, dmg * 0.8, bounces - 1);
+}
+// Schallkanone: alle Zombies im Kegel bekommen Schaden, werden zurückgeworfen und fallen um
+function sonicShot(from, dir, dmg, up) {
+  const range = up ? 6 : 4.5;
+  const at = from.clone().addScaledVector(dir, 0.6);
+  shockwave(at);
+  for (let i = 1; i <= 4; i++) puff(from.clone().addScaledVector(dir, i * 0.9), 0x9fffe8, 0.25 + i * 0.12, 0.4, 0.05, 0.35);
+  SFX.explosion(0.45);
+  for (const { z, c, d } of zombiesInCone(from, dir, range, up ? 0.6 : 0.45)) {
+    const k = Math.max(0.3, 1 - d / (range + 0.5));
+    handleZombieHit(damageZombie((z.hitTorso || z.torso.children[1]), c, dir, dmg * k), c, '〰 ');
+    if (z.state === 'dead' || z.T.boss) continue;
+    // zurückwerfen (nicht durch Wände)
+    const push = 1.3 * k;
+    for (let s = 0; s < 6; s++) { const nx = z.pos.x + dir.x * push / 6, nz = z.pos.z + dir.z * push / 6; if (!walkable(nx, nz)) break; z.pos.x = nx; z.pos.z = nz; }
+    z.stagger = Math.max(z.stagger || 0, 0.8);
+    if (k > 0.55 && z.type !== 'giant' && z.type !== 'brute' && (z.state === 'walk' || z.state === 'attack')) { z.knockT = 2.2; z.knockBack = -1; }
+  }
+}
 // Zombies im Kegel vor der Mündung (freie Sicht vorausgesetzt)
 function zombiesInCone(from, dir, range, angle) {
   const out = [];
@@ -1908,6 +1964,12 @@ function upgradeAbilities(id, base, n) {
     if (base.action === 'pump') { a.autoCycle = true; a.action = 'none'; names.push('Automatisch – kein Pumpen mehr'); }
     if (n >= 2) { a.incendiary = 8 + 6 * n; names.push('Drachenatem: Zombies brennen'); }
     if (n >= 3) { a.pierce = 2; a.pierceKeep = 0.75; names.push('Kugeln durchschlagen'); }
+  } else if (id === 'ricochet') { a.ricochet = 2 + n; names.push(`Prallt ${a.ricochet}× ab`);
+  } else if (id === 'shock') { a.stun = 2.5 + n; a.pellets = base.pellets + 2 * n; names.push(`Lähmt ${a.stun.toFixed(1)} s · ${a.pellets} Kugeln`);
+  } else if (id === 'boomrev') { a.blast = { r: 1.2 + 0.3 * n, k: 0.7 + 0.1 * n }; names.push(`Größere Explosion (${a.blast.r.toFixed(1)} m)`);
+  } else if (id === 'headhunter') { a.headMult = 5 + n; a.pierce = 1 + n; a.pierceKeep = 0.9; names.push(`Kopfschuss ×${a.headMult} · Durchschlag ${a.pierce}`);
+  } else if (id === 'rail') { a.pierce = 12 + 4 * n; names.push(`Durchschlag ${a.pierce}`);
+  } else if (id === 'sonic') { names.push('Größere Reichweite & breiterer Kegel');
   } else if (HANDCANNONS.includes(id)) {
     if (base.action === 'lever') { a.autoCycle = true; names.push('Repetiert von selbst'); }
     a.pierce = 1 + n; a.pierceKeep = 0.85; names.push(`Durchschlag: ${a.pierce} Zombies`);

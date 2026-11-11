@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo, mergeStatic } from './util.js?v=48';
+import { MAT, prof, box, cylZ, cylY, cylX, sphere, cachedGeo, mergeStatic } from './util.js?v=49';
 
 // Waffen: Daten, Modelle, Munition
 export const WEAPON_ORDER = ['pistol', 'smg', 'shotgun', 'sniper'];
@@ -424,6 +424,18 @@ function markSightParts(model, sockets) {
     if (Math.abs(_sc.y - y) < 0.026) o.userData.sight = true;
   });
 }
+// Farbton für Waffen-Varianten (z. B. blaue Schock-Flinte): getönte Material-Kopien, zwischengespeichert
+const _tinted = new Map();
+function tintModel(model, tint) {
+  const col = new THREE.Color(tint);
+  model.traverse(o => {
+    if (!o.isMesh || o.userData.sight || !o.material || !o.material.isMeshStandardMaterial || o.material.transparent) return;
+    const key = o.material.uuid + ':' + tint;
+    let m = _tinted.get(key);
+    if (!m) { m = o.material.clone(); m.color.lerp(col, 0.5); _tinted.set(key, m); }
+    o.material = m;
+  });
+}
 export function buildWeapon(id) {
   const def = WEAPON_DEFS[id];
   const root = new THREE.Group();
@@ -441,6 +453,7 @@ export function buildWeapon(id) {
   };
   BUILDERS[def.builder || id](model, parts, sock, def);
   markSightParts(model, sockets);
+  if (def.tint) tintModel(model, def.tint);
   mergeStatic(model, parts);
   const sc = def.scale || 1;
   model.scale.setScalar(sc);
