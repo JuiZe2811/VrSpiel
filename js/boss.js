@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt } from './zombies.js?v=47';
-import { burst, shockwave, puff, sparks } from './effects.js?v=47';
-import { SFX, SFX3D } from './sfx.js?v=47';
-import { makePanel } from './util.js?v=47';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=47';
-import './weaponkit.js?v=47';
-import { roomOccluders } from './room.js?v=47';
+import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt } from './zombies.js?v=48';
+import { burst, shockwave, puff, sparks } from './effects.js?v=48';
+import { SFX, SFX3D } from './sfx.js?v=48';
+import { makePanel } from './util.js?v=48';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=48';
+import './weaponkit.js?v=48';
+import { roomOccluders } from './room.js?v=48';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
@@ -279,13 +279,15 @@ function updateProjectiles(dt, head) {
       if (!walkable(nx, nz) && walkable(p.obj.position.x, p.obj.position.z)) { p.vel.x *= -0.3; p.vel.z *= -0.3; } else { p.obj.position.x = nx; p.obj.position.z = nz; } // nur an Wänden abprallen
       p.obj.position.y += p.vel.y * dt;
       p.obj.rotation.x += dt * 8;
-      if (p.obj.position.y <= 0.045) { p.obj.position.y = 0.045; p.landed = true; p.vel.multiplyScalar(0.25); p.vel.y = 0; SFX.thud(0.3); }
+      const gy = groundAt(p.obj.position.x, p.obj.position.z) + 0.045; // landet auch auf Tisch/Bett
+      if (p.obj.position.y <= gy && p.vel.y < 0) { p.obj.position.y = gy; p.landed = true; p.vel.multiplyScalar(0.25); p.vel.y = 0; SFX.thud(0.3); }
     } else {
       const rx = p.obj.position.x + p.vel.x * dt, rz = p.obj.position.z + p.vel.z * dt;
       if (walkable(rx, rz)) { p.obj.position.x = rx; p.obj.position.z = rz; }
       p.vel.multiplyScalar(Math.max(0, 1 - dt * 4));
       p.warn.visible = true;
-      p.warn.position.set(p.obj.position.x, 0.02, p.obj.position.z);
+      p.obj.position.y = groundAt(p.obj.position.x, p.obj.position.z) + 0.045; // rollt sie über die Kante, fällt sie mit
+      p.warn.position.set(p.obj.position.x, p.obj.position.y - 0.025, p.obj.position.z);
     }
     const f = Math.max(0.08, p.fuse / 2.2);
     const on = Math.sin(p.fuse * Math.PI * 2 / (f * 0.5)) > 0;
@@ -565,7 +567,13 @@ function updateBoss(z, dt, head, opts) {
     if (groundAt(head.x, head.z) - (z.groundY || 0) > 0.2) { z.upT = (z.upT || 0) + dt; if (z.upT % 12 < 7) { far = 0.9; close = 0.5; } } else z.upT = 0;
     // freie Sicht zum Spieler? sonst wie die Zombies dem berechneten Weg folgen (um Ecken, durch Türen)
     z.losT = (z.losT || 0) - dt;
-    if (z.losT <= 0) { z.losT = 0.2; z.los = clearPath(z.pos, player); }
+    if (z.losT <= 0) {
+      z.losT = 0.2;
+      z.los = clearPath(z.pos, player); // freier Laufweg (für Nahkampf und direktes Hinlaufen)
+      // freie Schusslinie (Brust → Kopf): auch wenn du auf Bett/Tisch stehst oder ein Möbel dazwischen niedrig ist
+      const chest = new THREE.Vector3(z.pos.x, (z.groundY || 0) + 1.35 * z.scale, z.pos.z);
+      z.canShoot = freeDist(chest, head) >= chest.distanceTo(head) - 0.35;
+    }
     let want;
     if (!z.los) {
       z.pathT = (z.pathT || 0) - dt;
@@ -582,9 +590,11 @@ function updateBoss(z, dt, head, opts) {
     pose = { walk: 1 };
     z.cool -= dt * rage;
     if (z.stepT === undefined || (z.stepT -= dt) <= 0) { z.stepT = 0.42 / rage; SFX3D.step(z.root.position.clone(), 1.3); }
-    if (z.cool <= 0 && !z.los) z.cool = 0.3; // ohne freie Sicht nicht angreifen, erst hinlaufen
+    if (z.cool <= 0 && !z.los && !z.canShoot) z.cool = 0.3; // weder Weg noch Schusslinie frei: erst hinlaufen
     if (z.cool <= 0) {
       z.atk = pickAttack(z, dist);
+      // ohne freien Laufweg (aber mit Schusslinie): nur Fernangriffe
+      if (!z.los && z.atk.id !== 'shoot' && z.atk.id !== 'grenade') z.atk = ATTACKS[0];
       z.last = z.atk.id;
       z.mode = 'wind'; z.t = 0; z.attackHit = false;
       if (z.atk.id === 'shoot' && z.guns.length > 1) { // Waffe wechseln

@@ -5,6 +5,14 @@ Du richtest deinen echten Raum ein – Wände, **Türen, Fenster**, Tische und S
 deine Türen und Fenster, reißen die Bretter davor Stück für Stück weg, laufen um deine Möbel herum zu dir
 und wollen dich töten.
 
+## Neu in Version 48 – Auch auf Bett und Tisch nicht mehr sicher
+
+- **Ursache:** Der Boss griff nur an, wenn der Laufweg zu dir frei war. Möbel, auf denen man steht (vor v47 auch Betten und Tische), galten als Hindernis, also griff er dort nie an.
+- **Jetzt:** Schießen und Granaten hängen an **freier Sicht** (Strahl von seiner Brust zu deinem Kopf), nicht mehr am Laufweg. Nahkampf (Sturmangriff, Stampfer …) gibt es weiter nur mit freiem Weg. Steht etwas Niedriges dazwischen oder stehst du erhöht, schießt er trotzdem.
+- **Granaten** landen und rollen jetzt auf Tischen und Betten, statt hindurch zu fallen. Der Warnring liegt auf der richtigen Höhe.
+- **Test** auf einer 1,2 m hohen Fläche, auf die er nicht klettern kann: vorher 0 Schaden in 25 s, jetzt beschießt er dich.
+- Zusammen mit v47 (Zombies und Bosse klettern auf Betten und Tische) ist man erhöht nicht mehr sicher.
+
 ## Neu in Version 47 – Zombies klettern hoch, Bestenliste mit Namen
 
 **Hochklettern:**
