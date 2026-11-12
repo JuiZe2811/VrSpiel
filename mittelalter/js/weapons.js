@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, sphere, cachedGeo, mergeStatic } from './util.js?v=2';
+import { MAT, prof, box, cylZ, cylY, sphere, cachedGeo, mergeStatic } from './util.js?v=3';
 
 // Waffen-Grundgerüst: Daten (werden in medieval.js eingetragen), Modellbau, Dolch und Brandbombe.
 // Keine Schusswaffen, Magazine oder Visiere mehr – nur noch Mittelalter.

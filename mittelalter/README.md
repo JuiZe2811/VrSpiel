@@ -8,6 +8,14 @@ Starten: Öffne `mittelalter/index.html` über denselben Webserver wie das Haupt
 Bestenliste und Einstellungen sind vom Hauptspiel getrennt.
 Gespeicherte Räume werden geteilt, damit du deinen Raum nicht noch einmal einrichten musst.
 
+## Neu in Version 3 – Aufwerten ohne Nachziehen
+
+- **Fehler behoben:** Nach dem Aufwerten in der Schmiede zog die Waffe kurz nach oder drehte sich in der Hand.
+  - Die Schmiede gibt die Waffe jetzt sauber frei, auch wenn man sie mit dem Zeigestrahl heranzieht.
+  - Schwung-, Flegel- und Bogen-Verlauf starten frisch.
+  - Der eingelegte Pfeil wird nicht mehr mit eingefärbt.
+- **Kein Ruckler mehr** beim ersten Aufwerten (Leuchtfarben werden vorab vorbereitet).
+
 ## Neu: Reines Mittelalter, Schilde und echter Schwertkampf
 
 - **Alles Neumodische ist entfernt:**

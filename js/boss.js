@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt, isInside, nearestInside } from './zombies.js?v=50';
-import { burst, shockwave, puff, sparks } from './effects.js?v=50';
-import { SFX, SFX3D } from './sfx.js?v=50';
-import { makePanel } from './util.js?v=50';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=50';
-import './weaponkit.js?v=50';
-import { roomOccluders } from './room.js?v=50';
+import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt, isInside, nearestInside } from './zombies.js?v=51';
+import { burst, shockwave, puff, sparks } from './effects.js?v=51';
+import { SFX, SFX3D } from './sfx.js?v=51';
+import { makePanel } from './util.js?v=51';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=51';
+import './weaponkit.js?v=51';
+import { roomOccluders } from './room.js?v=51';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };

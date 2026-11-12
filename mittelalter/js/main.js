@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=2';
+import { VERSION } from './version.js?v=3';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=2';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=2';
-import { WEAPON_ORDER, WEAPON_DEFS, MASS, createWeapon, buildWeapon, refillWeapon, makeKnife, makeGrenade } from './weapons.js?v=2';
-import { STARTER, STARTER_SHIELD, makeBowArrow } from './medieval.js?v=2';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=2';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=2';
-import { initEffects, headRef, spawnTracer, spawnBeam, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=2';
-import { hpScale, walkable, initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=2';
-import { giantModelReady, giantWarmup } from './giantmodel.js?v=2';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=2';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=3';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=3';
+import { WEAPON_ORDER, WEAPON_DEFS, MASS, createWeapon, buildWeapon, refillWeapon, makeKnife, makeGrenade } from './weapons.js?v=3';
+import { STARTER, STARTER_SHIELD, makeBowArrow } from './medieval.js?v=3';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=3';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=3';
+import { initEffects, headRef, spawnTracer, spawnBeam, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=3';
+import { hpScale, walkable, initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=3';
+import { giantModelReady, giantWarmup } from './giantmodel.js?v=3';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=3';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -243,7 +243,15 @@ function makeLoose(w, vel, angVel) {
     onImpact: (v) => SFX.thud(Math.min(0.6, v * 0.12))
   });
 }
+// Waffe aus der Aufrüst-Maschine lösen (egal auf welchem Weg sie genommen wird)
+function releaseFromMachine(w) {
+  if (upg.w === w) Object.assign(upg, { w: null, state: 'idle', t: 0 });
+  w.inMachine = false;
+  w.smoothQ = null; // alte Ausrichtung aus der Maschine nicht nachziehen
+  w.mPrev = null; w.ballP = null; w.draw = 0; // Nahkampf/Flegel/Bogen: frisch anfangen
+}
 function takeWeapon(w, h) {
+  releaseFromMachine(w);
   // aus einer anderen Hand lösen
   for (const o of hands) {
     if (heldWeapon(o) === w) o.held = null;
@@ -1521,7 +1529,7 @@ function upgradedDef(base, n) {
 function upgradeWeapon(w) {
   const n = (w.def.up || 0) + 1;
   w.def = upgradedDef(WEAPON_DEFS[w.id], n);
-  if (!w.camoMeshes) { w.camoMeshes = []; w.root.traverse(o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial && !o.material.map && !o.material.transparent && o.material.toneMapped !== false && !o.userData.sight) w.camoMeshes.push(o); /* Visier bleibt frei */ }); }
+  if (!w.camoMeshes) { w.camoMeshes = []; w.root.traverse(o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial && !o.material.map && !o.material.transparent && o.material.toneMapped !== false && !o.userData.sight && !o.userData.noCamo) w.camoMeshes.push(o); /* Visier bleibt frei */ }); }
   for (const o of w.camoMeshes) o.material = camoMats[n - 1];
   refillAmmo(w); // aufgerüstet = immer komplett neue Munition (volles, größeres Magazin + mehr Reserve)
   if (w.holder >= 0 || w === deskW) setBeltWeapon(w.id, w.def, w);
@@ -1727,6 +1735,7 @@ function updateMachines(dt) {
     if (m.type === 'upgrade') for (const [i, gr] of m.gears.entries()) gr.rotation.x += dt * (upg.state === 'working' ? 6 : 0.4) * (i ? 1 : -1);
   }
   // Aufrüsten läuft
+  if (upg.w && (upg.w.holder >= 0 || upg.w === deskW)) releaseFromMachine(upg.w);
   const w = upg.w;
   if (w && upg.m) {
     const m = upg.m;
@@ -2288,6 +2297,7 @@ function bowVis(w) {
   w.root.add(line);
   const arrow = makeBowArrow(w.def.bow.freeze ? 'frost' : 'feather');
   arrow.visible = false;
+  arrow.traverse(o => { o.userData.noCamo = true; }); // eingelegter Pfeil bleibt beim Aufrüsten normal
   if (w.def.xbow) arrow.scale.setScalar(0.5); // Bolzen
   w.root.add(arrow);
   w.bowVis = { line, arrow, top: loc('limbTop'), bot: loc('limbBot'), nock: loc('nock'), rest: loc('muzzle'), cur: new THREE.Vector3() };
@@ -2825,7 +2835,7 @@ function pointerTarget(h) {
     if (ph.object.userData.ui.buttonAt(ph.uv)) { best = { kind: 'ui', dist: ph.distance, panel: ph.object.userData.ui, uv: ph.uv }; break; }
   }
   const objs = [];
-  for (const w of arsenal) if (w.holder < 0 && w !== deskW) objs.push({ o: w.root, kind: 'weapon', w });
+  for (const w of arsenal) if (w.holder < 0 && w !== deskW && !w.inMachine && !w.holstered && !w.inBelt) objs.push({ o: w.root, kind: 'weapon', w });
   for (const k of knives) if (!k.flying) objs.push({ o: k.obj, kind: 'knife', k });
   for (const c of objs) {
     const box = new THREE.Box3().setFromObject(c.o).expandByScalar(0.03);
@@ -4302,6 +4312,7 @@ const timers = [];
 const later = (sec, fn) => timers.push({ t: sec, fn });
 function equipDesk(w) {
   if (deskW === w) return;
+  releaseFromMachine(w);
   if (deskW) { const old = deskW; deskW = null; camera.remove(old.root); scene.add(old.root); if (old.starter) holsterPistol(old); else makeLoose(old); }
   if (w.inBelt) { w.inBelt = false; w.root.visible = true; const sl = slotOf(w); if (sl) { sl.available = false; sl.obj.visible = false; } }
   for (const h of hands) if (heldWeapon(h) === w) h.held = null;
@@ -4513,6 +4524,9 @@ function warmupModels() {
   if (warmed || !bossReady() || !giantModelReady()) return;
   warmed = true;
   const objs = [bossWarmup(), giantWarmup()];
+  const camoWarm = new THREE.Group();
+  for (const m of camoMats) { const b = new THREE.Mesh(cachedGeo('camowarm', () => new THREE.BoxGeometry(0.05, 0.05, 0.05)), m); b.frustumCulled = false; camoWarm.add(b); }
+  objs.push(camoWarm);
   for (const o of objs) { o.position.set(headPos.x, -60, headPos.z); o.traverse(m => { if (m.isMesh) m.castShadow = true; }); scene.add(o); }
   renderer.shadowMap.needsUpdate = true;
   later(0.3, () => { renderer.shadowMap.needsUpdate = true; });
@@ -4659,7 +4673,7 @@ function frameInner() {
 // Für automatisierte Tests
 applySettings();
 window.__game = {
-  get boss() { return currentBoss(); }, perks, get paused() { return paused; }, get nameEntry() { return nameEntry; }, namePanel, topPanel, set score(v) { score = v; }, setPaused, tryBuy, ammoPrice,
+  get boss() { return currentBoss(); }, takeWeapon, pointerTarget, perks, get paused() { return paused; }, get nameEntry() { return nameEntry; }, namePanel, topPanel, set score(v) { score = v; }, setPaused, tryBuy, ammoPrice,
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, set diff(v) { diffKey = v; refreshMenu(); }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,

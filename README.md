@@ -11,6 +11,14 @@ Im Ordner [`mittelalter/`](mittelalter/README.md) liegt ein eigenes Spiel auf de
 Du kämpfst mit Schwertern, Äxten, Speer und Bogen gegen Skelett-Krieger.
 Gestartet wird es über `mittelalter/index.html`.
 
+## Neu in Version 51 – Aufrüsten ohne Nachziehen
+
+- **Fehler behoben:** Nach dem Aufrüsten zog die Waffe kurz nach oder drehte sich in der Hand.
+  - Ursache: Die schwebende Waffe über dem Aufrüster ließ sich auch mit dem Zeigestrahl heranziehen. Die Schwebe-Animation lief dann in der Hand weiter.
+  - Jetzt gibt der Aufrüster die Waffe frei, egal wie man sie nimmt.
+  - Zeigestrahl, Glättung und Bewegungs-Verlauf werden zurückgesetzt.
+- **Kein Ruckler mehr** beim ersten Aufrüsten: Die Leuchtfarben der Stufen werden beim Start vorbereitet.
+
 ## Neu in Version 50 – Fehler behoben, sechs neue Getränke
 
 **Boss lief aus dem Raum – behoben:**
