@@ -11,6 +11,17 @@ Im Ordner [`mittelalter/`](mittelalter/README.md) liegt ein eigenes Spiel auf de
 Du kämpfst mit Schwertern, Äxten, Speer und Bogen gegen Skelett-Krieger.
 Gestartet wird es über `mittelalter/index.html`.
 
+## Neu in Version 53 – Kriegerin: bessere Animationen, kleinerer Hammer
+
+- **Hammer:** etwa 40 % kleiner und damit handlicher, mit einem Stiel von rund 0,8 m.
+- **Weiche Übergänge:** Alle Bewegungen gehen fließend ineinander über, statt zu springen. Nur beim Zuschlagen geht es blitzschnell.
+- **Gehen:** Sie trägt den Hammer auf der Schulter, mit Hüftschwung und pendelndem linken Arm.
+- **Brüllen beim Auftritt:** Sie reckt den Hammer in die Luft.
+- **Hammerschlag:** Sie streckt sich auf die Zehenspitzen und hebt den Hammer mit beiden Händen über den Kopf. Dann wirft sie sich mit dem Oberkörper in den Schlag und zieht den Hammer danach wieder aus dem Boden.
+- **Rundumschlag:** Sie dreht den Oberkörper weit zurück und schwingt ihn beidhändig durch, statt sich als Ganzes zu drehen.
+- **Sprungschlag:** Sie geht vorher tief in die Knie.
+- Die Schockwelle startet jetzt genau dort, wo der Hammerkopf aufschlägt.
+
 ## Neu in Version 52 – Die Kriegerin
 
 Statt des Riesen kommt in **Welle 8, 13, 18 …** jetzt die **Kriegerin** (eigenes Avatar-Modell).

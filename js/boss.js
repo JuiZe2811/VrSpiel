@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt, isInside, nearestInside } from './zombies.js?v=52';
-import { burst, shockwave, puff, sparks } from './effects.js?v=52';
-import { SFX, SFX3D } from './sfx.js?v=52';
-import { makePanel } from './util.js?v=52';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=52';
-import './weaponkit.js?v=52';
-import { roomOccluders } from './room.js?v=52';
+import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt, isInside, nearestInside } from './zombies.js?v=53';
+import { burst, shockwave, puff, sparks } from './effects.js?v=53';
+import { SFX, SFX3D } from './sfx.js?v=53';
+import { makePanel } from './util.js?v=53';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=53';
+import './weaponkit.js?v=53';
+import { roomOccluders } from './room.js?v=53';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
@@ -128,17 +128,20 @@ function placeHammer(z) {
   else if (id === 'sweep' && (m === 'wind' || m === 'attack')) L = HAM_SIDE;
   else if (id === 'spin' && m === 'attack') L = HAM_OUT;
   else if (id === 'charge' && m === 'attack') L = HAM_LANCE;
-  const yw = z.yaw + (z.yawOff || 0), cy = Math.cos(yw), sy = Math.sin(yw);
+  if (m === 'intro') L = HAM_UP;
+  const yw = z.yaw + (z.yawOff || 0) + ((z.poseS && z.poseS.twist) || 0) * 0.9, cy = Math.cos(yw), sy = Math.sin(yw);
   _hd.set(L.x * cy + L.z * sy, L.y, -L.x * sy + L.z * cy).normalize();
   _hq.setFromUnitVectors(FWD_Z, _hd);
   if (!z.hamQ) z.hamQ = _hq.clone();
   z.hamQ.slerp(_hq, Math.min(1, z.hamDt * (z.mode === 'attack' ? 30 : 10))); // weich zwischen Tragen und Schlagen
   w.root.position.copy(_fb);
   w.root.quaternion.copy(z.hamQ);
-  w.root.scale.setScalar(z.scale);
+  w.root.scale.setScalar(z.scale * HAM_SCALE);
 }
 const FWD_Z = new THREE.Vector3(0, 0, -1);
 const HAM_CARRY = new THREE.Vector3(0.15, 0.9, -0.35), HAM_UPBACK = new THREE.Vector3(0.1, 0.65, -0.75), HAM_DOWN = new THREE.Vector3(0.05, -0.5, 0.86);
+const HAM_SCALE = 0.6; // handlicher Hammer (Stiel ~0,8 m)
+const HAM_UP = new THREE.Vector3(0.1, 1, 0.15);
 const HAM_SIDE = new THREE.Vector3(0.85, 0.05, 0.5), HAM_OUT = new THREE.Vector3(1, 0, 0.1), HAM_LANCE = new THREE.Vector3(0.2, 0.2, 0.95), _hl = new THREE.Vector3();
 // Schockwelle am Aufschlagpunkt (Ring breitet sich aus – darüber springen/zurückweichen)
 function slamRing(x, zz, max, dmg, speed = 3.2) {
@@ -483,6 +486,7 @@ function animate(z, dt, pose) {
   const walk = pose.walk || 0;
   const lean = pose.lean || 0, armsUp = pose.armsUp || 0, rArm = pose.rArm || 0, tpose = pose.tpose || 0, crouch = pose.crouch || 0, aim = pose.aim || 0;
   const armsBack = pose.armsBack || 0, headBack = pose.headBack || 0, limp = pose.limp || 0;
+  const tw = pose.twist || 0, carry = pose.carry || 0, grip = pose.grip || 0, sway = pose.sway || 0, tiptoe = pose.tiptoe || 0;
   const twoHand = z.gun && (WEAPON_DEFS[z.gun.def.id] || {}).twoHand !== false && z.gun.def.id !== 'pistol' && z.gun.def.id !== 'revolver' && z.gun.def.id !== 'mpk';
   z.animT = (z.animT || 0) + dt;
   z.kick = Math.max(0, (z.kick || 0) - dt * 9);                       // Rückstoß klingt schnell ab
@@ -499,10 +503,10 @@ function animate(z, dt, pose) {
   const hurt = Math.max(0, z.hurtT) * 2.5;
   const twist = hurt * 0.35 * (z.hurtTwist || 1);
   // Becken & Oberkörper: Gehen schwingt das Becken, die Schultern drehen gegen
-  setBone(B, 'Hips', comb(rot(UP, s * 0.12 * walk), rot(AZ, c * 0.05 * walk)));
-  setBone(B, 'Spine', comb(rot(UP, -s * 0.1 * walk + twist), rot(AX, lean * 0.5 - hurt * 0.4 + crouch * 0.25 - z.kick * 0.08 + shake)));
-  setBone(B, 'Spine1', rot(AX, lean * 0.3 + breathe));
-  setBone(B, 'Spine2', rot(AX, -breathe * 0.5 - headBack * 0.15));
+  setBone(B, 'Hips', comb(rot(UP, s * 0.12 * walk - tw * 0.15), rot(AZ, c * (0.05 + 0.07 * sway) * walk)));
+  setBone(B, 'Spine', comb(rot(UP, -s * 0.1 * walk + twist + tw * 0.45), rot(AX, lean * 0.5 - hurt * 0.4 + crouch * 0.25 - z.kick * 0.08 + shake), rot(AZ, -c * 0.04 * sway * walk)));
+  setBone(B, 'Spine1', comb(rot(UP, tw * 0.3), rot(AX, lean * 0.3 + breathe)));
+  setBone(B, 'Spine2', comb(rot(UP, tw * 0.25), rot(AX, -breathe * 0.5 - headBack * 0.15)));
   setBone(B, 'Neck', comb(rot(UP, z.lookS * 0.45), rot(AX, -lean * 0.4 - headBack * 0.5 + limp * 0.6)));
   setBone(B, 'Head', comb(rot(UP, z.lookS * 0.45), rot(AX, -headBack * 0.4 - z.kick * 0.05)));
   // Beine: Schritt-Zyklus, Hocke
@@ -514,13 +518,33 @@ function animate(z, dt, pose) {
   // Zielen: rechter Arm nach vorn gestreckt, bei Gewehren stützt der linke Arm mit; Rückstoß reißt den Arm hoch
   const lAim = twoHand ? aim : 0;
   const swing = (1 - limp) * walk;
-  const lArm = comb(rot(AZ, 1.2 * tpose), rot(UP, -0.5 * lAim), rot(AX, s * 0.45 * swing * (1 - lAim) - armsUp * 2.6 - lAim * 1.3 + armsBack * 0.7 - z.kick * 0.2 * lAim));
-  const rArmQ = comb(rot(AZ, -1.2 * tpose), rot(UP, 0.15 * aim), rot(AX, -s * 0.45 * swing * (1 - aim) - armsUp * 2.6 - rArm * 2.8 - aim * 1.45 + armsBack * 0.7 - z.kick * 0.35));
+  // grip: linke Hand greift mit an den Hammerstiel (beidhändige Schläge) · carry: Hammer ruht auf der rechten Schulter
+  const lArm = comb(rot(AZ, 1.2 * tpose * (1 - grip)), rot(UP, -0.5 * lAim - 0.45 * grip), rot(AX, s * 0.45 * swing * (1 - lAim) * (1 - grip) - armsUp * 2.6 - lAim * 1.3 + armsBack * 0.7 - z.kick * 0.2 * lAim - grip * (rArm * 2.8 + 0.5 * (1 - armsUp))));
+  const rArmQ = comb(rot(AZ, -1.2 * tpose + 0.12 * carry), rot(UP, 0.15 * aim + 0.2 * grip), rot(AX, -s * 0.45 * swing * (1 - aim) * (1 - carry) - armsUp * 2.6 - rArm * 2.8 - aim * 1.45 + armsBack * 0.7 - z.kick * 0.35 - carry * 0.35));
   setBone(B, 'LeftArm', lArm);
   setBone(B, 'RightArm', rArmQ);
-  setBone(B, 'LeftForeArm', rot(AX, -0.3 * swing * (1 - lAim) - 0.4 * armsUp - 0.5 * lAim - breathe));
-  setBone(B, 'RightForeArm', rot(AX, -0.3 * swing * (1 - aim) - 0.4 * armsUp - 0.6 * rArm - z.kick * 0.15));
-  z.body.position.y = -crouch * 0.18 * z.scale + Math.abs(s) * 0.03 * walk + (pose.hop || 0) * 0.25 * z.scale;
+  setBone(B, 'LeftForeArm', rot(AX, -0.3 * swing * (1 - lAim) * (1 - grip) - 0.4 * armsUp - 0.5 * lAim - breathe - 0.5 * grip));
+  setBone(B, 'RightForeArm', rot(AX, -0.3 * swing * (1 - aim) * (1 - carry) - 0.4 * armsUp - 0.6 * rArm - z.kick * 0.15 - 2.3 * carry));
+  z.body.position.y = -crouch * 0.18 * z.scale + Math.abs(s) * 0.03 * walk + (pose.hop || 0) * 0.25 * z.scale + tiptoe * 0.05 * z.scale;
+}
+
+// ---- Kriegerin: Haltungen je Phase und weiche Übergänge zwischen allen Bewegungen ------------------
+const POSE_KEYS = ['walk', 'lean', 'armsUp', 'rArm', 'tpose', 'crouch', 'armsBack', 'headBack', 'twist', 'carry', 'grip', 'sway', 'tiptoe'];
+function warriorPose(z, pose, dt) {
+  const m = z.mode, id = z.atk && z.atk.id;
+  const heavy = id === 'smash' || id === 'leap' || id === 'stomp';
+  const swinging = (m === 'wind' || m === 'attack') && id !== 'charge';
+  pose.sway = 1;                                                     // Hüftschwung beim Gehen
+  if (!swinging && m !== 'intro' && m !== 'tear') pose.carry = Math.max(0, 1 - (pose.armsUp || 0) * 1.5); // Hammer auf der Schulter
+  if (swinging && (heavy || id === 'sweep')) pose.grip = 1;          // beidhändig zuschlagen
+  if (m === 'wind' && id === 'smash') pose.tiptoe = Math.min(1, z.t * 2); // streckt sich zum Ausholen
+  if (m === 'recover' && (z.last === 'smash' || z.last === 'leap')) { pose.crouch = Math.max(pose.crouch || 0, 0.25); pose.lean = 0.35; pose.carry = 0; pose.grip = 1; pose.rArm = 0.35; } // Hammer aus dem Boden ziehen
+  // weich überblenden (beim Zuschlagen schnell, sonst geschmeidig)
+  if (!z.poseS) z.poseS = {};
+  const rate = m === 'attack' ? 26 : m === 'dodge' ? 18 : 9;
+  const out = { hop: pose.hop || 0 };
+  for (const k of POSE_KEYS) out[k] = z.poseS[k] = THREE.MathUtils.damp(z.poseS[k] ?? 0, pose[k] || 0, rate, dt);
+  return out;
 }
 
 // ---- Haupt-Update -------------------------------------------------------------------------
@@ -661,7 +685,8 @@ function updateBoss(z, dt, head, opts) {
     if (k >= 1) { z.mode = 'move'; z.t = 0; z.cool = 0.2; }
   } else if (z.mode === 'intro') {
     const r = Math.max(0, Math.sin(Math.min(1, z.t / 1.6) * Math.PI)); // Brüllen: Arme ausbreiten, Kopf in den Nacken
-    pose = { tpose: r * 0.8, armsUp: r * 0.25, headBack: r, lean: -0.15 * r };
+    pose = z.kind === 'warrior' ? { rArm: r * 0.95, tpose: r * 0.35, headBack: r * 0.8, lean: -0.15 * r, tiptoe: r * 0.5 } // Hammer hoch in die Luft
+      : { tpose: r * 0.8, armsUp: r * 0.25, headBack: r, lean: -0.15 * r };
     face(z, player, dt);
     if (z.t > 1.8) { z.mode = 'move'; z.t = 0; }
   } else if (z.mode === 'move') {
@@ -722,8 +747,8 @@ function updateBoss(z, dt, head, opts) {
     else if (a.id === 'blink') { pose = { crouch: 0.3 * k }; z.root.scale.setScalar(1 - k * 0.9); }
     else if (a.id === 'spin') pose = { tpose: k };
     else if (a.id === 'smash') pose = { armsUp: k * 1.05, lean: -0.25 * k, headBack: 0.2 * k }; // Hammer hoch über den Kopf
-    else if (a.id === 'sweep') { pose = { tpose: 0.5 * k, armsBack: 0.6 * k, lean: 0.1 * k }; z.yawOff = -1.1 * k; } // weit ausholen
-    else if (a.id === 'leap') pose = { crouch: 0.55 * k, armsUp: 0.8 * k, lean: 0.2 * k };
+    else if (a.id === 'sweep') { pose = { tpose: 0.35 * k, armsBack: 0.3 * k, lean: 0.1 * k, crouch: 0.2 * k, twist: -1.1 * k }; z.yawOff = -0.45 * k; } // Oberkörper weit zurückdrehen
+    else if (a.id === 'leap') pose = { crouch: 0.75 * k, armsUp: 0.9 * k, lean: 0.3 * k, headBack: 0.2 * k }; // tief in die Knie
     if (z.kind === 'warrior' && k > 0.5 && !z.windCue) { z.windCue = true; SFX.whoosh(); } // hörbare Vorwarnung
     if (k >= 1) {
       z.windCue = false;
@@ -781,10 +806,11 @@ function updateBoss(z, dt, head, opts) {
       if (z.shotsLeft <= 0 && z.shotT <= 0) { z.mode = 'recover'; z.t = 0; }
     } else if (a.id === 'smash') { // Hammer saust herunter, Schockwelle am Aufschlag
       const k = Math.min(1, z.t / 0.22);
-      pose = { armsUp: 1.05 * (1 - k), rArm: 0.5 * k, lean: 0.55 * k, crouch: 0.25 * k };
+      pose = { armsUp: 1.05 * (1 - k), rArm: 0.5 * k, lean: 0.95 * k, crouch: 0.4 * k };
       if (k >= 1 && !z.attackHit) {
         z.attackHit = true;
-        const hx = z.pos.x + Math.sin(z.yaw) * 1.1 * z.scale, hz = z.pos.z + Math.cos(z.yaw) * 1.1 * z.scale;
+        const tip = z.gun.w.sockets.muzzle.getWorldPosition(new THREE.Vector3());
+        const hx = tip.x, hz = tip.z;
         shockwave(new THREE.Vector3(hx, 0.05, hz)); burst(new THREE.Vector3(hx, 0.1, hz), 0x5a5048, 22); sparks(new THREE.Vector3(hx, 0.1, hz), UP, 10);
         SFX3D.bang(new THREE.Vector3(hx, 0.2, hz)); cb.pulse(0.8, 220);
         if (hyp(player.x - hx, player.z - hz) < 0.9 || dist < 1.5) hitPlayer(z, 24 + z.level * 5);
@@ -793,8 +819,9 @@ function updateBoss(z, dt, head, opts) {
       if (z.t > 0.75) { z.mode = 'recover'; z.t = 0; }
     } else if (a.id === 'sweep') { // waagrechter Rundumschlag (ducken oder zurückweichen)
       const k = Math.min(1, z.t / 0.3);
-      z.yawOff = -1.1 + 2.4 * k;
-      pose = { tpose: 0.5, rArm: 0.4, lean: 0.15 };
+      const e = 1 - (1 - k) * (1 - k);
+      z.yawOff = -0.45 + 1.0 * e;
+      pose = { tpose: 0.35, rArm: 0.35, lean: 0.2, crouch: 0.25, twist: -1.1 + 2.2 * e };
       if (k > 0.45 && !z.attackHit) { z.attackHit = true; SFX3D.swing(z.root.position.clone().setY(1.3)); if (dist < 1.8 && head.y > 1.0) hitPlayer(z, 18 + z.level * 4); }
       if (z.t > 0.6) { z.yawOff = 0; z.mode = 'recover'; z.t = 0; }
     } else if (a.id === 'leap') { // Sprung zum Spieler, Landung mit Hammerschlag
@@ -843,6 +870,7 @@ function updateBoss(z, dt, head, opts) {
     z.root.position.y = z.root.position.y > gy ? Math.max(gy, z.root.position.y - dt * 3.5) : gy;
   }
   z.root.rotation.y = z.yaw + (z.yawOff || 0);
+  if (z.kind === 'warrior') pose = warriorPose(z, pose, dt);
   animate(z, dt, pose);
   z.root.updateMatrixWorld(true);
   if (z.kind === 'warrior') { z.hamDt = dt; placeHammer(z); return; } // Nahkampf: kein Laser-Visier
