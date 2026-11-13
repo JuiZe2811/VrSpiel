@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { room, surfacesOf, isOpening } from './room.js?v=53';
-import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=53';
-import { SFX3D } from './sfx.js?v=53';
-import { burst, addDebris, shockwave } from './effects.js?v=53';
-import { cachedGeo } from './util.js?v=53';
+import { room, surfacesOf, isOpening } from './room.js?v=54';
+import { addDynamic, removeDynamic, localBoxOf, addKinematicBox, setKinematicPose, resizeKinematic, removeBody } from './physics.js?v=54';
+import { SFX3D } from './sfx.js?v=54';
+import { burst, addDebris, shockwave } from './effects.js?v=54';
+import { cachedGeo } from './util.js?v=54';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=53';
+import { loadGiantModel, attachMonster, syncMonster } from './giantmodel.js?v=54';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -181,14 +181,33 @@ export const TYPES = {
   crawler: { name: 'Kriecher', scale: [0.82, 0.9], width: 0.95, hp: 60, speed: 1.4, dmg: 7 },
   bloater: { name: 'Platzer', scale: [0.92, 1.0], width: 1.6, hp: 90, speed: 0.8, dmg: 6, explode: true },
   spitter: { name: 'Spucker', scale: [0.86, 0.94], width: 0.85, hp: 85, speed: 0.95, dmg: 8, spit: true },
-  giant: { name: 'Riese', scale: [1.05, 1.1], width: 1.5, hp: 900, speed: 0.62, dmg: 28 }
+  giant: { name: 'Riese', scale: [1.05, 1.1], width: 1.5, hp: 900, speed: 0.62, dmg: 28 },
+  doll: { name: 'Puppe', scale: [0.4, 0.46], width: 1.1, hp: 30, speed: 2.4, dmg: 4 } // von der Kriegerin geworfen
 };
+// ---- Gruselpuppen: Porzellan-Haut mit Rissen, schwarze Knopfaugen, zugenähter Mund, verblichenes Kleid ----
+const dollFaceTex = () => canvasTex(256, 128, (ctx, w, h) => {
+  ctx.fillStyle = '#efe6dc'; ctx.fillRect(0, 0, w, h);
+  const cx = w * 0.25;
+  ctx.fillStyle = 'rgba(220,110,120,0.35)'; for (const sx of [-1, 1]) { ctx.beginPath(); ctx.arc(cx + sx * 18, 70, 8, 0, Math.PI * 2); ctx.fill(); } // Bäckchen
+  ctx.fillStyle = '#0a0a0a'; for (const sx of [-1, 1]) { ctx.beginPath(); ctx.arc(cx + sx * 12, 52, 7.5, 0, Math.PI * 2); ctx.fill(); } // Knopfaugen
+  ctx.fillStyle = '#ffffff'; for (const sx of [-1, 1]) { ctx.beginPath(); ctx.arc(cx + sx * 12 - 2, 50, 1.6, 0, Math.PI * 2); ctx.fill(); }
+  ctx.strokeStyle = '#3a0a0a'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(cx - 13, 82); ctx.quadraticCurveTo(cx, 88, cx + 13, 82); ctx.stroke(); // Mund
+  for (let i = -5; i <= 5; i += 2) { ctx.beginPath(); ctx.moveTo(cx + i * 2.2, 79); ctx.lineTo(cx + i * 2.2, 88); ctx.stroke(); } // Naht
+  ctx.strokeStyle = 'rgba(40,25,20,0.8)'; ctx.lineWidth = 1; // Risse im Porzellan
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); let x = cx + (Math.random() - 0.5) * 40, y = 20 + Math.random() * 60; ctx.moveTo(x, y); for (let k = 0; k < 5; k++) { x += (Math.random() - 0.5) * 9; y += Math.random() * 7; ctx.lineTo(x, y); } ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(90,0,0,0.7)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx - 12, 59); ctx.lineTo(cx - 13, 75); ctx.stroke(); // Träne aus Blut
+});
+const DOLL_SKIN = (() => { const t = canvasTex(64, 64, (ctx, w, h) => { ctx.fillStyle = '#efe6dc'; ctx.fillRect(0, 0, w, h); for (let i = 0; i < 6; i++) { ctx.strokeStyle = 'rgba(40,25,20,0.5)'; ctx.beginPath(); ctx.moveTo(Math.random() * w, Math.random() * h); ctx.lineTo(Math.random() * w, Math.random() * h); ctx.stroke(); } }); const m = new THREE.MeshStandardMaterial({ map: t, roughness: 0.35 }); m.userData.tint = new THREE.Color('#efe6dc'); m.userData.region = 0; return m; })();
+const DOLL_FACES = [0, 1].map(() => new THREE.MeshStandardMaterial({ map: dollFaceTex(), roughness: 0.35 }));
+const DOLL_DRESS = ['#b88a96', '#8c9ab0', '#c9bfa8'].map(c => { const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, side: THREE.DoubleSide }); m.userData.tint = new THREE.Color(c); m.userData.region = 1; return m; });
+const DOLL_HAIR = new THREE.MeshStandardMaterial({ color: 0x151012, roughness: 0.9 });
 function buildZombie(type) {
   const T = TYPES[type];
   const si = Math.floor(Math.random() * SKINS.length);
   const toxic = type === 'bloater' || type === 'spitter';
-  const friend = FRIEND_FACES.length > 0 && type !== 'giant' && Math.random() < friendShare;
-  const skin = toxic ? TOXIC_SKIN : SKINS[si], face = friend ? skin : FACES[si], shirt = pick(SHIRTS), pants = pick(PANTS);
+  const friend = FRIEND_FACES.length > 0 && type !== 'giant' && type !== 'doll' && Math.random() < friendShare;
+  const doll = type === 'doll';
+  const skin = doll ? DOLL_SKIN : toxic ? TOXIC_SKIN : SKINS[si], face = doll ? pick(DOLL_FACES) : friend ? skin : FACES[si], shirt = doll ? pick(DOLL_DRESS) : pick(SHIRTS), pants = doll ? shirt : pick(PANTS);
   const sleeves = Math.random() < 0.5 ? shirt : skin; // zerrissene Ärmel
   const root = new THREE.Group();   // steht auf dem Boden, schaut nach +Z
   const body = new THREE.Group();   // für Umfallen / Kriechen
@@ -225,10 +244,12 @@ function buildZombie(type) {
     skull.add(patch);
     head.scale.setScalar(1.32);
   }
-  if (!friend && Math.random() < 0.6) head.add(mesh(hairGeo, hairMat, 0, 0.115, -0.005, null, 0.95, 1.1, 1.02));
-  const eyeMat = type === 'runner' || type === 'giant' ? EYES[1] : pick(EYES);
+  if (doll) { hips.add(mesh(cachedGeo('dollskirt', () => new THREE.CylinderGeometry(0.1, 0.24, 0.34, 12, 1, true)), shirt, 0, -0.1, 0, 'torso')); } // Puppenkleid-Rock
+  if (doll) { head.add(mesh(hairGeo, DOLL_HAIR, 0, 0.135, -0.03, null, 1.04, 0.95, 1.06)); head.add(mesh(capGeo(0.07, 0.14), DOLL_HAIR, 0, 0.02, -0.07, null, 1.2, 1, 0.6)); head.scale.setScalar(1.45); } // langes schwarzes Haar, großer Puppenkopf
+  else if (!friend && Math.random() < 0.6) head.add(mesh(hairGeo, hairMat, 0, 0.115, -0.005, null, 0.95, 1.1, 1.02));
+  const eyeMat = type === 'runner' || type === 'giant' || doll ? EYES[1] : pick(EYES);
   const glowMat = toxic ? EYE_GLOW[3] : EYE_GLOW[EYES.indexOf(eyeMat)];
-  for (const sx of [-1, 1]) if (!friend && Math.random() > 0.12) {
+  for (const sx of [-1, 1]) if (!friend && !doll && Math.random() > 0.12) {
     head.add(mesh(sphGeo(0.014), toxic ? acidMat : eyeMat, sx * 0.034, 0.118, 0.077));
     if (!eyeGlowOn) continue; // Leuchten nur, wenn eingeschaltet (spart Zeichenaufrufe)
     const gl = new THREE.Sprite(glowMat);
@@ -704,7 +725,12 @@ export function spawnZombie(wave, head, type = pickType(wave), opts = {}) {
     skinned: null, hitTorso: null, pendingBump: null, monster: null
   };
   const ops = openings();
-  if (ops.length) {
+  if (opts.at) { // geworfen: liegt am Boden und steht auf
+    zombie.state = 'getup';
+    zombie.pos.copy(opts.at).setY(0);
+    zombie.actionT = 0;
+    zombie.yaw = Math.random() * Math.PI * 2;
+  } else if (ops.length) {
     // Öffnung mit den wenigsten wartenden Zombies
     const busy = (o) => zombies.filter(q => q.opening === o && q.state !== 'walk' && q.state !== 'attack' && q.state !== 'dead').length;
     const o = ops.slice().sort((a, b) => busy(a) - busy(b) + rand(-0.5, 0.5))[0];
@@ -1234,6 +1260,19 @@ function updateOne(i, dt, head, opts, player) {
   if (z.slowT > 0) { z.slowT -= dt; speed *= 0.4; if (Math.random() < dt * 6) burst(z.skull.getWorldPosition(tmpV2), 0x66ccff, 2); } // gelähmt (Schock-Flinte)
   if (z.stagger > 0 && (z.state === 'walk' || z.state === 'attack')) speed = 0; // taumelt
   const o = z.opening;
+  if (z.state === 'getup') { // Puppe rappelt sich ruckartig auf
+    z.actionT += dt;
+    z.root.rotation.y = z.yaw;
+    const k = Math.min(1, z.actionT / 1.1);
+    const jerk = Math.floor(k * 6) / 6; // stockend wie eine Marionette
+    z.body.rotation.x = (1 - jerk) * -1.45 + (Math.random() - 0.5) * 0.06 * (1 - k);
+    z.body.position.y = (1 - jerk) * 0.1;
+    z.head.rotation.z = Math.sin(z.actionT * 20) * 0.4 * (1 - k);
+    for (let i = 0; i < z.arms.length; i++) { const a = z.arms[i]; a.shoulder.rotation.x = -0.5 - (1 - jerk) * 1.2; a.shoulder.rotation.z = (i ? -1 : 1) * 0.3 * (1 - k); }
+    if (z.actionT > 0.2 && !z.spat) { z.spat = true; SFX3D.groan(z.skull.getWorldPosition(tmpV2), 2.4, z.type); } // kicherndes Wimmern
+    if (k >= 1) { z.state = 'walk'; z.body.rotation.x = 0; z.body.position.y = 0; z.head.rotation.z = 0; z.spat = false; }
+    return;
+  }
   if (z.state === 'rise') {
     z.root.position.y = Math.min(0, z.root.position.y + dt * 0.9);
     faceTowards(z, player, dt);

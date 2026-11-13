@@ -11,6 +11,18 @@ Im Ordner [`mittelalter/`](mittelalter/README.md) liegt ein eigenes Spiel auf de
 Du kämpfst mit Schwertern, Äxten, Speer und Bogen gegen Skelett-Krieger.
 Gestartet wird es über `mittelalter/index.html`.
 
+## Neu in Version 54 – Die Kriegerin wirft Gruselpuppen
+
+- **Neuer Angriff „Puppenwurf“:** Sie holt mit links aus und wirft gruselige kleine Puppen.
+  - Auf Stufe 1 sind es 2 Puppen, mit jeder Stufe eine mehr, höchstens 4.
+  - Sie fliegen sich drehend im Bogen und landen rund um dich.
+- **Die Puppen** stehen ruckartig wie Marionetten auf, wimmern und greifen dich dann an.
+  - Klein und schnell, mit wenig Leben
+  - Porzellangesicht mit Rissen, schwarzen Knopfaugen, zugenähtem Mund und einer Blutträne
+  - langes schwarzes Haar und verblichenes Kleid
+- Die Welle endet erst, wenn auch alle Puppen erledigt sind.
+- **Grenze:** Sie wirft nur, wenn nicht schon zu viele Puppen herumlaufen (höchstens 3 + Stufe). Bevorzugt wirft sie, wenn du Abstand hältst.
+
 ## Neu in Version 53 – Kriegerin: bessere Animationen, kleinerer Hammer
 
 - **Hammer:** etwa 40 % kleiner und damit handlicher, mit einem Stiel von rund 0,8 m.

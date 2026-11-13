@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt, isInside, nearestInside } from './zombies.js?v=53';
-import { burst, shockwave, puff, sparks } from './effects.js?v=53';
-import { SFX, SFX3D } from './sfx.js?v=53';
-import { makePanel } from './util.js?v=53';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=53';
-import './weaponkit.js?v=53';
-import { roomOccluders } from './room.js?v=53';
+import { zombies, spawnZombie, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt, isInside, nearestInside } from './zombies.js?v=54';
+import { burst, shockwave, puff, sparks } from './effects.js?v=54';
+import { SFX, SFX3D } from './sfx.js?v=54';
+import { makePanel } from './util.js?v=54';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=54';
+import './weaponkit.js?v=54';
+import { roomOccluders } from './room.js?v=54';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
@@ -100,14 +100,17 @@ const WARRIOR_ATTACKS = [
   { id: 'charge', from: 1, wind: 0.8, name: 'Sturmangriff' },
   { id: 'leap', from: 2, wind: 0.7, name: 'Sprungschlag' },
   { id: 'stomp', from: 2, wind: 0.75, name: 'Erdbeben' },
-  { id: 'spin', from: 3, wind: 0.5, name: 'Wirbelwind' }
+  { id: 'spin', from: 3, wind: 0.5, name: 'Wirbelwind' },
+  { id: 'dolls', from: 1, wind: 0.8, name: 'Puppenwurf' }
 ];
+const dollsAlive = () => zombies.filter(q => q.type === 'doll' && q.state !== 'dead').length;
 function pickWarriorAttack(z, dist) {
   const list = WARRIOR_ATTACKS.filter(a => z.level >= a.from && a.id !== z.last);
   const w = list.map(a => a.id === 'smash' || a.id === 'sweep' ? (dist < 1.9 ? 4 : 0.2)
     : a.id === 'leap' ? (dist > 2 ? 3 : 0.3)
     : a.id === 'charge' ? (dist > 2.2 ? 2 : 0.2)
-    : a.id === 'stomp' || a.id === 'spin' ? (dist < 2 ? 1.5 : 0.3) : 1);
+    : a.id === 'stomp' || a.id === 'spin' ? (dist < 2 ? 1.5 : 0.3)
+    : a.id === 'dolls' ? (dollsAlive() >= 3 + z.level ? 0 : dist > 1.8 ? 2.2 : 0.6) : 1);
   let r = Math.random() * w.reduce((x, y) => x + y, 0);
   for (let i = 0; i < list.length; i++) { r -= w[i]; if (r <= 0) return list[i]; }
   return list[0];
@@ -331,6 +334,51 @@ function throwGrenade(z, player) {
   projectiles.push({ kind: 'grenade', obj, vel, blink, warn, fuse: 2.2, landed: false, dmg: 30 + z.level * 3 });
   SFX3D.swing(hand);
 }
+// ---- Puppenwurf der Kriegerin: kleine Puppe fliegt im Bogen, landet, steht auf und greift an ------------
+const dollPorcelain = new THREE.MeshStandardMaterial({ color: 0xefe6dc, roughness: 0.35 });
+const dollDress = new THREE.MeshStandardMaterial({ color: 0xb88a96, roughness: 0.9 });
+const dollHair = new THREE.MeshStandardMaterial({ color: 0x151012, roughness: 0.9 });
+const dollEye = new THREE.MeshBasicMaterial({ color: 0xff2a1a, toneMapped: false });
+const DG = { head: new THREE.SphereGeometry(0.075, 12, 8), hair: new THREE.SphereGeometry(0.08, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55), dress: new THREE.ConeGeometry(0.08, 0.2, 10), eye: new THREE.SphereGeometry(0.012, 6, 4), limb: new THREE.CylinderGeometry(0.012, 0.012, 0.12, 5) };
+function makeFlyingDoll() {
+  const g = new THREE.Group();
+  const head = new THREE.Mesh(DG.head, dollPorcelain); head.position.y = 0.17; g.add(head);
+  const hair = new THREE.Mesh(DG.hair, dollHair); hair.position.y = 0.18; hair.scale.set(1.05, 1.2, 1.05); g.add(hair);
+  g.add(new THREE.Mesh(DG.dress, dollDress));
+  for (const x of [-0.025, 0.025]) { const e = new THREE.Mesh(DG.eye, dollEye); e.position.set(x, 0.18, 0.066); g.add(e); }
+  for (const [x, y, r] of [[-0.09, 0.06, 0.9], [0.09, 0.06, -0.9], [-0.03, -0.14, 0], [0.03, -0.14, 0]]) { const l = new THREE.Mesh(DG.limb, dollPorcelain); l.position.set(x, y, 0); l.rotation.z = r; g.add(l); }
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return g;
+}
+let dollSpeakT = -100;
+function i0Speak() { if (performance.now() - dollSpeakT > 20000) { dollSpeakT = performance.now(); cb.speak('Vorsicht, Puppen!'); } } // höchstens alle 20 s ansagen
+function throwDoll(z, player, i, n) {
+  const hand = (z.B.bones.LeftHand || z.B.bones.Head).getWorldPosition(new THREE.Vector3());
+  // Ziel: rund um den Spieler (nicht direkt auf ihn), nur auf begehbaren Stellen im Raum
+  let target = null;
+  for (let k = 0; k < 12 && !target; k++) {
+    const a = Math.atan2(player.x - z.pos.x, player.z - z.pos.z) + Math.PI + (i - (n - 1) / 2) * 0.9 + (Math.random() - 0.5) * 0.6;
+    const d = 0.9 + Math.random() * 0.9;
+    const t = new THREE.Vector3(player.x + Math.sin(a) * d, 0, player.z + Math.cos(a) * d);
+    if (walkable(t.x, t.z) && isInside(t.x, t.z)) target = t;
+  }
+  if (!target) target = z.pos.clone().lerp(player, 0.5);
+  const T = 0.75 + Math.random() * 0.2;
+  const vel = target.clone().sub(hand).divideScalar(T);
+  vel.y += 0.5 * 9.8 * T;
+  const obj = makeFlyingDoll();
+  obj.position.copy(hand);
+  scene.add(obj);
+  projectiles.push({ kind: 'doll', obj, vel, level: z.level, spin: new THREE.Vector3(Math.random() * 10 - 5, Math.random() * 6, Math.random() * 10 - 5) });
+}
+function landDoll(p) {
+  const at = p.obj.position.clone().setY(0);
+  if (!walkable(at.x, at.z)) { const b = nearestInside(at.x, at.z); if (b) at.set(b.x, 0, b.z); }
+  burst(at.clone().setY(0.1), 0xd8d0c8, 10);
+  SFX.thud(0.4);
+  const d = spawnZombie(3 + 5 * p.level, at, 'doll', { at, hp: 1 + 0.25 * (p.level - 1), speed: 1 });
+  if (d) d.speed = Math.min(1.9, d.speed * (1 + 0.1 * p.level));
+}
 const GRENADE_R = 2.3;
 function explodeGrenade(p, head) {
   const at = p.obj.position.clone();
@@ -364,6 +412,15 @@ function updateProjectiles(dt, head) {
       }
       if (!p.whiz && segDist(_prev, p.obj.position, head) < 0.6) { p.whiz = true; SFX.whoosh(); }
       if (p.left <= 0) { sparks(p.obj.position.clone(), p.vel.clone().normalize().negate(), 6); scene.remove(p.obj); projectiles.splice(i, 1); }
+      continue;
+    }
+    if (p.kind === 'doll') {
+      p.vel.y -= 9.8 * dt;
+      const nx = p.obj.position.x + p.vel.x * dt, nz = p.obj.position.z + p.vel.z * dt;
+      if (!walkable(nx, nz) && walkable(p.obj.position.x, p.obj.position.z)) { p.vel.x *= -0.3; p.vel.z *= -0.3; } else { p.obj.position.x = nx; p.obj.position.z = nz; }
+      p.obj.position.y += p.vel.y * dt;
+      p.obj.rotation.x += p.spin.x * dt; p.obj.rotation.y += p.spin.y * dt; p.obj.rotation.z += p.spin.z * dt;
+      if (p.obj.position.y <= groundAt(p.obj.position.x, p.obj.position.z) + 0.05 && p.vel.y < 0) { landDoll(p); scene.remove(p.obj); projectiles.splice(i, 1); }
       continue;
     }
     // Granate: fliegt im Bogen, rollt aus, blinkt immer schneller, dann Explosion
@@ -749,6 +806,7 @@ function updateBoss(z, dt, head, opts) {
     else if (a.id === 'smash') pose = { armsUp: k * 1.05, lean: -0.25 * k, headBack: 0.2 * k }; // Hammer hoch über den Kopf
     else if (a.id === 'sweep') { pose = { tpose: 0.35 * k, armsBack: 0.3 * k, lean: 0.1 * k, crouch: 0.2 * k, twist: -1.1 * k }; z.yawOff = -0.45 * k; } // Oberkörper weit zurückdrehen
     else if (a.id === 'leap') pose = { crouch: 0.75 * k, armsUp: 0.9 * k, lean: 0.3 * k, headBack: 0.2 * k }; // tief in die Knie
+    else if (a.id === 'dolls') pose = { twist: 0.8 * k, lean: -0.2 * k, crouch: 0.15 * k, headBack: 0.3 * k }; // holt mit links aus
     if (z.kind === 'warrior' && k > 0.5 && !z.windCue) { z.windCue = true; SFX.whoosh(); } // hörbare Vorwarnung
     if (k >= 1) {
       z.windCue = false;
@@ -838,6 +896,17 @@ function updateBoss(z, dt, head, opts) {
         slamRing(z.pos.x, z.pos.z, 2.2 + z.level * 0.2, 12 + z.level * 3);
       }
       if (z.t > 1.0) { z.mode = 'recover'; z.t = 0; }
+    } else if (a.id === 'dolls') { // wirft gruselige Puppen, die aufstehen und angreifen
+      const k = Math.min(1, z.t / 0.25);
+      pose = { twist: 0.8 - 1.3 * k, lean: 0.3 * k, crouch: 0.15 };
+      if (k >= 1 && !z.attackHit) {
+        z.attackHit = true;
+        const n = Math.min(4, 1 + z.level, 3 + z.level - dollsAlive());
+        for (let i = 0; i < n; i++) throwDoll(z, player, i, n);
+        SFX3D.swing(z.root.position.clone().setY(1.3));
+        i0Speak();
+      }
+      if (z.t > 0.6) { z.mode = 'recover'; z.t = 0; }
     } else if (a.id === 'grenade') {
       pose = { armsUp: Math.max(0, 0.45 - z.t * 2), lean: 0.2 };
       if (z.t > 0.5) { z.mode = 'recover'; z.t = 0; }
