@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { MAT, prof, box, cylZ, cylY, sphere, cachedGeo } from './util.js?v=3';
-import { WEAPON_DEFS, WEAPON_ORDER, BUILDERS, fromTemplate } from './weapons.js?v=3';
+import { MAT, prof, box, cylZ, cylY, sphere, cachedGeo } from './util.js?v=4';
+import { WEAPON_DEFS, WEAPON_ORDER, BUILDERS, fromTemplate } from './weapons.js?v=4';
 
 // =============================================================================
 // Mittelalter-Waffen: Schwerter, Äxte, Hämmer, Stangenwaffen, Flegel, Bögen, Armbrust und Schilde.

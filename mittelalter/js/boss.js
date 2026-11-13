@@ -5,17 +5,19 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt, isInside, nearestInside } from './zombies.js?v=3';
-import { burst, shockwave, puff, sparks } from './effects.js?v=3';
-import { SFX, SFX3D } from './sfx.js?v=3';
-import { makePanel } from './util.js?v=3';
-import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=3';
-import { roomOccluders } from './room.js?v=3';
+import { zombies, walkable, registerBoss, openings, tearPlankFor, navPath, groundAt, isInside, nearestInside } from './zombies.js?v=4';
+import { burst, shockwave, puff, sparks } from './effects.js?v=4';
+import { SFX, SFX3D } from './sfx.js?v=4';
+import { makePanel } from './util.js?v=4';
+import { buildWeapon, makeGrenade, WEAPON_DEFS } from './weapons.js?v=4';
+import { roomOccluders } from './room.js?v=4';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 let scene = null, cb = { playerHit: () => {}, pulse: () => {}, speak: () => {} };
-let template = null;
+let template = null, warriorTpl; // undefined = lädt noch, null = Fehler
 export const bossReady = () => !!template;
+export const warriorReady = () => !!warriorTpl;
+export const warriorSettled = () => warriorTpl !== undefined;
 // Vorwärmen: eine Kopie einmal unsichtbar mitzeichnen lassen → Shader & Texturen sind fertig, bevor der Boss kommt
 // (sonst ruckelt es beim ersten Erscheinen). Die Kopie bleibt (unsichtbar) in der Szene, damit nichts wieder freigegeben wird.
 export function bossWarmup() {
@@ -24,6 +26,7 @@ export function bossWarmup() {
   m.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.material = o.material.clone(); o.castShadow = true; } }); // wie beim Erscheinen: eigene Materialien
   g.add(m);
   for (const G of GUNS) { const w = buildWeapon(G.id); g.add(w.root); } // alle Boss-Waffen
+  if (warriorTpl) { const k = cloneSkinned(warriorTpl); k.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.material = o.material.clone(); } }); g.add(k); g.add(makeWarHammer().root); }
   const sc = document.createElement('canvas'); sc.width = sc.height = 4;
   g.add(new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(sc), color: 0x555555, transparent: true, opacity: 0.5, depthWrite: false }))); // Rauch
   g.add(new THREE.Mesh(laserGeo, new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending })));
@@ -42,6 +45,11 @@ export function initBoss(s, callbacks) {
     // Schwarzer Ritter: Kleidung wird zu dunkler Plattenrüstung (Muster der Textur bleibt als Gravur sichtbar)
     template.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; const old = o.material; o.material = new THREE.MeshStandardMaterial({ map: old && old.map, color: 0x9aa0ac, metalness: 0.55, roughness: 0.45, envMapIntensity: 1.0 }); } });
   }, undefined, () => { template = null; });
+  // Kriegerin (eigenes Modell, gleiches Skelett wie der Boss): kommt allein mit einem riesigen Kriegshammer
+  new GLTFLoader().load('models/kriegerin.glb', (g) => {
+    warriorTpl = g.scene;
+    warriorTpl.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; if (o.material) { o.material.envMapIntensity = 0.6; if (o.material.map) o.material.map.anisotropy = 2; } } });
+  }, undefined, () => { warriorTpl = null; });
   registerBoss({ update: updateBoss, clear: clearBoss });
 }
 
@@ -79,6 +87,88 @@ function addCrownHelm(headBone, root) {
   headBone.add(g);
 }
 
+// ---- Riesiger Kriegshammer der Kriegerin (Stiel entlang −z, Griff bei z = 0) -------------------------
+const hamWood = new THREE.MeshStandardMaterial({ color: 0x4a2f18, roughness: 0.8 });
+const hamIron = new THREE.MeshStandardMaterial({ color: 0x5a6068, metalness: 0.8, roughness: 0.35 });
+const hamGold = new THREE.MeshStandardMaterial({ color: 0xd4ab45, metalness: 0.7, roughness: 0.3 });
+const hamRune = new THREE.MeshBasicMaterial({ color: 0x7fd4ff, toneMapped: false });
+const HAM = {
+  haft: new THREE.CylinderGeometry(0.028, 0.032, 1.35, 10).rotateX(Math.PI / 2).translate(0, 0, -0.5),
+  wrap: new THREE.CylinderGeometry(0.036, 0.036, 0.3, 10).rotateX(Math.PI / 2).translate(0, 0, 0.02),
+  head: new THREE.BoxGeometry(0.2, 0.46, 0.22).translate(0, 0, -1.08),
+  band: new THREE.BoxGeometry(0.215, 0.05, 0.235),
+  rune: new THREE.BoxGeometry(0.01, 0.2, 0.06).translate(0, 0, -1.08),
+  pommel: new THREE.SphereGeometry(0.05, 10, 8).translate(0, 0, 0.2)
+};
+for (const g of Object.values(HAM)) g.userData.shared = true; // bleiben für den nächsten Auftritt erhalten
+function makeWarHammer() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(HAM.haft, hamWood));
+  g.add(new THREE.Mesh(HAM.wrap, hamGold));
+  g.add(new THREE.Mesh(HAM.head, hamIron));
+  for (const y of [-0.17, 0.17]) { const b = new THREE.Mesh(HAM.band, hamGold); b.position.set(0, y, -1.08); g.add(b); }
+  for (const x of [-0.106, 0.106]) { const r = new THREE.Mesh(HAM.rune, hamRune); r.position.x = x; g.add(r); }
+  g.add(new THREE.Mesh(HAM.pommel, hamGold));
+  const tip = new THREE.Object3D(); tip.position.set(0, 0, -1.08); g.add(tip);
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return { root: g, sockets: { muzzle: tip } };
+}
+const WARRIOR_GUN = { id: 'hammer', name: 'Kriegshammer', near: true, aim: 1, shots: 0, rate: 1, dmg: 0, speed: 0, spread: 0 };
+const WARRIOR_ATTACKS = [
+  { id: 'smash', from: 1, wind: 0.85, name: 'Hammerschlag' },
+  { id: 'sweep', from: 1, wind: 0.65, name: 'Rundumschlag' },
+  { id: 'charge', from: 1, wind: 0.8, name: 'Sturmangriff' },
+  { id: 'leap', from: 2, wind: 0.7, name: 'Sprungschlag' },
+  { id: 'stomp', from: 2, wind: 0.75, name: 'Erdbeben' },
+  { id: 'spin', from: 3, wind: 0.5, name: 'Wirbelwind' }
+];
+function pickWarriorAttack(z, dist) {
+  const list = WARRIOR_ATTACKS.filter(a => z.level >= a.from && a.id !== z.last);
+  const w = list.map(a => a.id === 'smash' || a.id === 'sweep' ? (dist < 1.9 ? 4 : 0.2)
+    : a.id === 'leap' ? (dist > 2 ? 3 : 0.3)
+    : a.id === 'charge' ? (dist > 2.2 ? 2 : 0.2)
+    : a.id === 'stomp' || a.id === 'spin' ? (dist < 2 ? 1.5 : 0.3) : 1);
+  let r = Math.random() * w.reduce((x, y) => x + y, 0);
+  for (let i = 0; i < list.length; i++) { r -= w[i]; if (r <= 0) return list[i]; }
+  return list[0];
+}
+// Hammer in der rechten Hand: Stiel quer zum Unterarm (wie in der Faust gehalten)
+const _fa = new THREE.Vector3(), _fb = new THREE.Vector3(), _rt = new THREE.Vector3(), _hd = new THREE.Vector3(), _hq = new THREE.Quaternion();
+function placeHammer(z) {
+  const B = z.B.bones, w = z.gun.w;
+  if (!B.RightHand || !B.RightForeArm) return;
+  B.RightForeArm.getWorldPosition(_fa); B.RightHand.getWorldPosition(_fb);
+  const fore = _fb.clone().sub(_fa).normalize();
+  _rt.set(Math.cos(z.yaw + (z.yawOff || 0)), 0, -Math.sin(z.yaw + (z.yawOff || 0))); // rechts vom Körper
+  // Stiel-Richtung je nach Phase (im Körper-Koordinatensystem: x rechts, y oben, z vorne)
+  const m = z.mode, id = z.atk && z.atk.id, heavy = id === 'smash' || id === 'leap' || id === 'stomp';
+  let L = HAM_CARRY;
+  if (m === 'wind' && heavy) { const k = Math.min(1, z.t / (z.atk.wind / (z.rage ? 1.5 : 1))); L = _hl.copy(HAM_CARRY).lerp(HAM_UPBACK, k); }
+  else if (m === 'attack' && heavy) { const k = Math.min(1, z.t / (id === 'leap' ? 0.6 : 0.22)); L = _hl.copy(HAM_UPBACK).lerp(HAM_DOWN, k * k); }
+  else if (id === 'sweep' && (m === 'wind' || m === 'attack')) L = HAM_SIDE;
+  else if (id === 'spin' && m === 'attack') L = HAM_OUT;
+  else if (id === 'charge' && m === 'attack') L = HAM_LANCE;
+  const yw = z.yaw + (z.yawOff || 0), cy = Math.cos(yw), sy = Math.sin(yw);
+  _hd.set(L.x * cy + L.z * sy, L.y, -L.x * sy + L.z * cy).normalize();
+  _hq.setFromUnitVectors(FWD_Z, _hd);
+  if (!z.hamQ) z.hamQ = _hq.clone();
+  z.hamQ.slerp(_hq, Math.min(1, z.hamDt * (z.mode === 'attack' ? 30 : 10))); // weich zwischen Tragen und Schlagen
+  w.root.position.copy(_fb);
+  w.root.quaternion.copy(z.hamQ);
+  w.root.scale.setScalar(z.scale);
+}
+const FWD_Z = new THREE.Vector3(0, 0, -1);
+const HAM_CARRY = new THREE.Vector3(0.15, 0.9, -0.35), HAM_UPBACK = new THREE.Vector3(0.1, 0.65, -0.75), HAM_DOWN = new THREE.Vector3(0.05, -0.5, 0.86);
+const HAM_SIDE = new THREE.Vector3(0.85, 0.05, 0.5), HAM_OUT = new THREE.Vector3(1, 0, 0.1), HAM_LANCE = new THREE.Vector3(0.2, 0.2, 0.95), _hl = new THREE.Vector3();
+// Schockwelle am Aufschlagpunkt (Ring breitet sich aus – darüber springen/zurückweichen)
+function slamRing(x, zz, max, dmg, speed = 3.2) {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48), new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(x, 0.03, zz);
+  scene.add(ring);
+  rings.push({ obj: ring, r: 0.2, x, z: zz, speed, max, dmg, hit: false });
+}
+
 // ---- Erzeugen ------------------------------------------------------------------------
 let boss = null, projectiles = [], rings = [], bar = null;
 const HIT_MAT = new THREE.MeshBasicMaterial({ visible: false });
@@ -86,9 +176,10 @@ const HIT_HEAD = new THREE.SphereGeometry(0.14, 8, 6);
 const HIT_TORSO = new THREE.CapsuleGeometry(0.24, 0.42, 3, 8);
 const HIT_LEGS = new THREE.CapsuleGeometry(0.2, 0.5, 3, 8);
 export const currentBoss = () => boss;
-export function spawnBoss(level, head, diffHp = 1) {
-  if (!template) return null;
-  const model = cloneSkinned(template);
+export function spawnBoss(level, head, diffHp = 1, kind = 'knight') {
+  const warrior = kind === 'warrior';
+  if (warrior ? !warriorTpl : !template) return null;
+  const model = cloneSkinned(warrior ? warriorTpl : template);
   // eigene Material-Kopien (für die rote Wut-Färbung)
   const mats = [];
   model.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); mats.push(o.material); } });
@@ -99,7 +190,7 @@ export function spawnBoss(level, head, diffHp = 1) {
   model.scale.setScalar(S);
   const bones = {};
   model.traverse(o => { if (o.isBone) bones[o.name] = o; });
-  if (bones.Head) addCrownHelm(bones.Head, root);
+  if (bones.Head && !warrior) addCrownHelm(bones.Head, root);
   const B = { bones, base: {}, rootQInv: new THREE.Quaternion() };
   root.updateMatrixWorld(true);
   for (const n of ANIM_BONES) if (bones[n]) B.base[n] = bones[n].quaternion.clone();
@@ -118,19 +209,20 @@ export function spawnBoss(level, head, diffHp = 1) {
     pos.set(head.x + Math.sin(a) * d, 0, head.z - Math.cos(a) * d);
     if (walkable(pos.x, pos.z)) break;
   }
-  const hp = 3600 * (1 + 0.9 * (level - 1)) * diffHp; // (v41: deutlich zäher)
+  const hp = (warrior ? 3000 : 3600) * (1 + 0.9 * (level - 1)) * diffHp; // (v41: deutlich zäher)
   const z = {
-    type: 'boss', T: { boss: true, width: 1, hp, speed: 1, dmg: 20, name: 'Boss' }, scale: S, level,
+    type: 'boss', kind, T: { boss: true, width: 1, hp, speed: 1, dmg: 20, name: warrior ? 'Kriegerin' : 'Boss' }, scale: S, level,
     root, body, hips: bones.Hips, torso: bones.Spine1, neck: bones.Neck, head: bones.Head, skull: bones.Head, jaw: new THREE.Object3D(),
     arms: [], legs: [], legLost: [false, false], armLost: [false, false], legHp: [999, 999], armHp: [999, 999],
     hp, maxHp: hp, state: 'intro', pos: pos.clone(), yaw: 0, speed: 0.9 + 0.09 * level, phase: 0, hurtT: 0, deadT: 0,
     B, mats, mode: opening ? 'approach' : 'intro', opening, t: 0, cool: 2.5, last: null, attackHit: false, rage: false, aimPt: head.clone(), flashT: 0
   };
   // Waffe(n) – ab Stufe 9 wechselt er zwischen mehreren
-  z.guns = gunsFor(level).map(def => { const w = buildWeapon(def.id); w.root.scale.setScalar(S); w.root.visible = false; scene.add(w.root); return { def, w }; });
+  if (warrior) { const w = makeWarHammer(); w.root.scale.setScalar(S); scene.add(w.root); z.guns = [{ def: WARRIOR_GUN, w }]; z.speed = 1.05 + 0.1 * level; }
+  else z.guns = gunsFor(level).map(def => { const w = buildWeapon(def.id); w.root.scale.setScalar(S); w.root.visible = false; scene.add(w.root); return { def, w }; });
   z.gun = z.guns[0];
   z.gun.w.root.visible = true;
-  z.gunName = bossGunName(level);
+  z.gunName = warrior ? 'Kriegshammer' : bossGunName(level);
   z.yaw = Math.atan2(head.x - pos.x, head.z - pos.z);
   root.position.copy(pos);
   root.rotation.y = z.yaw;
@@ -407,7 +499,7 @@ function animate(z, dt, pose) {
   const walk = pose.walk || 0;
   const lean = pose.lean || 0, armsUp = pose.armsUp || 0, rArm = pose.rArm || 0, tpose = pose.tpose || 0, crouch = pose.crouch || 0, aim = pose.aim || 0;
   const armsBack = pose.armsBack || 0, headBack = pose.headBack || 0, limp = pose.limp || 0;
-  const twoHand = z.gun && WEAPON_DEFS[z.gun.def.id].twoHand !== false && z.gun.def.id !== 'kurzbogen';
+  const twoHand = z.gun && (WEAPON_DEFS[z.gun.def.id] || {}).twoHand !== false && z.gun.def.id !== 'kurzbogen';
   z.animT = (z.animT || 0) + dt;
   z.kick = Math.max(0, (z.kick || 0) - dt * 9);                       // Rückstoß klingt schnell ab
   const breathe = Math.sin(z.animT * (z.rage ? 5 : 2.2)) * (z.rage ? 0.05 : 0.03) * (1 - limp);
@@ -469,7 +561,7 @@ function updateBoss(z, dt, head, opts) {
         ctx.fillStyle = z.rage ? '#ff2a1a' : '#e03a2a'; ctx.fillRect(8, h * 0.52, (w - 16) * k, h * 0.38);
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(8, h * 0.52, w - 16, h * 0.38);
         ctx.fillStyle = '#fff'; ctx.font = 'bold 30px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(`👑 BOSS · Stufe ${z.level} · ${z.gun.def.name}${z.rage ? ' · WUT' : ''}`, w / 2, h * 0.27);
+        ctx.fillText(z.kind === 'warrior' ? `⚔ KRIEGERIN · Stufe ${z.level}${z.rage ? ' · WUT' : ''}` : `👑 BOSS · Stufe ${z.level} · ${z.gun.def.name}${z.rage ? ' · WUT' : ''}`, w / 2, h * 0.27);
       });
     }
   }
@@ -529,7 +621,7 @@ function updateBoss(z, dt, head, opts) {
     z.rage = true;
     for (const m of z.mats) { m.emissive = new THREE.Color(0x550000); m.emissiveIntensity = 1; }
     SFX3D.roar(z.root.position.clone().setY(1.6));
-    cb.speak('Der Boss ist wütend!');
+    cb.speak(z.kind === 'warrior' ? 'Die Kriegerin ist wütend!' : 'Der Boss ist wütend!');
   }
   const rage = z.rage ? 1.5 : 1;
   const G = z.gun.def;
@@ -590,7 +682,7 @@ function updateBoss(z, dt, head, opts) {
     if (z.t > 1.8) { z.mode = 'move'; z.t = 0; }
   } else if (z.mode === 'move') {
     // Abstand halten (2–3 m), dabei seitlich ausweichen
-    let far = G.near ? 2.6 : 4.2, close = G.near ? 1.5 : 2.6;
+    let far = z.kind === 'warrior' ? 1.4 : G.near ? 2.6 : 4.2, close = z.kind === 'warrior' ? 0.8 : G.near ? 1.5 : 2.6;
     // Spieler steht erhöht (Bett/Tisch)? Dann kommt er immer wieder ran und klettert hoch (7 von 12 Sekunden)
     if (groundAt(head.x, head.z) - (z.groundY || 0) > 0.2) { z.upT = (z.upT || 0) + dt; if (z.upT % 12 < 7) { far = 0.9; close = 0.5; } } else z.upT = 0;
     // freie Sicht zum Spieler? sonst wie die Skelette dem berechneten Weg folgen (um Ecken, durch Türen)
@@ -619,13 +711,14 @@ function updateBoss(z, dt, head, opts) {
     pose = { walk: 1 };
     z.cool -= dt * rage;
     if (z.stepT === undefined || (z.stepT -= dt) <= 0) { z.stepT = 0.42 / rage; SFX3D.step(z.root.position.clone(), 1.3); }
-    if (z.cool <= 0 && !z.los && !z.canShoot) z.cool = 0.3; // weder Weg noch Schusslinie frei: erst hinlaufen
+    if (z.cool <= 0 && !z.los && (!z.canShoot || z.kind === 'warrior')) z.cool = 0.3; // kein freier Weg (bzw. Schusslinie): erst hinlaufen
     if (z.cool <= 0) {
-      z.atk = pickAttack(z, dist);
+      z.atk = z.kind === 'warrior' ? pickWarriorAttack(z, dist) : pickAttack(z, dist);
       // ohne freien Laufweg (aber mit Schusslinie): nur Fernangriffe
-      if (!z.los && z.atk.id !== 'shoot' && z.atk.id !== 'grenade') z.atk = ATTACKS[0];
+      if (!z.los && z.kind !== 'warrior' && z.atk.id !== 'shoot' && z.atk.id !== 'grenade') z.atk = ATTACKS[0];
       z.last = z.atk.id;
       z.mode = 'wind'; z.t = 0; z.attackHit = false;
+      if (z.atk.id === 'leap') z.leapTo = player.clone();
       if (z.atk.id === 'shoot' && z.guns.length > 1) { // Waffe wechseln
         z.gun.w.root.visible = false;
         z.gun = z.guns[Math.floor(Math.random() * z.guns.length)];
@@ -644,7 +737,13 @@ function updateBoss(z, dt, head, opts) {
     else if (a.id === 'grenade') pose = { armsUp: 0.45 * k, lean: -0.25 * k };
     else if (a.id === 'blink') { pose = { crouch: 0.3 * k }; z.root.scale.setScalar(1 - k * 0.9); }
     else if (a.id === 'spin') pose = { tpose: k };
+    else if (a.id === 'smash') pose = { armsUp: k * 1.05, lean: -0.25 * k, headBack: 0.2 * k }; // Hammer hoch über den Kopf
+    else if (a.id === 'sweep') { pose = { tpose: 0.5 * k, armsBack: 0.6 * k, lean: 0.1 * k }; z.yawOff = -1.1 * k; } // weit ausholen
+    else if (a.id === 'leap') pose = { crouch: 0.55 * k, armsUp: 0.8 * k, lean: 0.2 * k };
+    if (z.kind === 'warrior' && k > 0.5 && !z.windCue) { z.windCue = true; SFX.whoosh(); } // hörbare Vorwarnung
     if (k >= 1) {
+      z.windCue = false;
+      if (a.id === 'leap') { z.leapFrom = z.pos.clone(); const d = flat(z.leapTo).sub(flat(z.pos)); const L = d.length(); z.leapTo = L > 0.9 ? z.pos.clone().addScaledVector(d.normalize(), L - 0.8) : z.pos.clone(); if (!clearPath(z.pos, z.leapTo)) z.leapTo = z.pos.clone(); SFX3D.roar(z.root.position.clone().setY(1.6)); }
       z.mode = 'attack'; z.t = 0;
       if (a.id === 'charge') { z.chargeDir = flat(player).sub(flat(z.pos)).normalize(); SFX3D.roar(z.root.position.clone().setY(1.6)); }
       if (a.id === 'stomp') {
@@ -696,6 +795,38 @@ function updateBoss(z, dt, head, opts) {
         if (G.laser) z.t = 0; // Panzerbüchse: vor jedem Schuss wieder sichtbar zielen
       }
       if (z.shotsLeft <= 0 && z.shotT <= 0) { z.mode = 'recover'; z.t = 0; }
+    } else if (a.id === 'smash') { // Hammer saust herunter, Schockwelle am Aufschlag
+      const k = Math.min(1, z.t / 0.22);
+      pose = { armsUp: 1.05 * (1 - k), rArm: 0.5 * k, lean: 0.55 * k, crouch: 0.25 * k };
+      if (k >= 1 && !z.attackHit) {
+        z.attackHit = true;
+        const hx = z.pos.x + Math.sin(z.yaw) * 1.1 * z.scale, hz = z.pos.z + Math.cos(z.yaw) * 1.1 * z.scale;
+        shockwave(new THREE.Vector3(hx, 0.05, hz)); burst(new THREE.Vector3(hx, 0.1, hz), 0x5a5048, 22); sparks(new THREE.Vector3(hx, 0.1, hz), UP, 10);
+        SFX3D.bang(new THREE.Vector3(hx, 0.2, hz)); cb.pulse(0.8, 220);
+        if (hyp(player.x - hx, player.z - hz) < 0.9 || dist < 1.5) hitPlayer(z, 24 + z.level * 5);
+        if (z.level >= 2) slamRing(hx, hz, 1.6 + z.level * 0.15, 10 + z.level * 3);
+      }
+      if (z.t > 0.75) { z.mode = 'recover'; z.t = 0; }
+    } else if (a.id === 'sweep') { // waagrechter Rundumschlag (ducken oder zurückweichen)
+      const k = Math.min(1, z.t / 0.3);
+      z.yawOff = -1.1 + 2.4 * k;
+      pose = { tpose: 0.5, rArm: 0.4, lean: 0.15 };
+      if (k > 0.45 && !z.attackHit) { z.attackHit = true; SFX3D.swing(z.root.position.clone().setY(1.3)); if (dist < 1.8 && head.y > 1.0) hitPlayer(z, 18 + z.level * 4); }
+      if (z.t > 0.6) { z.yawOff = 0; z.mode = 'recover'; z.t = 0; }
+    } else if (a.id === 'leap') { // Sprung zum Spieler, Landung mit Hammerschlag
+      const k = Math.min(1, z.t / 0.6);
+      z.pos.lerpVectors(z.leapFrom, z.leapTo, k);
+      z.groundY = groundAt(z.pos.x, z.pos.z);
+      face(z, player, dt, 10);
+      pose = { hop: Math.sin(k * Math.PI) * 2.2, armsUp: 1 - k, rArm: 0.5 * k, lean: 0.4 * k };
+      if (k >= 1 && !z.attackHit) {
+        z.attackHit = true;
+        shockwave(z.root.position.clone().setY(0.05)); burst(z.root.position.clone().setY(0.1), 0x5a5048, 30);
+        SFX3D.bang(z.root.position.clone()); SFX.thunder(); cb.pulse(1, 300);
+        if (dist < 1.6) hitPlayer(z, 22 + z.level * 5);
+        slamRing(z.pos.x, z.pos.z, 2.2 + z.level * 0.2, 12 + z.level * 3);
+      }
+      if (z.t > 1.0) { z.mode = 'recover'; z.t = 0; }
     } else if (a.id === 'grenade') {
       pose = { armsUp: Math.max(0, 0.45 - z.t * 2), lean: 0.2 };
       if (z.t > 0.5) { z.mode = 'recover'; z.t = 0; }
@@ -716,7 +847,8 @@ function updateBoss(z, dt, head, opts) {
   } else if (z.mode === 'recover') {
     face(z, player, dt, 3);
     pose = { lean: -0.1, crouch: 0.1, headBack: 0.2 }; // durchatmen
-    if (z.t > (z.rage ? 0.35 : 0.9)) { z.mode = 'move'; z.t = 0; z.cool = Math.max(0.8, 2.4 - z.level * 0.22) * (0.7 + Math.random() * 0.5); if (Math.random() < (z.rage ? 0.6 : 0.3)) z.cool = 0.15; /* Kombo: gleich nochmal */ }
+    z.yawOff = 0;
+    if (z.t > (z.rage ? 0.35 : 0.9) * (z.kind === 'warrior' && (z.last === 'smash' || z.last === 'leap') ? 1.4 : 1)) { z.mode = 'move'; z.t = 0; z.cool = Math.max(0.8, 2.4 - z.level * 0.22) * (0.7 + Math.random() * 0.5); if (Math.random() < (z.rage ? 0.6 : 0.3)) z.cool = 0.15; /* Kombo: gleich nochmal */ }
   }
   z.root.position.x = z.pos.x;
   z.root.position.z = z.pos.z;
@@ -726,9 +858,10 @@ function updateBoss(z, dt, head, opts) {
     const gy = z.groundY || 0;
     z.root.position.y = z.root.position.y > gy ? Math.max(gy, z.root.position.y - dt * 3.5) : gy;
   }
-  z.root.rotation.y = z.yaw;
+  z.root.rotation.y = z.yaw + (z.yawOff || 0);
   animate(z, dt, pose);
   z.root.updateMatrixWorld(true);
+  if (z.kind === 'warrior') { z.hamDt = dt; placeHammer(z); return; } // Nahkampf: kein Laser-Visier
   placeGun(z, aiming && (pose.aim || 0) > 0.6, dt);
   // Laser-Visier: zeigt beim Zielen, wohin er schießt (Vorwarnung)
   if (!z.laser) {

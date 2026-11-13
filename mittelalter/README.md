@@ -8,6 +8,22 @@ Starten: Öffne `mittelalter/index.html` über denselben Webserver wie das Haupt
 Bestenliste und Einstellungen sind vom Hauptspiel getrennt.
 Gespeicherte Räume werden geteilt, damit du deinen Raum nicht noch einmal einrichten musst.
 
+## Neu in Version 4 – Die Kriegerin
+
+Statt des Trolls kommt in **Welle 8, 13, 18 …** jetzt die **Kriegerin** (dein Avatar-Modell).
+- **Allein:** In ihrer Welle kommen keine anderen Gegner.
+- **Wie der Boss:** Sie reißt die Bretter vom Fenster, steigt herein, brüllt und weicht Treffern mit Seitensprüngen aus. Sie klettert auf Tische und Betten, heilt sich, wenn du nachlässt, und wird bei wenig Leben wütend.
+- **Nur Nahkampf** mit einem riesigen Kriegshammer, den sie über der Schulter trägt:
+  - **Hammerschlag:** Sie hebt den Hammer über den Kopf und schlägt vor sich in den Boden. Ab Stufe 2 läuft dabei eine Schockwelle über den Boden.
+  - **Rundumschlag:** Sie holt weit aus und schlägt waagrecht. Ducken hilft!
+  - **Sturmangriff:** Sie rennt auf dich zu.
+  - **Sprungschlag (ab Stufe 2):** Sie springt zu dir und landet mit einer Schockwelle.
+  - **Erdbeben (ab Stufe 2):** eine Schockwelle rund um sie herum.
+  - **Wirbelwind (ab Stufe 3):** Sie dreht sich mit dem Hammer.
+- **Verteidigen:** Jeder Schlag ist durch das Ausholen und einen hörbaren Luftzug angekündigt. Mit dem Schild kannst du blocken, aber der schwere Hammer kostet mehr Haltbarkeit.
+- **Leistung:** Das Modell wurde für die Quest verkleinert (nur Farbtexturen, 3,6 statt 4,8 MB). Es wird beim Start unsichtbar vorgewärmt, damit ihr Auftritt nicht ruckelt.
+- Ihre Stufe steigt mit jedem Auftritt (Welle 8 = Stufe 1, Welle 13 = Stufe 2 …).
+
 ## Neu in Version 3 – Aufwerten ohne Nachziehen
 
 - **Fehler behoben:** Nach dem Aufwerten in der Schmiede zog die Waffe kurz nach oder drehte sich in der Hand.
@@ -116,7 +132,7 @@ Ein voller Auszug bringt den vollen Schaden. Nachschub an Pfeilen gibt es am Wan
 | Kriecher | kriecht am Boden |
 | Pestbringer | leuchtender Pestbeutel, explodiert in deiner Nähe |
 | Bogenschütze | schießt Brandpfeile aus der Ferne (ausweichen!) |
-| Troll | großes Monster in späteren Wellen |
+| Kriegerin | Welle 8, 13, 18 …: kommt allein, kämpft mit einem riesigen Kriegshammer (Troll nur als Ersatz, falls das Modell fehlt) |
 | Boss | jede 5. Welle, mit Bogen und Armbrust; jede Stufe bringt eine stärkere Fernwaffe |
 
 ## Tränke
