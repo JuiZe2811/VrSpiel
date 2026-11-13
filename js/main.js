@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import { VERSION } from './version.js?v=51';
+import { VERSION } from './version.js?v=52';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=51';
-import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=51';
-import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=51';
-import { makeArrow, makeGlRound } from './weaponkit.js?v=51';
-import { facesButtonVisible, setFaces } from './faces.js?v=51';
-import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=51';
-import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=51';
-import { initEffects, headRef, spawnTracer, spawnBeam, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=51';
-import { hpScale, walkable, initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=51';
-import { giantModelReady, giantWarmup } from './giantmodel.js?v=51';
-import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup } from './boss.js?v=51';
+import { makePanel, panelBg, roundRect, MAT, cachedGeo, cylY, mergeStatic } from './util.js?v=52';
+import { SFX, ensureAudio, setListener, SFX_PLAYER, SFX3D, setVolumes, musicStart, musicStop, musicUpdate, setAudioPaused } from './sfx.js?v=52';
+import { fromTemplate, WEAPON_ORDER, WEAPON_DEFS, BUILDERS, MASS, createWeapon, buildWeapon, refillWeapon, makeMag, makeShell, makeCasing, makeCartridge, makeKnife, makeGrenade, scopeRT, scopeCam } from './weapons.js?v=52';
+import { makeArrow, makeGlRound } from './weaponkit.js?v=52';
+import { facesButtonVisible, setFaces } from './faces.js?v=52';
+import { world, addDynamic, removeDynamic, localBoxOf, stepPhysics, dynamics, applyImpulse } from './physics.js?v=52';
+import { room, addWall, addBox, makeWall, makeBox, rotateBox, removeSurface, clearRoom, setEditMode, suggestYaw, surfacesOf, importDetectedPlanes, saveRoom, loadRoom, hasSavedRoom, surfaceName, addWallbuy, serializeRoom, deserializeRoom, roomSlots, saveRoomSlot, loadRoomSlot, addOpening, makeOpening, roomOccluders, isOpening, setAtmosphere, heightAt, closeRoomGaps, closeRoom, openWallEnds } from './room.js?v=52';
+import { initEffects, headRef, spawnTracer, spawnBeam, burst, floatingText, updateEffects, addDebris, updateDebris, shockwave, floorDecal, clearDecals, puff, sparks, surfaceDecal, fx, clearDebris } from './effects.js?v=52';
+import { hpScale, walkable, initZombies, zombies, spawnZombie, updateZombies, zombieHitMeshes, damageZombie, clearZombies, aliveCount, zombieHeads, setupPlanks, clearPlanks, plankMeshes, buildNav, openings, explosionDamage, killAll, makePlankMesh, plankSlot, missingPlanks, addPlank, setZombieHooks, setEyeGlow, freezeZombie, setLure, lure, setCorpseTime, setWoundsMax } from './zombies.js?v=52';
+import { giantModelReady, giantWarmup } from './giantmodel.js?v=52';
+import { initBoss, spawnBoss, bossReady, currentBoss, bossGunName, GRENADE_LEVEL, bossWarmup, warriorReady, warriorSettled } from './boss.js?v=52';
 const hyp = (a, b, c = 0) => Math.sqrt(a * a + b * b + c * c); // schneller als Math.hypot und ohne Speicher-Müll
 
 // =============================================================================
@@ -1258,7 +1258,7 @@ function drawRoundFx() {
       ctx.shadowBlur = 12; ctx.shadowColor = '#000';
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 50px system-ui, sans-serif';
       ctx.fillText(`WELLE ${f.to}`, w / 2, 48);
-      const sub = f.to % 5 === 0 && gameMode !== 'training' ? (bossReady() ? `👑 BOSS · STUFE ${f.to / 5} · ${bossGunName(f.to / 5)}${f.to / 5 === GRENADE_LEVEL ? ' + GRANATEN' : ''} 👑` : '☠ EIN RIESE KOMMT ☠') : f.to > 5 && f.to % 5 === 3 && gameMode !== 'training' ? '☠ EIN RIESE KOMMT ☠' : f.to === 3 ? 'Neu: Brocken' : f.to === 4 ? 'Neu: Platzer' : f.to === 5 ? 'Neu: Spucker' : f.to === UPGRADE_TIERS[1].wave ? 'Aufrüster: Stufe ★★ freigeschaltet' : f.to === UPGRADE_TIERS[2].wave ? 'Aufrüster: Stufe ★★★ freigeschaltet' : '';
+      const sub = f.to % 5 === 0 && gameMode !== 'training' ? (bossReady() ? `👑 BOSS · STUFE ${f.to / 5} · ${bossGunName(f.to / 5)}${f.to / 5 === GRENADE_LEVEL ? ' + GRANATEN' : ''} 👑` : '☠ EIN RIESE KOMMT ☠') : f.to > 5 && f.to % 5 === 3 && gameMode !== 'training' ? (warriorReady() ? `⚔ DIE KRIEGERIN KOMMT · STUFE ${Math.max(1, Math.round((f.to - 3) / 5))} ⚔` : '☠ EIN RIESE KOMMT ☠') : f.to === 3 ? 'Neu: Brocken' : f.to === 4 ? 'Neu: Platzer' : f.to === 5 ? 'Neu: Spucker' : f.to === UPGRADE_TIERS[1].wave ? 'Aufrüster: Stufe ★★ freigeschaltet' : f.to === UPGRADE_TIERS[2].wave ? 'Aufrüster: Stufe ★★★ freigeschaltet' : '';
       if (sub) { ctx.fillStyle = '#ffcc33'; ctx.font = 'bold 34px system-ui, sans-serif'; ctx.fillText(sub, w / 2, 372); }
     }
   });
@@ -1278,7 +1278,7 @@ function updateRoundFx(dt) {
     SFX.waveStart();
     hurtFlash = Math.max(hurtFlash, 0.55);
     for (const h of hands) pulse(h, 0.9, 250);
-    speak(f.to % 5 === 0 && gameMode !== 'training' ? `Welle ${f.to}. Ein Riese kommt!` : `Welle ${f.to}`);
+    speak(f.to % 5 === 0 && gameMode !== 'training' ? `Welle ${f.to}. Der Boss kommt!` : f.to > 5 && f.to % 5 === 3 && gameMode !== 'training' && warriorReady() ? `Welle ${f.to}. Die Kriegerin kommt!` : `Welle ${f.to}`);
   }
   placeRoundFx(false);
   if ((roundFx.frame = (roundFx.frame || 0) + 1) % 2 === 0 || !f.slammed) drawRoundFx();
@@ -2922,7 +2922,7 @@ function speak(textStr) {
     speechSynthesis.speak(u);
   } catch { /* keine Sprachausgabe */ }
 }
-let lowHpWarned = false, bruteWarned = false, pendingDeath = false, bossPending = false, bossWave = false, bossSpawnT = 0;
+let lowHpWarned = false, bruteWarned = false, pendingDeath = false, bossPending = false, bossWave = false, warriorWave = false, bossSpawnT = 0;
 let streak = 0, lastKillT = -10, streakMsg = null, lastBreakSec = 0;
 function topList(mode) { return load('vrspiel-top-' + mode, []); }
 const TOP_N = 10;
@@ -4283,10 +4283,11 @@ function nextWave() {
   toSpawn = Math.max(2, Math.round((gameMode === 'training' ? 2 + wave : Math.min(70, 4 + wave * 2.4)) * DIFFS[diffKey].count * settings.amount));
   refillGrenades();
   bruteWarned = false;
-  // jede 5. Welle: Boss-Runde – nur der Boss, keine Zombies. Der Riese kommt stattdessen in Welle 8, 13, 18 …
+  // jede 5. Welle: Boss-Runde – nur der Boss, keine Zombies. In Welle 8, 13, 18 … kommt die Kriegerin (ebenfalls allein)
   bossWave = gameMode !== 'training' && wave % 5 === 0 && bossReady();
-  bossPending = gameMode !== 'training' && (bossWave ? false : wave % 5 === 0 || (wave > 5 && wave % 5 === 3));
-  if (bossWave) { toSpawn = 0; bossSpawnT = 2.5; }
+  warriorWave = gameMode !== 'training' && wave > 5 && wave % 5 === 3 && warriorReady();
+  bossPending = gameMode !== 'training' && (bossWave || warriorWave ? false : wave % 5 === 0 || (wave > 5 && wave % 5 === 3)); // Modell fehlt: Riese als Ersatz
+  if (bossWave || warriorWave) { toSpawn = 0; bossSpawnT = 2.5; }
   spawnT = 1.5;
   waveBreak = 0;
   setupPlanks(); // Bretter werden vor jeder Welle wieder angenagelt
@@ -4398,6 +4399,13 @@ function updateGame(dt) {
   if (bossSpawnT > 0) {
     bossSpawnT -= dt;
     if (bossSpawnT <= 0) {
+      if (warriorWave) {
+        const wl = Math.max(1, Math.round((wave - 3) / 5));
+        if (spawnBoss(wl, headPos, DIFFS[diffKey].hp, 'warrior')) speak(wl === 1 ? 'Die Kriegerin kommt – mit ihrem Kriegshammer! Weich ihren Schlägen aus!' : `Die Kriegerin ist zurück – Stufe ${wl}!`);
+        else bossPending = true, toSpawn = 1;
+        boardDirty = true;
+        return;
+      }
       const lvl = Math.floor(wave / 5);
       if (spawnBoss(lvl, headPos, DIFFS[diffKey].hp)) speak((lvl === 1 ? 'Der Boss ist da – mit einer Pistole!' : `Der Boss ist zurück – Stufe ${lvl}, ${lvl <= 8 ? 'jetzt mit ' : ''}${bossGunName(lvl)}!`) + (lvl === GRENADE_LEVEL ? ' Und er hat Granaten!' : ''));
       else bossPending = true, toSpawn = 1; // Modell fehlt: Riese als Ersatz
@@ -4446,8 +4454,9 @@ function handleZombieHit(res, point, prefix = '') {
       award(700 * lvl);
       spawnPowerup(res.pos, 'ammo');
       spawnMedkit(res.pos.clone().add(new THREE.Vector3(0.6, 0, 0)));
-      speak('Boss besiegt!');
-      streakMsg = { text: `👑 BOSS BESIEGT +${700 * lvl}`, t: 3 };
+      const kw = res.zombie.kind === 'warrior';
+      speak(kw ? 'Die Kriegerin ist besiegt!' : 'Boss besiegt!');
+      streakMsg = { text: kw ? `⚔ KRIEGERIN BESIEGT +${700 * lvl}` : `👑 BOSS BESIEGT +${700 * lvl}`, t: 3 };
     } else if (inRound() && res.type === 'giant') spawnPowerup(res.pos); // der Riese lässt immer ein Power-up fallen
     else if (inRound() && Math.random() < (playerHp < 50 ? 0.12 : 0.05) * DIFF().drops) spawnMedkit(res.pos);
     else if (inRound() && !res.nuke && powerups.length < 2 && Math.random() < 0.045 * DIFF().drops) spawnPowerup(res.pos);
@@ -4965,7 +4974,7 @@ const profStat = { sum: 0, n: 0, max: 0 };
 // Boss- und Riesen-Modell einmal unsichtbar mitzeichnen, sobald geladen (Shader/Texturen vorbereiten → kein Ruckler beim Erscheinen)
 let warmed = false;
 function warmupModels() {
-  if (warmed || !bossReady() || !giantModelReady()) return;
+  if (warmed || !bossReady() || !giantModelReady() || !warriorSettled()) return;
   warmed = true;
   const objs = [bossWarmup(), giantWarmup()];
   const camoWarm = new THREE.Group();
@@ -5123,7 +5132,7 @@ function frameInner() {
 // Für automatisierte Tests
 applySettings();
 window.__game = {
-  get boss() { return currentBoss(); }, takeWeapon, pointerTarget, perks, get paused() { return paused; }, get nameEntry() { return nameEntry; }, namePanel, topPanel, set score(v) { score = v; }, setPaused, tryBuy, ammoPrice,
+  get boss() { return currentBoss(); }, get warriorWave() { return warriorWave; }, takeWeapon, pointerTarget, perks, get paused() { return paused; }, get nameEntry() { return nameEntry; }, namePanel, topPanel, set score(v) { score = v; }, setPaused, tryBuy, ammoPrice,
   renderer, get errors() { return errorCount; }, get plankPile() { return plankPilePos; }, hit: (r, p) => handleZombieHit(r, p), debugWave: (n) => { clearZombies(); wave = n - 1; waveBreak = 0; toSpawn = 0; nextWave(); }, get wave() { return wave; }, forceLightning: () => { lightningT = 0; }, spawnPowerup, powerups, active, get grenadeList() { return grenades.map(g => +g.fuse.toFixed(2)); }, medkits, spawnMedkit, get diff() { return diffKey; }, set diff(v) { diffKey = v; refreshMenu(); }, get state() { return state; }, get score() { return score; }, arsenal, hands, room, beltSlots, knives, looseMags, zombies, uiPanels, get playerHp() { return playerHp; }, set playerHp(v) { playerHp = v; },
   menuPanel, setupPanel, board, startButton, setup, get floorOffset() { return floorOffset; }, get bench() { return bench; }, startPressed, enterSetup, finishSetup, equipDesk, desktopReload,
   get deskW() { return deskW; }, get mode() { return gameMode; }, set mode(m) { gameMode = m; }, endRound,

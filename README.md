@@ -11,6 +11,21 @@ Im Ordner [`mittelalter/`](mittelalter/README.md) liegt ein eigenes Spiel auf de
 Du kämpfst mit Schwertern, Äxten, Speer und Bogen gegen Skelett-Krieger.
 Gestartet wird es über `mittelalter/index.html`.
 
+## Neu in Version 52 – Die Kriegerin
+
+Statt des Riesen kommt in **Welle 8, 13, 18 …** jetzt die **Kriegerin** (eigenes Avatar-Modell).
+- **Allein:** In ihrer Welle kommen keine Zombies.
+- **Wie der Boss:** Sie reißt die Bretter vom Fenster, steigt herein, brüllt und weicht Treffern mit Seitensprüngen aus. Sie klettert auf Tische und Betten, heilt sich, wenn du nachlässt, und wird bei wenig Leben wütend.
+- **Nur Nahkampf** mit einem riesigen Kriegshammer, den sie über der Schulter trägt:
+  - **Hammerschlag:** über den Kopf, dann in den Boden, ab Stufe 2 mit Schockwelle.
+  - **Rundumschlag:** Ducken hilft!
+  - **Sturmangriff**
+  - **Ab Stufe 2:** Sprungschlag und Erdbeben.
+  - **Ab Stufe 3:** Wirbelwind.
+- Jeder Schlag ist durch Ausholen und einen hörbaren Luftzug angekündigt.
+- Ihre Stufe steigt mit jedem Auftritt (Welle 8 = Stufe 1, Welle 13 = Stufe 2 …).
+- **Leistung:** Das Modell wurde für die Quest verschlankt (nur Farbtexturen, 3,6 statt 4,8 MB). Es wird beim Start unsichtbar vorgewärmt, damit ihr Auftritt nicht ruckelt.
+
 ## Neu in Version 51 – Aufrüsten ohne Nachziehen
 
 - **Fehler behoben:** Nach dem Aufrüsten zog die Waffe kurz nach oder drehte sich in der Hand.
